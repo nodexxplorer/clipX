@@ -1,0 +1,61 @@
+# Implementation Plan - Repo Integration
+
+The goal is to test three cloned repositories (`anime-downloader`, `moviebox-api`, `bazarr-movies`) individually and then integrate them into the `backend` folder.
+
+## User Review Required
+> [!WARNING]
+> `anime-downloader` README states it is **semi-abandoned and in a non-working state**. We should verify if it works or if we need to fix it/find an alternative.
+
+## Proposed Changes
+
+### Phase 1: Individual Testing
+
+#### [anime-downloader](file:///c:/Users/Fortune/Desktop/ideas/clipX/anime-downloader)
+- **Status**: Semi-abandoned.
+- **Action**: 
+    - Create a virtual environment (optional, or just install deps if user agrees, but safer to test in isolation if possible. Given I can't easily make venvs that persist well across my sessions without explicit activation, I might try to run with existing python or checks).
+    - Install requirements.
+    - Run basic CLI commands or a test script.
+
+#### [moviebox-api](file:///c:/Users/Fortune/Desktop/ideas/clipX/moviebox-api)
+- **Status**: Active wrapper.
+- **Action**:
+    - Install `moviebox-api`.
+    - Run the "Quick Start" script to verify it works.
+
+#### [bazarr-movies](file:///c:/Users/Fortune/Desktop/ideas/clipX/bazarr-movies)
+- **Status**: Running (user has a terminal open).
+- **Action**:
+    - Check dependencies.
+    - Verify if the current running instance is working or if we need to restart/configure it.
+    - It seems to be a service (Bazarr is usually a subtitle downloader).
+
+#### [LulacloudApi](file:///c:/Users/Fortune/Desktop/ideas/clipX/LulacloudApi)
+- **Status**: Node.js project.
+- **Action**:
+    - Install dependencies (`npm install`).
+    - Run scripts (check [package.json](file:///c:/Users/Fortune/Desktop/ideas/clipX/package.json) for `start` or `dev`).
+
+### Phase 2: Integration into Backend
+
+    - **Detailed Integration Plan**:
+        - **LulacloudApi**: 
+            - Copy `api` folder logic to `src/services/lulacloud`.
+            - Create Express routes in `src/routes/lulacloud.js` (or similar) to expose these.
+        - **Python Tools (`moviebox-api`, `anime-downloader`)**:
+            - Create a `PythonService` in `src/services/pythonService.js`.
+            - Use `child_process.spawn` or `exec` to call the python CLIs.
+            - Ensure `moviebox-api` and `anime-downloader` are installed in the system python or a venv the backend can access.
+        - **BaZarr**:
+            - Treat as an external service (microservice).
+            - Optional: Add a proxy route in backend to forward requests to port 6767.
+
+## Verification Plan
+
+### Automated Tests
+- For `anime-downloader`: Run `anime dl "query" --test` if available or a script.
+- For `moviebox-api`: Run a script fetching metadata for a movie.
+- For `bazarr-movies`: Check if the port is open and responding.
+
+### Manual Verification
+- User confirms the tools output expected data.

@@ -1,0 +1,244 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+}
+
+html {
+	scroll-behavior: smooth;
+}
+
+body {
+	background-color: #050607; /* dark-300 */
+	color: #ffffff;
+	font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+	-webkit-font-smoothing: antialiased;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+	width: 8px;
+}
+
+::-webkit-scrollbar-track {
+	background-color: #0f1720; /* dark-200 */
+}
+
+::-webkit-scrollbar-thumb {
+	background-color: #0891b2; /* primary-600 */
+	border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background-color: #06b6d4; /* primary-500 */
+}
+
+/* Custom Utilities */
+@layer utilities {
+	.text-shadow {
+		text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+	}
+  
+	.theater-blur {
+		backdrop-filter: blur(10px);
+	}
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .glass-card {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .cinematic-gradient {
+    background: linear-gradient(to top, #050607 0%, transparent 100%);
+  }
+
+  .netflix-gradient {
+    background: linear-gradient(to right, #050607 0%, rgba(5, 6, 7, 0.5) 50%, transparent 100%);
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+		transform: translateY(20px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.animate-fade-in {
+	animation: fadeIn 0.6s ease-out;
+}
+
+/* Button Hover Effects */
+.btn-primary {
+	background-color: #06b6d4; /* primary-500 */
+	color: #ffffff;
+	padding: 0.75rem 1.5rem;
+	border-radius: 0.5rem;
+	font-weight: 600;
+	transition: all 0.3s ease;
+}
+.btn-primary:hover { background-color: #0891b2; }
+
+.btn-secondary {
+	background-color: transparent;
+	border: 2px solid #06b6d4;
+	color: #06b6d4;
+	padding: 0.75rem 1.5rem;
+	border-radius: 0.5rem;
+	font-weight: 600;
+	transition: all 0.3s ease;
+}
+.btn-secondary:hover { background-color: #06b6d4; color: #ffffff; }
+
+/* Card Styles */
+.movie-card {
+	background-color: #0b0f14; /* dark-100 */
+	border-radius: 0.75rem;
+	overflow: hidden;
+	transition: transform 0.3s ease, box-shadow 0.3s ease;
+	cursor: pointer;
+}
+.movie-card:hover { transform: scale(1.05); }
+
+/* Rating Badge */
+.rating-badge {
+	background-color: #ffd54a; /* accent yellow fallback */
+	color: #050607; /* dark-300 */
+	padding: 0.25rem 0.75rem;
+	border-radius: 9999px;
+	font-size: 0.875rem;
+	font-weight: 700;
+}
+
+/* Search Bar */
+.search-input {
+	width: 100%;
+	background-color: rgba(255,255,255,0.08);
+	backdrop-filter: blur(6px);
+	color: #ffffff;
+	padding: 1rem 1.5rem;
+	border-radius: 9999px;
+	border: 1px solid rgba(255,255,255,0.12);
+}
+
+.search-input::placeholder { color: rgba(255,255,255,0.6); }
+
+/* Light theme overrides: when `html` has class `light` apply lighter colors.
+	 These use higher specificity to override Tailwind utility classes used across
+	 the app so the quick toggle works without refactoring all components. */
+html.light body {
+	background-color: #ffffff;
+	color: #0b0f14;
+}
+
+html.light header {
+	background: linear-gradient(to bottom, #cee3f7, #f0f7fe) !important;
+	color: #0b0f14 !important;
+}
+
+/* Override common utility classes used in components */
+html.light .bg-gray-900 { background-color: #ffffff !important; }
+html.light .bg-gray-800 { background-color: #f3f4f6 !important; }
+html.light .bg-gray-700 { background-color: #e5e7eb !important; }
+html.light .bg-gray-600 { background-color: #d1d5db !important; }
+html.light .text-white { color: #0b0f14 !important; }
+html.light .text-gray-300 { color: #374151 !important; }
+html.light .text-gray-400 { color: #6b7280 !important; }
+html.light .border-gray-700 { border-color: #e5e7eb !important; }
+
+html.light .movie-card { background-color: #ffffff; box-shadow: 0 1px 6px rgba(2,6,23,0.06); }
+html.light .search-input { background-color: rgba(0,0,0,0.04); color: #0b0f14; border-color: rgba(2,6,23,0.06); }
+html.light .search-input::placeholder { color: rgba(11,15,20,0.5); }
+
+html.light .btn-primary { background-color: #0891b2; color: #ffffff; }
+html.light .btn-primary:hover { background-color: #06b6d4; }
+
+/* Ensure SVG/icon colors follow text color */
+html.light svg { color: inherit; }
+
+/* Scrollbar for light theme */
+html.light ::-webkit-scrollbar-track { background-color: #f1f5f9; }
+html.light ::-webkit-scrollbar-thumb { background-color: #0891b2; }
+
+/* More light-mode overrides to catch Tailwind gradient utilities and common classes */
+html.light .min-h-screen { background-color: #ffffff !important; }
+html.light .container { background-color: transparent !important; }
+
+/* Tailwind gradient utilities use CSS vars -- override the `from`/`via` vars */
+html.light .from-gray-900 { --tw-gradient-from: #ffffff !important; }
+html.light .via-gray-900 { --tw-gradient-stops: var(--tw-gradient-from), #f8fafc, var(--tw-gradient-to, rgba(255,255,255,0)) !important; }
+html.light .to-transparent { --tw-gradient-to: rgba(255,255,255,0) !important; }
+
+/* Catch other dark utility classes */
+html.light .bg-gray-900, html.light .bg-black { background-color: #ffffff !important; }
+html.light .bg-gray-800 { background-color: #fafafa !important; }
+html.light .bg-gradient-to-b { background-image: linear-gradient(to bottom, var(--tw-gradient-from), var(--tw-gradient-to)) !important; }
+
+/* Ensure text utilities become readable */
+html.light .text-gray-200, html.light .text-gray-100 { color: #374151 !important; }
+html.light .text-primary-400 { color: #0891b2 !important; }
+
+/* Buttons and badges */
+html.light .bg-primary-600 { background-color: #0891b2 !important; }
+html.light .bg-primary-500 { background-color: #06b6d4 !important; }
+
+/* Fix card headers/labels that were dark on dark backgrounds */
+html.light .bg-primary-500\/50 { background-color: rgba(6,182,212,0.08) !important; }
+
+/* Footer-specific light-mode overrides */
+html.light footer {
+	background-color: #e5f1fc !important; /* light background for footer */
+	color: #0b0f14 !important;
+}
+
+/* Replace custom dark utility classes used in Footer */
+html.light footer .bg-dark-100, html.light footer .bg-dark-200 {
+	background-color: transparent !important;
+}
+
+/* Text and link colors inside footer */
+html.light footer .text-white { color: #0b0f14 !important; }
+html.light footer .text-gray-400 { color: #6b7280 !important; }
+html.light footer .text-gray-500 { color: #6b7280 !important; }
+
+/* Inputs, pill badges and small elements in footer */
+html.light footer .bg-dark-200 { background-color: #ffffff !important; }
+html.light footer input,
+html.light footer .px-3,
+html.light footer .py-1\.5 {
+	background-color: #ffffff !important;
+	color: #0b0f14 !important;
+	border-color: rgba(2,6,23,0.06) !important;
+}
+/* Social icons and buttons inside footer */
+html.light footer .p-2 { background-color: rgba(2,6,23,0.04) !important; }
+html.light footer .text-gray-400:hover, html.light footer a:hover { color: #0891b2 !important; }
+
+/* Bottom bar border */
+html.light footer .border-t, html.light footer .border-white\/10 {
+	border-color: rgba(11,15,20,0.06) !important;
+}
+
+/* Ensure SVG icons inside footer inherit the light text color */
+html.light footer svg { color: inherit !important; }
+

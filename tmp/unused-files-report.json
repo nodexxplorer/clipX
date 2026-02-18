@@ -1,0 +1,309 @@
+{
+  "generatedAt": "2025-12-02T14:56:47.139Z",
+  "candidates": [
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\drizzle.config.js",
+      "relative": "backend\\drizzle.config.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\models\\index.js",
+      "relative": "backend\\models\\index.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\scripts\\runSync.js",
+      "relative": "backend\\scripts\\runSync.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\config\\aws.js",
+      "relative": "backend\\src\\config\\aws.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\config\\index.js",
+      "relative": "backend\\src\\config\\index.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\config\\supabase.js",
+      "relative": "backend\\src\\config\\supabase.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\graphql\\resolvers\\recommendationResolvers.js",
+      "relative": "backend\\src\\graphql\\resolvers\\recommendationResolvers.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\graphql\\resolvers\\watchlistResolvers.js",
+      "relative": "backend\\src\\graphql\\resolvers\\watchlistResolvers.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\jobs\\syncTMDb.js",
+      "relative": "backend\\src\\jobs\\syncTMDb.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\jobs\\trainModel.js",
+      "relative": "backend\\src\\jobs\\trainModel.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\jobs\\updateTrending.js",
+      "relative": "backend\\src\\jobs\\updateTrending.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\middleware\\errorHandler.js",
+      "relative": "backend\\src\\middleware\\errorHandler.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\middleware\\rateLimiter.js",
+      "relative": "backend\\src\\middleware\\rateLimiter.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\server.js",
+      "relative": "backend\\src\\server.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\services\\authService.js",
+      "relative": "backend\\src\\services\\authService.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\services\\cacheService.js",
+      "relative": "backend\\src\\services\\cacheService.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\services\\emailService.js",
+      "relative": "backend\\src\\services\\emailService.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\services\\interactionService.js",
+      "relative": "backend\\src\\services\\interactionService.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\services\\jwtService.js",
+      "relative": "backend\\src\\services\\jwtService.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\services\\movieService.js",
+      "relative": "backend\\src\\services\\movieService.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\services\\s3Service.js",
+      "relative": "backend\\src\\services\\s3Service.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\utils\\dataloader.js",
+      "relative": "backend\\src\\utils\\dataloader.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\utils\\helpers.js",
+      "relative": "backend\\src\\utils\\helpers.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\src\\utils\\validators.js",
+      "relative": "backend\\src\\utils\\validators.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\backend\\test.js",
+      "relative": "backend\\test.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\eslint.config.mjs",
+      "relative": "frontend\\eslint.config.mjs"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\next.config.mjs",
+      "relative": "frontend\\next.config.mjs"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\postcss.config.mjs",
+      "relative": "frontend\\postcss.config.mjs"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\common\\Button.jsx",
+      "relative": "frontend\\src\\components\\common\\Button.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\common\\ErrorMessage.jsx",
+      "relative": "frontend\\src\\components\\common\\ErrorMessage.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\common\\LoadingSpinner.jsx",
+      "relative": "frontend\\src\\components\\common\\LoadingSpinner.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\common\\Modal.jsx",
+      "relative": "frontend\\src\\components\\common\\Modal.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\common\\Pagination.jsx",
+      "relative": "frontend\\src\\components\\common\\Pagination.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\common\\Rating.jsx",
+      "relative": "frontend\\src\\components\\common\\Rating.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\common\\SearchBar.jsx",
+      "relative": "frontend\\src\\components\\common\\SearchBar.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\home\\FeaturedMovies.jsx",
+      "relative": "frontend\\src\\components\\home\\FeaturedMovies.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\home\\GenreGrid.jsx",
+      "relative": "frontend\\src\\components\\home\\GenreGrid.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\home\\HeroSection.jsx",
+      "relative": "frontend\\src\\components\\home\\HeroSection.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\home\\TrendingSection.jsx",
+      "relative": "frontend\\src\\components\\home\\TrendingSection.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\index.js",
+      "relative": "frontend\\src\\components\\index.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\layout\\Layout.jsx",
+      "relative": "frontend\\src\\components\\layout\\Layout.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\layout\\Sidebar.jsx",
+      "relative": "frontend\\src\\components\\layout\\Sidebar.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\movies\\CastList.jsx",
+      "relative": "frontend\\src\\components\\movies\\CastList.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\movies\\MovieDetail.jsx",
+      "relative": "frontend\\src\\components\\movies\\MovieDetail.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\movies\\MovieFilters.jsx",
+      "relative": "frontend\\src\\components\\movies\\MovieFilters.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\movies\\MovieGrid.jsx",
+      "relative": "frontend\\src\\components\\movies\\MovieGrid.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\movies\\RecommendationSection.jsx",
+      "relative": "frontend\\src\\components\\movies\\RecommendationSection.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\movies\\TrailerPlayer.jsx",
+      "relative": "frontend\\src\\components\\movies\\TrailerPlayer.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\recommendations\\PersonalizedRecommendations.jsx",
+      "relative": "frontend\\src\\components\\recommendations\\PersonalizedRecommendations.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\components\\recommendations\\SimilarMovies.jsx",
+      "relative": "frontend\\src\\components\\recommendations\\SimilarMovies.jsx"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\contexts\\AuthContext.js",
+      "relative": "frontend\\src\\contexts\\AuthContext.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\contexts\\MovieContext.js",
+      "relative": "frontend\\src\\contexts\\MovieContext.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\contexts\\ThemeContext.js",
+      "relative": "frontend\\src\\contexts\\ThemeContext.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\graphql\\client.js",
+      "relative": "frontend\\src\\graphql\\client.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\graphql\\mutations\\authMutation.js",
+      "relative": "frontend\\src\\graphql\\mutations\\authMutation.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\graphql\\mutations\\index.js",
+      "relative": "frontend\\src\\graphql\\mutations\\index.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\graphql\\mutations\\interactionMutations.js",
+      "relative": "frontend\\src\\graphql\\mutations\\interactionMutations.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\graphql\\mutations\\movieMutations.js",
+      "relative": "frontend\\src\\graphql\\mutations\\movieMutations.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\graphql\\mutations\\watchlistMutations.js",
+      "relative": "frontend\\src\\graphql\\mutations\\watchlistMutations.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\graphql\\queries\\castQueries.js",
+      "relative": "frontend\\src\\graphql\\queries\\castQueries.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\graphql\\queries\\genreQueries.js",
+      "relative": "frontend\\src\\graphql\\queries\\genreQueries.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\graphql\\queries\\index.js",
+      "relative": "frontend\\src\\graphql\\queries\\index.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\graphql\\queries\\movieQueries.js",
+      "relative": "frontend\\src\\graphql\\queries\\movieQueries.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\graphql\\queries\\recommendationQueries.js",
+      "relative": "frontend\\src\\graphql\\queries\\recommendationQueries.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\graphql\\queries\\statsQueries.js",
+      "relative": "frontend\\src\\graphql\\queries\\statsQueries.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\graphql\\queries\\userQueries.js",
+      "relative": "frontend\\src\\graphql\\queries\\userQueries.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\hooks\\index.js",
+      "relative": "frontend\\src\\hooks\\index.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\hooks\\useMovies.js",
+      "relative": "frontend\\src\\hooks\\useMovies.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\hooks\\useRecommendations.js",
+      "relative": "frontend\\src\\hooks\\useRecommendations.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\hooks\\useSearch.js",
+      "relative": "frontend\\src\\hooks\\useSearch.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\hooks\\useWatchlist.js",
+      "relative": "frontend\\src\\hooks\\useWatchlist.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\src\\utils\\index.js",
+      "relative": "frontend\\src\\utils\\index.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\frontend\\tailwind.config.js",
+      "relative": "frontend\\tailwind.config.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\scripts\\find-unused-files.js",
+      "relative": "scripts\\find-unused-files.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\scripts\\seed-tmdb.js",
+      "relative": "scripts\\seed-tmdb.js"
+    },
+    {
+      "file": "C:\\Users\\Fortune\\Desktop\\ideas\\clipX\\scripts\\syncTMDb.js",
+      "relative": "scripts\\syncTMDb.js"
+    }
+  ]
+}

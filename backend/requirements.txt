@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+pydantic
+moviebox-api
+pydantic-settings
+httpx
+python-dotenv
+pytest
+sqlalchemy[asyncio]
+asyncpg
+strawberry-graphql[fastapi]
+alembic
+psycopg2-binary
+passlib[bcrypt]
+python-jose[cryptography]
+python-multipart
+google-auth
