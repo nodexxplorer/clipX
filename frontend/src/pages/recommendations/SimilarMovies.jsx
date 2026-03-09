@@ -7,13 +7,14 @@ import { FiFilm, FiChevronRight } from 'react-icons/fi';
 import { GET_SIMILAR_MOVIES } from '@/graphql/queries/recommendationQueries';
 import { MovieCardSkeleton, EmptyState } from '@/components/common/LoadingSpinner';
 import MovieCard from '@/components/movies/MovieCard';
+import { movieUrl } from '@/utils/urlHelpers';
 
 const SimilarMovieCard = ({ movie }) => {
   const router = useRouter();
 
   return (
     <motion.div
-      onClick={() => router.push(`/movies/${movie.id}`)}
+      onClick={() => router.push(movieUrl(movie))}
       className="group cursor-pointer flex-shrink-0 w-36 sm:w-44"
       whileHover={{ scale: 1.05 }}
     >
@@ -24,7 +25,7 @@ const SimilarMovieCard = ({ movie }) => {
           fill
           className="object-cover"
         />
-        
+
         {/* Rating Badge */}
         {movie.rating && (
           <div className="absolute top-2 right-2 bg-black/80 backdrop-blur-sm px-2 py-0.5 
@@ -40,12 +41,12 @@ const SimilarMovieCard = ({ movie }) => {
           <span className="text-primary-500 text-sm font-semibold">View Details →</span>
         </div>
       </div>
-      
+
       <h4 className="text-sm font-semibold line-clamp-1 group-hover:text-primary-500 
                    transition-colors">
         {movie.title}
       </h4>
-      
+
       <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
         <span>{movie.year}</span>
         {movie.genres?.[0] && (
@@ -59,8 +60,8 @@ const SimilarMovieCard = ({ movie }) => {
   );
 };
 
-const SimilarMovies = ({ 
-  movieId, 
+const SimilarMovies = ({
+  movieId,
   title = 'Similar Movies',
   subtitle,
   limit = 10,
@@ -68,7 +69,7 @@ const SimilarMovies = ({
   showViewAll = true,
 }) => {
   const router = useRouter();
-  
+
   const { loading, error, data } = useQuery(GET_SIMILAR_MOVIES, {
     variables: { movieId, limit },
     skip: !movieId,
@@ -91,7 +92,7 @@ const SimilarMovies = ({
         </section>
       );
     }
-    
+
     return (
       <section>
         <h2 className="text-xl font-bold mb-4">{title}</h2>
@@ -121,7 +122,7 @@ const SimilarMovies = ({
             <p className="text-sm text-gray-400 mt-1">{subtitle}</p>
           )}
         </div>
-        
+
         {showViewAll && movies.length >= limit && (
           <button
             onClick={() => router.push(`/movies/${movieId}?tab=similar`)}
@@ -149,7 +150,7 @@ const SimilarMovies = ({
               </motion.div>
             ))}
           </div>
-          
+
           {/* Gradient Fade */}
           <div className="absolute right-0 top-0 bottom-4 w-16 bg-gradient-to-l 
                         from-dark-300 to-transparent pointer-events-none" />

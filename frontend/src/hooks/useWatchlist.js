@@ -12,22 +12,45 @@ export function useWatchlist() {
   });
 
   useEffect(() => {
+    const handleStorageChange = () => {
+      try {
+        const raw = localStorage.getItem('watchlist');
+        setWatchlist(raw ? JSON.parse(raw) : []);
+      } catch (e) { }
+    };
+
+    // Listen for custom event from other instances
+    window.addEventListener('watchlist_updated', handleStorageChange);
+    // Listen for storage event from other tabs
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      window.removeEventListener('watchlist_updated', handleStorageChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
+  const saveAndDispatch = (newWatchlist) => {
     try {
-      localStorage.setItem('watchlist', JSON.stringify(watchlist));
-    } catch (e) {
-      // ignore
-    }
-  }, [watchlist]);
+      localStorage.setItem('watchlist', JSON.stringify(newWatchlist));
+      window.dispatchEvent(new Event('watchlist_updated'));
+      setWatchlist(newWatchlist);
+    } catch (e) { }
+  };
 
   const addToWatchlist = (movieId) => {
-    setWatchlist((prev) => (prev.includes(movieId) ? prev : [...prev, movieId]));
+    const newWatchlist = watchlist.includes(movieId) ? watchlist : [...watchlist, movieId];
+    saveAndDispatch(newWatchlist);
   };
 
   const removeFromWatchlist = (movieId) => {
-    setWatchlist((prev) => prev.filter((id) => id !== movieId));
+    const newWatchlist = watchlist.filter((id) => id !== movieId);
+    saveAndDispatch(newWatchlist);
   };
 
-  const clearWatchlist = () => setWatchlist([]);
+  const clearWatchlist = () => {
+    saveAndDispatch([]);
+  };
 
   return {
     watchlist,

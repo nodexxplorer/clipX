@@ -5,6 +5,7 @@ import { useRouter } from 'next/router';
 import Image from 'next/image';
 import { FiTrendingUp, FiPlay, FiDownload } from 'react-icons/fi';
 import { GET_TRENDING } from '@/graphql/queries/movieQueries';
+import { movieUrl } from '@/utils/urlHelpers';
 import { MovieCardSkeleton, EmptyState } from '@/components/common/LoadingSpinner';
 import { formatNumber } from '@/utils/formatters';
 
@@ -19,7 +20,7 @@ const TrendingCard = ({ movie, rank }) => {
 
   return (
     <motion.div
-      onClick={() => router.push(`/movies/${movie.id}`)}
+      onClick={() => router.push(movieUrl(movie))}
       className="group relative bg-dark-100 rounded-xl overflow-hidden cursor-pointer
                 hover:shadow-glow transition-all duration-300"
       whileHover={{ scale: 1.02, y: -5 }}
@@ -48,7 +49,7 @@ const TrendingCard = ({ movie, rank }) => {
                        transition-colors line-clamp-1">
             {movie.title}
           </h3>
-          
+
           <div className="flex items-center gap-2 mt-1 text-sm text-gray-400">
             <span>{movie.year}</span>
             {movie.genres?.[0] && (
@@ -79,7 +80,7 @@ const TrendingCard = ({ movie, rank }) => {
           <button
             onClick={(e) => {
               e.stopPropagation();
-              router.push(`/movies/${movie.id}`);
+              router.push(movieUrl(movie));
             }}
             className="p-3 bg-primary-500 rounded-full text-white opacity-0 
                      group-hover:opacity-100 transition-opacity hover:bg-primary-600"

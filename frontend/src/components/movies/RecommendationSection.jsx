@@ -8,9 +8,10 @@ import { FiZap, FiChevronLeft, FiChevronRight, FiPlay } from 'react-icons/fi';
 import { GET_SIMILAR_MOVIES, GET_BECAUSE_YOU_WATCHED } from '@/graphql/queries/recommendationQueries';
 import { MovieCardSkeleton, EmptyState } from '@/components/common/LoadingSpinner';
 import MovieCard from './MovieCard';
+import { movieUrl } from '@/utils/urlHelpers';
 
-const RecommendationSection = ({ 
-  movieId, 
+const RecommendationSection = ({
+  movieId,
   movieTitle,
   showBecauseYouWatched = true,
   limit = 10,
@@ -39,10 +40,10 @@ const RecommendationSection = ({
     const container = document.getElementById('recommendations-scroll');
     if (container) {
       const scrollAmount = 300;
-      const newPosition = direction === 'left' 
+      const newPosition = direction === 'left'
         ? Math.max(0, scrollPosition - scrollAmount)
         : scrollPosition + scrollAmount;
-      
+
       container.scrollTo({ left: newPosition, behavior: 'smooth' });
       setScrollPosition(newPosition);
     }
@@ -70,8 +71,8 @@ const RecommendationSection = ({
             <button
               onClick={() => setActiveTab('similar')}
               className={`px-4 py-2 rounded-md text-sm font-medium transition-colors
-                ${activeTab === 'similar' 
-                  ? 'bg-primary-500 text-white' 
+                ${activeTab === 'similar'
+                  ? 'bg-primary-500 text-white'
                   : 'text-gray-400 hover:text-white'
                 }`}
             >
@@ -80,8 +81,8 @@ const RecommendationSection = ({
             <button
               onClick={() => setActiveTab('because')}
               className={`px-4 py-2 rounded-md text-sm font-medium transition-colors
-                ${activeTab === 'because' 
-                  ? 'bg-primary-500 text-white' 
+                ${activeTab === 'because'
+                  ? 'bg-primary-500 text-white'
                   : 'text-gray-400 hover:text-white'
                 }`}
             >
@@ -127,7 +128,7 @@ const RecommendationSection = ({
                   className="flex-shrink-0 w-44"
                 >
                   <div
-                    onClick={() => router.push(`/movies/${movie.id}`)}
+                    onClick={() => router.push(movieUrl(movie))}
                     className="group/card cursor-pointer"
                   >
                     {/* Poster */}
@@ -138,7 +139,7 @@ const RecommendationSection = ({
                         fill
                         className="object-cover group-hover/card:scale-110 transition-transform duration-300"
                       />
-                      
+
                       {/* Rating */}
                       {movie.rating && (
                         <div className="absolute top-2 right-2 bg-black/80 backdrop-blur-sm 

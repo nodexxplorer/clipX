@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.database import get_db
 from app.services.movie_service import movie_service
 from app.models.responses import (
     SearchResponse, TrendingResponse, MovieDetails, 
@@ -31,23 +33,23 @@ async def latest():
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/movie/{movie_id}", response_model=MovieDetails)
-async def get_movie(movie_id: str):
-    details = await movie_service.get_details(movie_id)
+async def get_movie(movie_id: str, db: AsyncSession = Depends(get_db)):
+    details = await movie_service.get_details(movie_id, db)
     if not details:
         raise HTTPException(status_code=404, detail="Movie not found")
     return details
 
 @router.get("/movie/{movie_id}/stream", response_model=ContentStreamResponse)
-async def get_stream(movie_id: str):
+async def get_stream(movie_id: str, season: int = 0, episode: int = 1, db: AsyncSession = Depends(get_db)):
     try:
-        return await movie_service.get_stream_links(movie_id)
+        return await movie_service.get_stream_links(movie_id, season=season, episode=episode, db=db)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/movie/{movie_id}/download", response_model=ContentDownloadResponse)
-async def get_download(movie_id: str):
+async def get_download(movie_id: str, season: int = 0, episode: int = 1, db: AsyncSession = Depends(get_db)):
     try:
-        return await movie_service.get_download_links(movie_id)
+        return await movie_service.get_download_links(movie_id, season=season, episode=episode, db=db)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

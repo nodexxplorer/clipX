@@ -3,12 +3,12 @@
  * User profile with settings, preferences, and account management
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { motion } from 'framer-motion';
-import { 
-  FiUser, FiMail, FiCamera, FiEdit2, FiSave, FiLock, 
+import {
+  FiUser, FiMail, FiCamera, FiEdit2, FiSave, FiLock,
   FiTrash2, FiBell, FiMonitor, FiLogOut, FiCheck, FiX
 } from 'react-icons/fi';
 import { useAuth } from '@/contexts/AuthContext';
@@ -40,15 +40,107 @@ export default function ProfilePage() {
     theme: 'dark'
   });
 
+  const fileInputRef = useRef(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarSize, setAvatarSize] = useState(null); // human-readable size string
+
+  // Compress image via Canvas — returns a base64 JPEG at maxSide x maxSide, quality 0–1
+  const compressImage = (file, maxSide = 200, quality = 0.72) =>
+    new Promise((resolve, reject) => {
+      const img = new window.Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image decode failed')); };
+      img.src = url;
+    });
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setMessage({ type: 'error', text: 'Please select an image file.' });
+      return;
+    }
+
+    // 5 MB guard
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage({ type: 'error', text: 'Image is too large. Please choose an image under 5 MB.' });
+      return;
+    }
+
+    setAvatarUploading(true);
+    try {
+      setMessage({ type: 'info', text: 'Compressing image…' });
+
+      // 1. Compress to ≤200×200 JPEG client-side (~15–40 KB)
+      const compressed = await compressImage(file, 200, 0.75);
+
+      // Show compressed size
+      const bytes = Math.round((compressed.length * 3) / 4);
+      setAvatarSize(bytes < 1024 ? `${bytes} B` : `${Math.round(bytes / 1024)} KB`);
+
+      // 2. Store locally so it works offline immediately
+      try {
+        localStorage.setItem(`clipx_avatar_${user?.id || 'guest'}`, compressed);
+      } catch (_) { /* storage full – skip */ }
+
+      // 3. Show the compressed preview right away
+      setFormData(prev => ({ ...prev, avatar: compressed }));
+
+      // 4. If online, also push to ImgBB for a permanent URL
+      if (navigator.onLine) {
+        setMessage({ type: 'info', text: 'Uploading to server…' });
+        try {
+          const base64data = compressed.split(',')[1];
+          const body = new FormData();
+          body.append('image', base64data);
+          const imgbbKey = process.env.NEXT_PUBLIC_IMGBB_KEY || '';
+          const res = await fetch(
+            `https://api.imgbb.com/1/upload?key=${imgbbKey}`,
+            { method: 'POST', body }
+          );
+          const json = await res.json();
+          if (json.success) {
+            setFormData(prev => ({ ...prev, avatar: json.data.url }));
+            setMessage({ type: 'success', text: 'Avatar ready! Click Save to apply.' });
+          } else {
+            // Keep the local compressed copy — user can still Save
+            setMessage({ type: 'success', text: 'Avatar saved locally. Click Save to apply.' });
+          }
+        } catch (_) {
+          setMessage({ type: 'success', text: 'Avatar saved locally (offline). Click Save to apply.' });
+        }
+      } else {
+        setMessage({ type: 'success', text: 'Offline — avatar saved locally. Click Save to apply.' });
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: 'error', text: 'Failed to process image. Please try another.' });
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   // Update form data when user changes
   useEffect(() => {
     if (user) {
+      // Prefer locally cached avatar (works offline) over remote URL
+      const localAvatar = localStorage.getItem(`clipx_avatar_${user.id}`) || '';
       setFormData({
         name: user.name || '',
         bio: user.bio || '',
-        avatar: user.avatar || ''
+        avatar: localAvatar || user.avatar || ''
       });
-      
+
       const savedTheme = user.preferences?.theme || 'dark';
       setPreferences({
         emailNotifications: user.preferences?.emailNotifications ?? true,
@@ -99,18 +191,22 @@ export default function ProfilePage() {
         return;
       }
 
-      console.log('Saving profile with data:', formData);
+      // PII stripped — no logging of formData in production
 
       const result = await updateProfile({
         name: formData.name.trim(),
         bio: formData.bio?.trim() || '',
         avatar: formData.avatar || ''
       });
-      
+
       if (result.success) {
         setMessage({ type: 'success', text: 'Profile updated successfully!' });
         setIsEditing(false);
-        
+        setAvatarSize(null);
+
+        // Trigger a storage event so Header's HeaderAvatar re-reads immediately
+        window.dispatchEvent(new Event('storage'));
+
         // Clear message after 3 seconds
         setTimeout(() => setMessage({ type: '', text: '' }), 3000);
       } else {
@@ -129,19 +225,19 @@ export default function ProfilePage() {
       setIsSaving(true);
       setMessage({ type: '', text: '' });
 
-      console.log('Saving preferences:', preferences);
+      // Preferences save — no PII logging
 
-      const result = await updateProfile({ 
+      const result = await updateProfile({
         preferences: {
           theme: preferences.theme,
           emailNotifications: preferences.emailNotifications,
           autoPlayTrailers: preferences.autoPlayTrailers
         }
       });
-      
+
       if (result.success) {
         setMessage({ type: 'success', text: 'Preferences saved successfully!' });
-        
+
         // Clear message after 3 seconds
         setTimeout(() => setMessage({ type: '', text: '' }), 3000);
       } else {
@@ -160,12 +256,16 @@ export default function ProfilePage() {
   };
 
   const handleCancelEdit = () => {
-    // Reset form to user data
+    // Reset form to user data (prefer local avatar for offline consistency)
+    const localAvatar = typeof window !== 'undefined'
+      ? localStorage.getItem(`clipx_avatar_${user?.id}`) || ''
+      : '';
     setFormData({
       name: user.name || '',
       bio: user.bio || '',
-      avatar: user.avatar || ''
+      avatar: localAvatar || user.avatar || ''
     });
+    setAvatarSize(null);
     setIsEditing(false);
     setMessage({ type: '', text: '' });
   };
@@ -203,13 +303,16 @@ export default function ProfilePage() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className={`mb-6 p-4 rounded-lg flex items-center gap-2 ${
-                message.type === 'success' 
-                  ? 'bg-green-500/10 border border-green-500/20 text-green-400'
+              className={`mb-6 p-4 rounded-lg flex items-center gap-2 ${message.type === 'success'
+                ? 'bg-green-500/10 border border-green-500/20 text-green-400'
+                : message.type === 'info'
+                  ? 'bg-cyan-500/10 border border-cyan-500/20 text-cyan-400'
                   : 'bg-red-500/10 border border-red-500/20 text-red-400'
-              }`}
+                }`}
             >
-              {message.type === 'success' ? <FiCheck /> : <FiX />}
+              {message.type === 'success' ? <FiCheck /> : message.type === 'info'
+                ? <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                : <FiX />}
               {message.text}
             </motion.div>
           )}
@@ -225,11 +328,10 @@ export default function ProfilePage() {
                       setActiveTab(tab.id);
                       setMessage({ type: '', text: '' });
                     }}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                      activeTab === tab.id
-                        ? 'bg-primary-600 text-white'
-                        : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                    }`}
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === tab.id
+                      ? 'bg-primary-600 text-white'
+                      : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                      }`}
                   >
                     <tab.icon className="w-5 h-5" />
                     {tab.label}
@@ -290,35 +392,70 @@ export default function ProfilePage() {
                   {/* Avatar */}
                   <div className="flex items-center gap-6 mb-6">
                     <div className="relative">
-                      <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-700">
-                        {user.avatar ? (
-                          <img 
-                            src={user.avatar} 
-                            alt={user.name} 
-                            className="w-full h-full object-cover" 
+                      <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-700 ring-2 ring-primary-500/30">
+                        {(isEditing ? formData.avatar : user.avatar) ? (
+                          <img
+                            src={isEditing ? formData.avatar : user.avatar}
+                            alt={user.name}
+                            className="w-full h-full object-cover"
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-3xl font-bold text-gray-400">
                             {user.name?.charAt(0)?.toUpperCase() || 'U'}
                           </div>
                         )}
+                        {/* Upload overlay on hover when editing */}
+                        {isEditing && (
+                          <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={avatarUploading}
+                            className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 opacity-0 hover:opacity-100 transition-opacity rounded-full disabled:cursor-wait"
+                          >
+                            {avatarUploading
+                              ? <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              : <FiCamera className="w-6 h-6 text-white mb-1" />}
+                            <span className="text-white text-xs font-medium">{avatarUploading ? 'Processing…' : 'Change'}</span>
+                          </button>
+                        )}
                       </div>
                       {isEditing && (
-                        <button 
-                          className="absolute bottom-0 right-0 w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center hover:bg-primary-700"
-                          title="Upload avatar (coming soon)"
-                        >
-                          <FiCamera className="w-4 h-4 text-white" />
-                        </button>
+                        <>
+                          <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleAvatarUpload}
+                            className="hidden"
+                            accept="image/*"
+                          />
+                          <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={avatarUploading}
+                            className="absolute -bottom-1 -right-1 w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center hover:bg-primary-700 shadow-lg border-2 border-gray-800 disabled:opacity-50"
+                            title="Upload new avatar image"
+                          >
+                            {avatarUploading
+                              ? <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              : <FiCamera className="w-4 h-4 text-white" />}
+                          </button>
+                        </>
                       )}
                     </div>
                     <div>
                       <h3 className="text-lg font-medium text-white">{user.name}</h3>
                       <p className="text-gray-400">{user.email}</p>
+                      {isEditing && (
+                        <p className="text-xs text-primary-400 mt-1">
+                          {avatarUploading
+                            ? 'Processing image…'
+                            : avatarSize
+                              ? `Photo ready (${avatarSize}, low-bandwidth) · Click Save to apply`
+                              : 'Click the camera icon to upload a new photo'}
+                        </p>
+                      )}
                       <p className="text-sm text-gray-500">
                         Member since {(() => {
                           if (!user.created_at) return 'Recently';
-                          
+
                           try {
                             const date = new Date(user.created_at);
                             // Check if date is valid
@@ -326,10 +463,10 @@ export default function ProfilePage() {
                               console.log('Invalid date format:', user.created_at);
                               return 'Recently';
                             }
-                            return date.toLocaleDateString('en-US', { 
-                              year: 'numeric', 
-                              month: 'long', 
-                              day: 'numeric' 
+                            return date.toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric'
                             });
                           } catch (error) {
                             console.error('Date parsing error:', error);
@@ -399,7 +536,7 @@ export default function ProfilePage() {
                   className="bg-gray-800 rounded-xl p-6"
                 >
                   <h2 className="text-xl font-semibold text-white mb-6">Preferences</h2>
-                  
+
                   <div className="space-y-6">
                     <ToggleSetting
                       label="Auto-play trailers"
@@ -407,7 +544,7 @@ export default function ProfilePage() {
                       checked={preferences.autoPlayTrailers}
                       onChange={(val) => setPreferences({ ...preferences, autoPlayTrailers: val })}
                     />
-                    
+
                     <div>
                       <label className="block text-sm font-medium text-gray-300 mb-2">Theme</label>
                       <select
@@ -453,7 +590,7 @@ export default function ProfilePage() {
                   <div className="bg-gray-800 rounded-xl p-6">
                     <h2 className="text-xl font-semibold text-white mb-4">Change Password</h2>
                     <p className="text-gray-400 mb-4">Update your password to keep your account secure.</p>
-                    <button 
+                    <button
                       onClick={() => router.push('/auth/change-password')}
                       className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
                     >
@@ -466,7 +603,7 @@ export default function ProfilePage() {
                     <p className="text-gray-400 mb-4">
                       Once you delete your account, there is no going back. Please be certain.
                     </p>
-                    <button 
+                    <button
                       onClick={() => setShowDeleteModal(true)}
                       className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                     >
@@ -485,7 +622,7 @@ export default function ProfilePage() {
                   className="bg-gray-800 rounded-xl p-6"
                 >
                   <h2 className="text-xl font-semibold text-white mb-6">Notification Settings</h2>
-                  
+
                   <div className="space-y-6">
                     <ToggleSetting
                       label="Email notifications"
@@ -533,7 +670,7 @@ export default function ProfilePage() {
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   onClick={() => {
                     // TODO: Implement account deletion
                     console.log('Delete account');
@@ -562,13 +699,11 @@ function ToggleSetting({ label, description, checked, onChange }) {
       </div>
       <button
         onClick={() => onChange(!checked)}
-        className={`relative w-12 h-6 rounded-full transition-colors ${
-          checked ? 'bg-primary-600' : 'bg-gray-600'
-        }`}
+        className={`relative w-12 h-6 rounded-full transition-colors ${checked ? 'bg-primary-600' : 'bg-gray-600'
+          }`}
       >
-        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-          checked ? 'left-7' : 'left-1'
-        }`} />
+        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${checked ? 'left-7' : 'left-1'
+          }`} />
       </button>
     </div>
   );

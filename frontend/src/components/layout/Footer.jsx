@@ -12,7 +12,7 @@ const Footer = () => {
   const quickLinks = [
     { name: 'Browse Movies', href: '/movies' },
     { name: 'Top Rated', href: '/movies?sort=rating' },
-    { name: 'New Releases', href: '/movies?sort=recent' },
+    { name: 'New Releases', href: '/movies/recent' },
     { name: 'Genres', href: '/genres' },
     { name: 'Recommendations', href: '/recommendations' },
   ];
@@ -35,8 +35,7 @@ const Footer = () => {
   const handleSubscribe = (e) => {
     e.preventDefault();
     if (email) {
-      // Handle subscription logic
-      console.log('Subscribed:', email);
+      // Handle subscription logic (TODO: send to backend)
       setSubscribed(true);
       setEmail('');
       setTimeout(() => setSubscribed(false), 3000);

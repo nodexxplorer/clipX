@@ -8,29 +8,30 @@ export const ThemeProvider = ({ children }) => {
   const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
-    // Load saved preferences
+    // Always default to dark. Only apply light if user explicitly chose it THIS session.
     const savedTheme = localStorage.getItem('theme') || 'dark';
     const savedMotion = localStorage.getItem('reducedMotion') === 'true';
-    
-    setTheme(savedTheme);
+
+    // Force dark unless explicitly set to light
+    const effectiveTheme = savedTheme === 'light' ? 'light' : 'dark';
+    setTheme(effectiveTheme);
     setReducedMotion(savedMotion);
 
-    // Apply theme to document
-    document.documentElement.classList.toggle('light', savedTheme === 'light');
-    
-    // Check system preference for reduced motion
+    // Apply theme class
+    document.documentElement.classList.toggle('light', effectiveTheme === 'light');
+    // Always ensure dark class present for Tailwind dark: variants
+    document.documentElement.classList.add('dark');
+
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    if (mediaQuery.matches) {
-      setReducedMotion(true);
-    }
+    if (mediaQuery.matches) setReducedMotion(true);
   }, []);
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
     setTheme(newTheme);
     localStorage.setItem('theme', newTheme);
-    // Apply effective theme (for 'light'/'dark')
     document.documentElement.classList.toggle('light', newTheme === 'light');
+    document.documentElement.classList.add('dark');
   };
 
   const toggleReducedMotion = () => {

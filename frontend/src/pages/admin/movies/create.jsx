@@ -1,6 +1,6 @@
 // frontend/src/pages/admin/movies/create.jsx
 import { useState } from 'react';
-import { useMutation } from '@apollo/client';
+import { useMutation } from '@apollo/client/react';
 import { useRouter } from 'next/router';
 import AdminLayout from '../../../components/admin/layout/AdminLayout';
 import MovieForm from '../../../components/admin/movies/MovieForm';

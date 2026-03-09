@@ -8,6 +8,7 @@ const nextConfig = {
       { protocol: 'https', hostname: 'placehold.co' },
       { protocol: 'https', hostname: 'moviebox.ph' },
       { protocol: 'https', hostname: 'pbcdnw.aoneroom.com' },
+      { protocol: 'https', hostname: 'i.ibb.co' },
     ],
   },
 };

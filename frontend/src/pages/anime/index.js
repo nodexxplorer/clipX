@@ -10,25 +10,20 @@ import Pagination from '@/components/common/Pagination';
 import { LoadingSpinner, ErrorMessage, EmptyState, MovieCardSkeleton } from '@/components/common/LoadingSpinner';
 import { gql } from '@apollo/client';
 
-const GET_MOVIES = gql`
-  query GetMovies($filter: MovieFilter, $sort: String, $limit: Int, $offset: Int) {
-    movies(filter: $filter, sort: $sort, limit: $limit, offset: $offset) {
-      movies {
+const GET_ANIME = gql`
+  query GetAnime($page: Int, $limit: Int) {
+    anime(page: $page, limit: $limit) {
+      items {
         id
         title
         description
         year
-        durationMinutes
-        rating
-        posterUrl
-        genres {
-          id
-          name
-          slug
-        }
+        voteAverage
+        posterPath
       }
-      total
+      totalCount
       hasMore
+      currentPage
     }
   }
 `;
@@ -37,21 +32,10 @@ const MOVIES_PER_PAGE = 20;
 
 export default function AnimePage() {
     const [currentPage, setCurrentPage] = useState(1);
-    const [filters, setFilters] = useState({
-        genre: 'animation', // Hardcoded filter for Anime
-        sort: 'popular',
-    });
-
-    const { loading, error, data, refetch } = useQuery(GET_MOVIES, {
+    const { loading, error, data, refetch } = useQuery(GET_ANIME, {
         variables: {
-            filter: {
-                genre: 'animation',
-                year: undefined,
-                minRating: undefined,
-            },
-            sort: filters.sort,
+            page: currentPage,
             limit: MOVIES_PER_PAGE,
-            offset: (currentPage - 1) * MOVIES_PER_PAGE,
         },
     });
 
@@ -60,9 +44,11 @@ export default function AnimePage() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const totalPages = data?.movies?.total
-        ? Math.ceil(data.movies.total / MOVIES_PER_PAGE)
+    const totalPages = data?.anime?.totalCount
+        ? Math.ceil(data.anime.totalCount / MOVIES_PER_PAGE)
         : 1;
+
+    const animeList = data?.anime?.items || [];
 
     return (
         <>
@@ -108,7 +94,7 @@ export default function AnimePage() {
                             message="Failed to load anime. Please try again."
                             retry={() => refetch()}
                         />
-                    ) : data?.movies?.movies?.length > 0 ? (
+                    ) : animeList.length > 0 ? (
                         <>
                             <motion.div
                                 className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6"
@@ -116,18 +102,19 @@ export default function AnimePage() {
                                 animate={{ opacity: 1 }}
                                 transition={{ duration: 0.5 }}
                             >
-                                {data.movies.movies.map((movie, index) => (
+                                {animeList.map((movie, index) => (
                                     <motion.div
                                         key={movie.id}
                                         initial={{ opacity: 0, y: 20 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         transition={{ duration: 0.3, delay: index * 0.05 }}
                                     >
-                                        {/* We link to /anime/[id] to keep the anime context.
-                                            The DownloadModal there will now default to 'moviebox' as requested.
-                                         */}
                                         <div onClick={() => window.location.href = `/anime/${movie.id}`}>
-                                            <MovieCard movie={movie} />
+                                            <MovieCard movie={{
+                                                ...movie,
+                                                rating: movie.voteAverage,
+                                                posterUrl: movie.posterPath
+                                            }} isAnime />
                                         </div>
                                     </motion.div>
                                 ))}

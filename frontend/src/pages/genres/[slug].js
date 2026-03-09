@@ -158,7 +158,7 @@ export default function GenrePage() {
           ) : (
             <EmptyState
               title="No movies found"
-              message={`No ${genre.title.toLowerCase()} movies available at the moment`}
+              message={`No ${genre?.title?.toLowerCase?.() || 'such'} movies available at the moment`}
               action={
                 <button onClick={() => router.push('/movies')} className="btn-primary">
                   Browse All Movies

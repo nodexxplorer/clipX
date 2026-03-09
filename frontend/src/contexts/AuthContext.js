@@ -33,9 +33,9 @@ export function AuthProvider({ children }) {
 	// Fetch current user on mount (client-side only)
 	const refetchUser = async () => {
 		try {
-			const { data } = await client.query({ 
-				query: GET_CURRENT_USER, 
-				fetchPolicy: 'network-only' 
+			const { data } = await client.query({
+				query: GET_CURRENT_USER,
+				fetchPolicy: 'network-only', // always fresh — user data must be accurate
 			});
 			if (data?.me) {
 				setUser(data.me);
@@ -44,7 +44,7 @@ export function AuthProvider({ children }) {
 				}
 			}
 		} catch (err) {
-			console.error('Error fetching user:', err);
+			if (process.env.NODE_ENV === 'development') console.error('Error fetching user:', err);
 		} finally {
 			setLoading(false);
 		}
@@ -62,14 +62,12 @@ export function AuthProvider({ children }) {
 			setLoading(true);
 			setError(null);
 
-			console.log('Sending Google credential to backend...');
 
 			const { data, errors } = await client.mutate({
 				mutation: GOOGLE_AUTH_MUTATION,
 				variables: { idToken: credentialToken },
 			});
 
-			console.log('Google auth response:', data, errors);
 
 			if (errors && errors.length > 0) {
 				throw new Error(errors[0].message);
@@ -80,11 +78,13 @@ export function AuthProvider({ children }) {
 
 				// Store token
 				localStorage.setItem('token', token);
+				if (authUser.role) {
+					localStorage.setItem('role', authUser.role);
+				}
 				setUser(authUser);
 
 				// Role-based routing
 				if (authUser.role === 'admin') {
-					console.log('✅ Admin detected via Google - redirecting to /admin');
 					router.push('/admin');
 				} else if (isNewUser || !authUser.name) {
 					setNeedsOnboarding(true);
@@ -98,7 +98,7 @@ export function AuthProvider({ children }) {
 
 			return { success: false, error: 'Invalid response from server' };
 		} catch (err) {
-			console.error('Google auth error:', err);
+			if (process.env.NODE_ENV === 'development') console.error('Google auth error:', err);
 			const message = err.message || 'Google authentication failed';
 			setError(message);
 			return { success: false, error: message };
@@ -113,7 +113,6 @@ export function AuthProvider({ children }) {
 			setLoading(true);
 			setError(null);
 
-			console.log('🔐 Logging in:', email);
 
 			const { data, errors } = await client.mutate({
 				mutation: LOGIN_MUTATION,
@@ -127,24 +126,19 @@ export function AuthProvider({ children }) {
 			if (data?.login) {
 				const { token, user: authUser } = data.login;
 
-				console.log('✅ Login successful!');
-				console.log('👤 User:', authUser);
-				console.log('🎭 Role:', authUser.role);
-
-				// Store token
 				localStorage.setItem('token', token);
+				if (authUser.role) {
+					localStorage.setItem('role', authUser.role);
+				}
 				setUser(authUser);
 
 				// Role-based routing
 				if (authUser.role === 'admin') {
-					console.log('📍 Redirecting admin to: /admin');
 					router.push('/admin');
 				} else if (!authUser.name) {
-					console.log('📍 New user - redirecting to onboarding');
 					setNeedsOnboarding(true);
 					router.push('/auth/onboarding');
 				} else {
-					console.log('📍 Regular user - redirecting to: /dashboard');
 					router.push('/dashboard');
 				}
 
@@ -154,7 +148,7 @@ export function AuthProvider({ children }) {
 			return { success: false, error: 'Invalid login response' };
 		} catch (err) {
 			const message = err.message || 'Login failed';
-			console.error('❌ Login failed:', message);
+			if (process.env.NODE_ENV === 'development') console.error('❌ Login failed:', message);
 			setError(message);
 			return { success: false, error: message };
 		} finally {
@@ -229,6 +223,8 @@ export function AuthProvider({ children }) {
 				router.push('/dashboard');
 				return { success: true };
 			}
+
+			return { success: false, error: 'Invalid response from server' };
 		} catch (err) {
 			const message = err.message || 'Failed to update profile';
 			setError(message);
@@ -238,49 +234,36 @@ export function AuthProvider({ children }) {
 		}
 	};
 
-	// Update profile
+	// Update profile — does NOT touch the global `loading` flag
+	// (that flag is reserved for the initial auth check; profile saves
+	//  use local `isSaving` state in profile.js instead)
 	const updateProfile = async (input) => {
 		try {
-			setLoading(true);
 			setError(null);
-
-			console.log('[Auth] updateProfile called with:', input);
 
 			const { data, errors } = await client.mutate({
 				mutation: UPDATE_PROFILE_MUTATION,
 				variables: { input },
 			});
 
-			console.log('[Auth] GraphQL response data:', data);
-			console.log('[Auth] GraphQL response errors:', errors);
-
 			if (errors && errors.length > 0) {
-				console.error('[Auth] GraphQL errors:', errors);
+				if (process.env.NODE_ENV === 'development') console.error('[Auth] GraphQL errors:', errors);
 				throw new Error(errors[0].message);
 			}
 
-			if (!data) {
-				console.error('[Auth] No data returned from mutation');
-				return { success: false, error: 'No response from server' };
-			}
-
-			if (!data.updateProfile) {
-				console.error('[Auth] updateProfile field missing from response');
-				console.log('[Auth] Available fields:', Object.keys(data));
+			if (!data || !data.updateProfile) {
+				if (process.env.NODE_ENV === 'development') console.warn('[Auth] updateProfile: no data returned');
 				return { success: false, error: 'Invalid update response' };
 			}
 
-			console.log('[Auth] Update successful, new user data:', data.updateProfile);
 			setUser(data.updateProfile);
 			return { success: true };
 
 		} catch (err) {
-			console.error('[Auth] updateProfile error:', err);
+			if (process.env.NODE_ENV === 'development') console.error('[Auth] updateProfile error:', err);
 			const message = err.message || 'Failed to update profile';
 			setError(message);
 			return { success: false, error: message };
-		} finally {
-			setLoading(false);
 		}
 	};
 
@@ -296,7 +279,7 @@ export function AuthProvider({ children }) {
 			localStorage.removeItem('admin_token');
 			setUser(null);
 			setNeedsOnboarding(false);
-			
+
 			try {
 				await client.resetStore();
 			} catch (e) {

@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
 import { GET_TRENDING } from '@/graphql/queries/movieQueries';
+import { movieUrl } from '@/utils/urlHelpers';
 
 const TrendingCard = ({ movie, rank }) => {
   const router = useRouter();
@@ -22,7 +23,7 @@ const TrendingCard = ({ movie, rank }) => {
 
   return (
     <motion.div
-      onClick={() => router.push(`/movies/${movie.id}`)}
+      onClick={() => router.push(movieUrl(movie))}
       className="movie-card flex gap-4 cursor-pointer"
       whileHover={{ x: 5 }}
     >

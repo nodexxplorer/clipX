@@ -37,20 +37,19 @@ const SERIES_PER_PAGE = 20;
 export default function SeriesPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [filters, setFilters] = useState({
-        genre: '',
-        year: '',
-        rating: '',
-        sort: 'popular',
+        genre: 'All',
+        year: 'All',
+        country: 'All',
+        sort: 'Hottest',
     });
 
     const { loading, error, data, refetch } = useQuery(GET_SERIES, {
         variables: {
             filter: {
-                genre: filters.genre || undefined,
-                year: filters.year ? parseInt(filters.year) : undefined,
-                minRating: filters.rating ? parseFloat(filters.rating) : undefined,
+                genre: filters.genre && filters.genre !== 'All' ? filters.genre : undefined,
+                year: filters.year && filters.year !== 'All' ? parseInt(filters.year) : undefined,
             },
-            sort: filters.sort,
+            sort: filters.sort !== 'Hottest' ? filters.sort : 'popular',
             limit: SERIES_PER_PAGE,
             offset: (currentPage - 1) * SERIES_PER_PAGE,
         },
@@ -153,7 +152,7 @@ export default function SeriesPage() {
                             message="Try adjusting your filters to see more results"
                             action={
                                 <button
-                                    onClick={() => handleFilterChange({ genre: '', year: '', rating: '', sort: 'popular' })}
+                                    onClick={() => handleFilterChange({ genre: 'All', year: 'All', country: 'All', sort: 'Hottest' })}
                                     className="btn-primary"
                                 >
                                     Clear Filters

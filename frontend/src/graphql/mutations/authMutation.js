@@ -72,7 +72,6 @@ export const UPDATE_PROFILE_MUTATION = gql`
       role
       createdAt
       preferences {
-        id
         theme
         emailNotifications
         autoPlayTrailers

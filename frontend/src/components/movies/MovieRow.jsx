@@ -40,8 +40,13 @@ const MovieRow = ({ title, movies = [], variant = 'default' }) => {
                 className="flex items-center gap-4 overflow-x-auto no-scrollbar scroll-smooth px-4 md:px-12 pb-4 pt-2"
             >
                 {movies.map((movie) => (
-                    <div key={movie.id} className="flex-shrink-0 w-40 md:w-56 lg:w-64">
-                        <MovieCard movie={movie} size="md" />
+                    <div key={movie.id} className="flex-shrink-0 w-32 sm:w-40 md:w-48 lg:w-56">
+                        <MovieCard
+                            movie={movie}
+                            size="md"
+                            isSeries={variant === 'series'}
+                            isAnime={variant === 'anime'}
+                        />
                     </div>
                 ))}
             </div>

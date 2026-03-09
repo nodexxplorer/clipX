@@ -29,9 +29,10 @@ export const GET_SIMILAR_MOVIES = gql`
     similarMovies(movieId: $movieId, limit: $limit) {
       id
       title
-      posterUrl
-      rating
-      year
+      posterPath
+      backdropPath
+      releaseDate
+      voteAverage
       genres {
         id
         name

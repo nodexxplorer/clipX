@@ -1,5 +1,5 @@
 // frontend/src/hooks/useAdminStats.js
-import { useQuery } from '@apollo/client';
+import { useQuery } from '@apollo/client/react';
 import { GET_DASHBOARD_STATS, GET_USER_ANALYTICS, GET_MOVIE_ANALYTICS } from '../graphql/queries/adminQueries';
 import { useAdmin } from './useAdmin';
 

@@ -15,6 +15,7 @@ import {
 } from 'react-icons/fi';
 
 import { useAuth } from '@/contexts/AuthContext';
+import { watchUrl } from '@/utils/urlHelpers';
 import MovieHero from '@/components/movies/MovieHero';
 import MovieRow from '@/components/movies/MovieRow';
 import PersonalizedRecommendations from '@/components/recommendations/PersonalizedRecommendations';
@@ -192,7 +193,7 @@ function ContinueWatchingCard({ item }) {
   const progress = (item.currentTime / item.duration) * 100;
 
   return (
-    <Link href={`/watch/${item.movie.id}`} className="group block">
+    <Link href={watchUrl(item.movie)} className="group block">
       <div className="relative aspect-video bg-gray-900 rounded-xl overflow-hidden shadow-2xl transition-transform duration-300 group-hover:scale-[1.02]">
         <img
           src={item.movie.backdropUrl || item.movie.posterUrl}

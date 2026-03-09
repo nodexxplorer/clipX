@@ -57,16 +57,16 @@ export const GET_HOME_PAGE_DATA = gql`
   ${MOVIE_WITH_GENRES_FRAGMENT}
 `;
 
-// Get all movies with pagination
+// Get all movies with pagination — matches backend BrowseMoviesResponse
+// Backend signature: movies(filter, sort, limit, offset) -> BrowseMoviesResponse { movies, total, hasMore }
 export const GET_MOVIES = gql`
-  query GetMovies($page: Int, $limit: Int, $sortBy: String, $genreId: ID) {
-    movies(page: $page, limit: $limit, sortBy: $sortBy, genreId: $genreId) {
-      items {
+  query GetMovies($limit: Int, $offset: Int, $sort: String, $filter: MovieFilter) {
+    movies(limit: $limit, offset: $offset, sort: $sort, filter: $filter) {
+      movies {
         ...MovieWithGenres
       }
-      totalCount
+      total
       hasMore
-      currentPage
     }
   }
   ${MOVIE_WITH_GENRES_FRAGMENT}
@@ -87,6 +87,16 @@ export const GET_MOVIE = gql`
         name
         character
         profileImage
+      }
+      seasons {
+        id
+        seasonNumber
+        episodes {
+          id
+          title
+          episodeNumber
+          seasonNumber
+        }
       }
       recommendations {
         ...MovieFields
@@ -130,10 +140,23 @@ export const SEARCH_MOVIES = gql`
       }
       totalCount
       hasMore
-      hasMore
     }
   }
   ${MOVIE_FRAGMENT}
+`;
+
+// Search suggestions (trending) for empty search bar
+export const SEARCH_SUGGESTIONS = gql`
+  query SearchSuggestions($limit: Int) {
+    searchSuggestions(limit: $limit) {
+      id
+      title
+      posterPath
+      releaseDate
+      voteAverage
+      year
+    }
+  }
 `;
 
 // Get movies by genre
@@ -154,11 +177,19 @@ export const GET_MOVIES_BY_GENRE = gql`
 export const GET_SIMILAR_MOVIES = gql`
   query GetSimilarMovies($movieId: ID!, $limit: Int) {
     similarMovies(movieId: $movieId, limit: $limit) {
-      ...MovieFields
-      similarity
+      id
+      title
+      posterPath
+      backdropPath
+      releaseDate
+      voteAverage
+      genres {
+        id
+        name
+        slug
+      }
     }
   }
-  ${MOVIE_FRAGMENT}
 `;
 
 // Get featured movies
@@ -190,8 +221,8 @@ export const GET_MOVIE_VIDEOS = gql`
 export const GET_MOVIE_DETAILS = GET_MOVIE;
 
 export const GET_STREAMING_URL = gql`
-  query GetStreamingUrl($movieId: ID!) {
-    streamingUrl(movieId: $movieId)
+  query GetStreamingUrl($movieId: ID!, $season: Int, $episode: Int) {
+    streamingUrl(movieId: $movieId, season: $season, episode: $episode)
   }
 `;
 

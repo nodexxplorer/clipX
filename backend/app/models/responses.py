@@ -1,5 +1,5 @@
 from pydantic import BaseModel, HttpUrl
-from typing import List, Optional
+from typing import List, Optional, Any
 
 class ContentBase(BaseModel):
     id: str
@@ -8,10 +8,25 @@ class ContentBase(BaseModel):
     poster_url: Optional[str] = None
     rating: float = 0.0
     year: Optional[str] = None
+    detail_path: Optional[str] = None
 
 class SearchResult(ContentBase):
     description: Optional[str] = None
     genres: List[str] = []
+
+class Episode(BaseModel):
+    id: str
+    title: str
+    episode_number: int
+    season_number: int
+    release_date: Optional[str] = None
+    poster_url: Optional[str] = None
+    description: Optional[str] = None
+
+class Season(BaseModel):
+    id: str
+    season_number: int
+    episodes: List[Episode] = []
 
 class MovieDetails(ContentBase):
     description: Optional[str] = None
@@ -19,6 +34,7 @@ class MovieDetails(ContentBase):
     duration: Optional[int] = None
     country: Optional[str] = None
     trailer_url: Optional[str] = None
+    seasons: Optional[List[Season]] = None
 
 class StreamLink(BaseModel):
     quality: str

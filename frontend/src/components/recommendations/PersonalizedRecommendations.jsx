@@ -65,13 +65,13 @@ const PersonalizedRecommendations = ({ userId = null, limit = 20 }) => {
   return (
     <section>
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mx-8 mb-8">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
             <FiZap className="text-primary-500" />
             Personalized For You
           </h2>
-          <p className="text-gray-400 mt-1">
+          <p className="text-gray-600 mt-1">
             Movies picked just for you by our AI
           </p>
         </div>
@@ -111,10 +111,10 @@ const PersonalizedRecommendations = ({ userId = null, limit = 20 }) => {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         className="bg-gradient-to-r from-primary-500/20 to-purple-500/20 
-                 border border-primary-500/30 rounded-lg p-4 mb-8"
+                 border border-primary-500/30 rounded-lg p-3 mb-8"
       >
         <div className="flex items-center gap-3">
-          <div className="bg-primary-500 p-2 rounded-lg">
+          <div className="bg-primary-500 p-1 rounded-lg">
             <FiZap className="text-white" size={24} />
           </div>
           <div>

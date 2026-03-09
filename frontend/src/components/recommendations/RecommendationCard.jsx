@@ -3,12 +3,13 @@ import { motion } from 'framer-motion';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
 import { FiZap, FiStar } from 'react-icons/fi';
+import { movieUrl } from '@/utils/urlHelpers';
 
 const RecommendationCard = ({ movie, showReason = true }) => {
   const router = useRouter();
 
   const handleClick = () => {
-    router.push(`/movies/${movie.id}`);
+    router.push(movieUrl(movie));
   };
 
   return (
@@ -29,14 +30,14 @@ const RecommendationCard = ({ movie, showReason = true }) => {
             className="object-cover"
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
           />
-          
+
           {/* AI Badge */}
           <div className="absolute top-3 left-3 bg-primary-500 text-white px-2 py-1 
                         rounded-full text-xs font-bold flex items-center gap-1">
             <FiZap size={12} />
             AI Pick
           </div>
-          
+
           {/* Rating Badge */}
           {movie.rating && (
             <div className="absolute top-3 right-3 rating-badge flex items-center gap-1">
@@ -56,7 +57,7 @@ const RecommendationCard = ({ movie, showReason = true }) => {
                        transition-colors">
             {movie.title}
           </h3>
-          
+
           <div className="flex items-center justify-between text-sm text-gray-400 mb-2">
             <span>{movie.year}</span>
             {movie.genres?.[0] && <span>{movie.genres[0].name}</span>}
@@ -70,7 +71,7 @@ const RecommendationCard = ({ movie, showReason = true }) => {
                 <span>{Math.round(movie.score * 100)}%</span>
               </div>
               <div className="h-1 bg-dark-200 rounded-full overflow-hidden">
-                <div 
+                <div
                   className="h-full bg-gradient-to-r from-primary-500 to-green-500 rounded-full"
                   style={{ width: `${movie.score * 100}%` }}
                 />

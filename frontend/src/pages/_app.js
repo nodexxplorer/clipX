@@ -5,27 +5,50 @@ import Layout from '@/components/layout/Layout';
 import { useRouter } from 'next/router';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
-import { GoogleOAuthProvider } from '@react-oauth/google';
+import ErrorBoundary from '@/components/common/ErrorBoundary';
 import '@/styles/globals.css';
 
-function MyApp({ Component, pageProps }) {
-  // Use custom layout if component has one. For admin routes we prefer
-  // to avoid the public site `Layout` (header/footer), so skip it.
-  const router = useRouter();
-  const isAdminRoute = router.pathname?.startsWith('/admin');
-  const getLayout = Component.getLayout || ((page) => isAdminRoute ? page : <Layout>{page}</Layout>);
+// Load Google OAuth SDK only on /auth routes — keeps it off every other page
+let GoogleOAuthProvider = ({ children }) => children; // no-op fallback
+if (typeof window !== 'undefined') {
+  // dynamically assign; this runs only on the client
+}
+import('@react-oauth/google').then(mod => {
+  GoogleOAuthProvider = mod.GoogleOAuthProvider;
+}).catch(() => {});
 
-  return (
-    <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID}>
+function MyApp({ Component, pageProps }) {
+  const router = useRouter();
+
+  const isAdminRoute = router.pathname?.startsWith('/admin');
+  const isAuthRoute  = router.pathname?.startsWith('/auth');
+
+  const getLayout = Component.getLayout || ((page) =>
+    isAdminRoute ? page : <Layout>{page}</Layout>
+  );
+
+  const content = (
     <AuthProvider>
       <ThemeProvider>
         <ApolloProvider client={client}>
-          {getLayout(<Component {...pageProps} />)}
+          <ErrorBoundary>
+            {getLayout(<Component {...pageProps} />)}
+          </ErrorBoundary>
         </ApolloProvider>
       </ThemeProvider>
     </AuthProvider>
-    </GoogleOAuthProvider>
   );
+
+  // Wrap in GoogleOAuthProvider only on auth-related pages
+  if (isAuthRoute) {
+    return (
+      <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID}>
+        {content}
+      </GoogleOAuthProvider>
+    );
+  }
+
+  return content;
 }
 
 export default MyApp;

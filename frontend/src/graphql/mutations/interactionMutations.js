@@ -35,3 +35,48 @@ export const RECORD_WATCH_PROGRESS = gql`
     }
   }
 `;
+
+export const MARK_NOTIFICATION_READ = gql`
+  mutation MarkNotificationRead($id: ID!) {
+    markNotificationRead(id: $id) {
+      success
+      message
+    }
+  }
+`;
+
+export const MARK_ALL_NOTIFICATIONS_READ = gql`
+  mutation MarkAllNotificationsRead {
+    markAllNotificationsRead {
+      success
+      message
+    }
+  }
+`;
+
+export const DELETE_NOTIFICATION = gql`
+  mutation DeleteNotification($id: ID!) {
+    deleteNotification(id: $id) {
+      success
+      message
+    }
+  }
+`;
+
+export const ADD_REVIEW = gql`
+  mutation AddReview($content: String!, $rating: Float!, $movieboxId: String, $isFeatured: Boolean) {
+    addReview(content: $content, rating: $rating, movieboxId: $movieboxId, isFeatured: $isFeatured) {
+      success
+      message
+    }
+  }
+`;
+
+export const SUBMIT_REPORT = gql`
+  mutation SubmitReport($reason: String!, $description: String!, $movieboxId: String) {
+    submitReport(reason: $reason, description: $description, movieboxId: $movieboxId) {
+      success
+      message
+    }
+  }
+`;

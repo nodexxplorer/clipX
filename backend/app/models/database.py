@@ -24,6 +24,8 @@ class Movie(Base):
     __tablename__ = "movies"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     moviebox_id = Column(String(255), unique=True, index=True) # New field to map to Moviebox API
+    detail_path = Column(String(500)) # Stores the slug needed for detail page
+    subject_type = Column(Integer, default=1) # 1 for movie, 2 for series
     title = Column(String(255), nullable=False)
     description = Column(Text)
     year = Column(Integer)
@@ -38,6 +40,8 @@ class Series(Base):
     __tablename__ = "series"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     moviebox_id = Column(String(255), unique=True, index=True) # New field to map to Moviebox API
+    detail_path = Column(String(500))
+    subject_type = Column(Integer, default=2)
     title = Column(String(255), nullable=False)
     description = Column(Text)
     rating = Column(Float)
@@ -78,6 +82,57 @@ class RecentlyViewed(Base):
     
     user = relationship("User", back_populates="recently_viewed")
 
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    type = Column(String(50), default="system")  # watchlist, watch, milestone, content, review, report, system, social
+    action_url = Column(String(500), nullable=True)  # Deep link URL
+    extra_data = Column(JSON, default={})  # Extra context (movie poster, etc.)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="notifications")
+
+class Report(Base):
+    __tablename__ = "reports"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    moviebox_id = Column(String(255), nullable=True) # Optional, can be empty if it is a general bug report
+    reason = Column(String(255), nullable=False)
+    description = Column(Text)
+    status = Column(String(50), default="pending") # pending, reviewed, resolved
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="reports")
+
+class Review(Base):
+    __tablename__ = "reviews"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    content = Column(Text, nullable=False)
+    rating = Column(Float, nullable=True)
+    is_featured = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="reviews")
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    room = Column(String(255), default="global", index=True)  # 'global' or 'movie:<id>'
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="chat_messages")
+
 # Update User relationship
 User.history = relationship("History", back_populates="user")
 User.recently_viewed = relationship("RecentlyViewed", back_populates="user", order_by="desc(RecentlyViewed.viewed_at)")
+User.notifications = relationship("Notification", back_populates="user", order_by="desc(Notification.created_at)")
+User.reports = relationship("Report", back_populates="user", order_by="desc(Report.created_at)")
+User.reviews = relationship("Review", back_populates="user", order_by="desc(Review.created_at)")
+User.chat_messages = relationship("ChatMessage", back_populates="user", order_by="desc(ChatMessage.created_at)")

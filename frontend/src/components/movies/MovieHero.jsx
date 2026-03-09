@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { FiPlay, FiPlus, FiInfo, FiStar } from 'react-icons/fi';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
+import { movieUrl, watchUrl } from '@/utils/urlHelpers';
 
 const MovieHero = ({ movie }) => {
     const router = useRouter();
@@ -10,6 +11,8 @@ const MovieHero = ({ movie }) => {
 
     const backdropUrl = movie.backdropPath || movie.posterPath;
     const rating = movie.voteAverage || 0;
+
+
 
     return (
         <div className="relative h-[85vh] w-full overflow-hidden">
@@ -28,7 +31,7 @@ const MovieHero = ({ movie }) => {
             </div>
 
             {/* Content */}
-            <div className="relative z-10 h-full flex flex-col justify-end pb-24 px-4 md:px-12 max-w-7xl mx-auto w-full">
+            <div className="relative z-10 h-full flex flex-col justify-end pb-32 md:pb-40 px-4 md:px-12 max-w-7xl mx-auto w-full">
                 <motion.div
                     initial={{ opacity: 0, x: -50 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -58,14 +61,14 @@ const MovieHero = ({ movie }) => {
 
                     <div className="flex flex-wrap gap-4">
                         <button
-                            onClick={() => router.push(`/watch/${movie.id}`)}
+                            onClick={() => router.push(watchUrl(movie))}
                             className="flex items-center gap-2 px-8 py-3 bg-white text-black font-bold rounded hover:bg-white/90 transition-all transform hover:scale-105"
                         >
                             <FiPlay className="fill-current" /> Play Now
                         </button>
 
                         <button
-                            onClick={() => router.push(`/movies/${movie.id}`)}
+                            onClick={() => router.push(movieUrl(movie))}
                             className="flex items-center gap-2 px-8 py-3 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white font-bold rounded transition-all transform hover:scale-105"
                         >
                             <FiInfo /> More Info

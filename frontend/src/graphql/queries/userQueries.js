@@ -54,6 +54,7 @@ export const GET_DASHBOARD_DATA = gql`
       stats {
         moviesWatched
         totalWatchTime
+        monthlyWatchTime
       }
     }
   }
@@ -74,6 +75,32 @@ export const GET_WATCHLIST = gql`
           name
         }
       }
+    }
+  }
+`;
+
+export const GET_NOTIFICATIONS = gql`
+  query GetNotifications {
+    notifications {
+      id
+      title
+      message
+      type
+      actionUrl
+      isRead
+      createdAt
+    }
+  }
+`;
+
+export const GET_LANDING_REVIEWS = gql`
+  query GetLandingReviews {
+    landingReviews {
+      id
+      content
+      rating
+      isFeatured
+      createdAt
     }
   }
 `;

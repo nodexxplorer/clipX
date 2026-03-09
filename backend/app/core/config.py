@@ -7,7 +7,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["*"]
     
     # Moviebox API config
-    MOVIEBOX_HOST: str = "h5.aoneroom.com"
+    MOVIEBOX_HOST: str = "movieboxapp.in"
+    BASE_URL: str = "http://localhost:8000"
     
     class Config:
         env_file = ".env"

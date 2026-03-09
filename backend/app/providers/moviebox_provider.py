@@ -1,7 +1,7 @@
 import asyncio
 from typing import List, Optional, Any
 from moviebox_api.requests import Session
-from moviebox_api.core import Search, MovieDetails, Trending, TVSeriesDetails
+from moviebox_api.core import Search, MovieDetails, Trending, TVSeriesDetails, HotMoviesAndTVSeries, Homepage
 from moviebox_api.stream import StreamFilesDetail
 from moviebox_api.download import DownloadableMovieFilesDetail, DownloadableTVSeriesFilesDetail
 from moviebox_api.constants import SubjectType
@@ -41,6 +41,26 @@ class MovieboxProvider:
         # Populate cache
         for item in results.items:
             self._item_cache[str(item.subjectId)] = item
+        return results
+
+    async def get_hot_content(self) -> Any:
+        hot = HotMoviesAndTVSeries(self.session)
+        results = await hot.get_content_model()
+        # Populate cache
+        for item in results.movies + results.tv_series:
+            self._item_cache[str(item.subjectId)] = item
+        return results
+
+    async def get_homepage(self) -> Any:
+        home = Homepage(self.session)
+        results = await home.get_content_model()
+        # Populate cache
+        for item in results.contents:
+            if hasattr(item, 'subjectId') and item.subjectId:
+                self._item_cache[str(item.subjectId)] = item
+            elif hasattr(item, 'id') and item.id:
+                # ContentModel has 'id' and 'subjectId'
+                self._item_cache[str(item.id)] = item
         return results
 
     async def _get_item(self, item_id: str) -> Optional[Any]:
@@ -90,9 +110,15 @@ class MovieboxProvider:
             return None
         
         # Refresh cookies/session by fetching details first
-        details_fetcher = MovieDetails(item, self.session)
+        if item.subjectType == SubjectType.TV_SERIES:
+            details_fetcher = TVSeriesDetails(item, self.session)
+        else:
+            details_fetcher = MovieDetails(item, self.session)
         await details_fetcher.get_content_model()
         
+        if item.subjectType != SubjectType.TV_SERIES:
+            season, episode = 0, 0
+            
         stream_detail = FixedStreamFilesDetail(self.session, item)
         return await stream_detail.get_content_model(season, episode)
 
@@ -102,12 +128,15 @@ class MovieboxProvider:
             return None
         
         # Refresh cookies/session
-        details_fetcher = MovieDetails(item, self.session)
+        if item.subjectType == SubjectType.TV_SERIES:
+            details_fetcher = TVSeriesDetails(item, self.session)
+        else:
+            details_fetcher = MovieDetails(item, self.session)
         await details_fetcher.get_content_model()
         
         if item.subjectType == SubjectType.TV_SERIES:
             download_detail = DownloadableTVSeriesFilesDetail(self.session, item)
+            return await download_detail.get_content_model(season, episode)
         else:
             download_detail = DownloadableMovieFilesDetail(self.session, item)
-            
-        return await download_detail.get_content_model(season, episode)
+            return await download_detail.get_content_model()

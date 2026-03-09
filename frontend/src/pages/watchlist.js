@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FiHeart, FiTrash2, FiFilm, FiGrid, FiList } from 'react-icons/fi';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
+import { movieUrl } from '@/utils/urlHelpers';
 import MovieCard from '@/components/movies/MovieCard';
 import { LoadingSpinner, EmptyState, MovieCardSkeleton } from '@/components/common/LoadingSpinner';
 import { useWatchlist } from '@/hooks/useWatchlist';
@@ -39,6 +40,7 @@ export default function WatchlistPage() {
   const { loading, data, error } = useQuery(GET_WATCHLIST_MOVIES, {
     variables: { movieIds: watchlist },
     skip: watchlist.length === 0,
+    fetchPolicy: 'cache-and-network',
   });
 
   const movies = data?.moviesByIds || [];
@@ -90,7 +92,7 @@ export default function WatchlistPage() {
                   My Watchlist
                 </h1>
                 <p className="text-gray-400 mt-2">
-                  {count > 0 
+                  {count > 0
                     ? `${count} movie${count !== 1 ? 's' : ''} saved`
                     : 'No movies saved yet'
                   }
@@ -103,17 +105,15 @@ export default function WatchlistPage() {
                   <div className="flex bg-dark-100 rounded-lg p-1">
                     <button
                       onClick={() => setViewMode('grid')}
-                      className={`p-2 rounded-md transition-colors ${
-                        viewMode === 'grid' ? 'bg-primary-500 text-white' : 'text-gray-400'
-                      }`}
+                      className={`p-2 rounded-md transition-colors ${viewMode === 'grid' ? 'bg-primary-500 text-white' : 'text-gray-400'
+                        }`}
                     >
                       <FiGrid size={20} />
                     </button>
                     <button
                       onClick={() => setViewMode('list')}
-                      className={`p-2 rounded-md transition-colors ${
-                        viewMode === 'list' ? 'bg-primary-500 text-white' : 'text-gray-400'
-                      }`}
+                      className={`p-2 rounded-md transition-colors ${viewMode === 'list' ? 'bg-primary-500 text-white' : 'text-gray-400'
+                        }`}
                     >
                       <FiList size={20} />
                     </button>
@@ -203,7 +203,7 @@ export default function WatchlistPage() {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 20 }}
                     transition={{ duration: 0.3, delay: index * 0.05 }}
-                    onClick={() => router.push(`/movies/${movie.id}`)}
+                    onClick={() => router.push(movieUrl(movie))}
                     className="flex gap-4 bg-dark-100 rounded-xl p-4 cursor-pointer
                              hover:bg-dark-50 transition-colors group"
                   >
@@ -215,7 +215,7 @@ export default function WatchlistPage() {
                         className="object-cover"
                       />
                     </div>
-                    
+
                     <div className="flex-1 min-w-0">
                       <h3 className="text-lg font-semibold group-hover:text-primary-500 transition-colors">
                         {movie.title}

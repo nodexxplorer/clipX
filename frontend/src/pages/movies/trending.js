@@ -2,8 +2,9 @@
 import { useState } from 'react';
 import { useQuery } from '@apollo/client/react';
 import Head from 'next/head';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { FiTrendingUp } from 'react-icons/fi';
+import { FiTrendingUp, FiChevronLeft } from 'react-icons/fi';
 import MovieCard from '@/components/movies/MovieCard';
 import { LoadingSpinner, EmptyState, MovieCardSkeleton } from '@/components/common/LoadingSpinner';
 import { GET_TRENDING } from '@/graphql/queries/movieQueries';

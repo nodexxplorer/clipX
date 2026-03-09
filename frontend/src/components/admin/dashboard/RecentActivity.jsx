@@ -1,11 +1,19 @@
 // frontend/src/components/admin/dashboard/RecentActivity.jsx
-import { FiUser, FiFilm, FiDownload, FiHeart } from 'react-icons/fi';
+import { FiUser, FiFilm, FiDownload, FiHeart, FiBookmark, FiPlay, FiAward, FiStar, FiFlag, FiBell, FiUserPlus } from 'react-icons/fi';
 
 const iconMap = {
-  user_signup: FiUser,
+  user_signup: FiUserPlus,
   movie_view: FiFilm,
   download: FiDownload,
   watchlist_add: FiHeart,
+  watchlist: FiBookmark,
+  watch: FiPlay,
+  milestone: FiAward,
+  content: FiFilm,
+  review: FiStar,
+  report: FiFlag,
+  system: FiBell,
+  social: FiUser,
 };
 
 export default function RecentActivity({ activities = [] }) {
