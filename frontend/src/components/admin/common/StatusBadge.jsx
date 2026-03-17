@@ -1,42 +1,19 @@
-// frontend/src/components/admin/common/ConfirmModal.jsx
-import { FiAlertTriangle, FiX } from 'react-icons/fi';
+// frontend/src/components/admin/common/StatusBadge.jsx
+const statusConfig = {
+  active: { label: 'Active', bg: 'bg-emerald-500/10', text: 'text-emerald-400', dot: 'bg-emerald-400' },
+  inactive: { label: 'Inactive', bg: 'bg-gray-500/10', text: 'text-gray-400', dot: 'bg-gray-500' },
+  banned: { label: 'Banned', bg: 'bg-red-500/10', text: 'text-red-400', dot: 'bg-red-400' },
+  pending: { label: 'Pending', bg: 'bg-amber-500/10', text: 'text-amber-400', dot: 'bg-amber-400' },
+  resolved: { label: 'Resolved', bg: 'bg-blue-500/10', text: 'text-blue-400', dot: 'bg-blue-400' },
+  reviewed: { label: 'Reviewed', bg: 'bg-purple-500/10', text: 'text-purple-400', dot: 'bg-purple-400' },
+};
 
-export default function ConfirmModal({ 
-  open, title, message, confirmText = 'Confirm', cancelText = 'Cancel',
-  confirmVariant = 'primary', onConfirm, onCancel, loading 
-}) {
-  if (!open) return null;
-
-  const variants = {
-    primary: 'bg-purple-600 hover:bg-purple-700',
-    danger: 'bg-red-600 hover:bg-red-700',
-    warning: 'bg-yellow-600 hover:bg-yellow-700'
-  };
-
+export default function StatusBadge({ status }) {
+  const config = statusConfig[status] || statusConfig.inactive;
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-full ${confirmVariant === 'danger' ? 'bg-red-900' : 'bg-purple-900'}`}>
-              <FiAlertTriangle className={confirmVariant === 'danger' ? 'text-red-400' : 'text-purple-400'} />
-            </div>
-            <h2 className="text-xl font-bold text-white">{title}</h2>
-          </div>
-          <button onClick={onCancel} className="text-gray-400 hover:text-white">
-            <FiX size={20} />
-          </button>
-        </div>
-        <p className="text-gray-300 mb-6">{message}</p>
-        <div className="flex gap-3 justify-end">
-          <button onClick={onCancel} className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg">
-            {cancelText}
-          </button>
-          <button onClick={onConfirm} disabled={loading} className={`px-4 py-2 ${variants[confirmVariant]} text-white rounded-lg disabled:opacity-50`}>
-            {loading ? 'Loading...' : confirmText}
-          </button>
-        </div>
-      </div>
-    </div>
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider ${config.bg} ${config.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${config.dot}`} />
+      {config.label}
+    </span>
   );
 }

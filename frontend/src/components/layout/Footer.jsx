@@ -173,8 +173,7 @@ const Footer = () => {
         <div className="border-t border-white/10 pt-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-gray-400 text-sm flex items-center gap-1">
-              © {new Date().getFullYear()} clipX. Made with
-              <FiHeart className="text-red-500" size={14} />
+              © {new Date().getFullYear()} clipX. 
               All rights reserved.
             </p>
 

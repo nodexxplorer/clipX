@@ -241,6 +241,8 @@ class Review:
     id: strawberry.ID
     content: str
     rating: Optional[float]
+    userName: Optional[str] = None
+    userAvatar: Optional[str] = None
     isFeatured: bool = strawberry.field(name="isFeatured")
     createdAt: str = strawberry.field(name="createdAt")
 
@@ -349,93 +351,75 @@ class Query:
         from app.models.database import (
             User as DbUser, Movie as DbMovie, Series as DbSeries,
             Watchlist as DbWatchlist, History as DbHistory,
-            Notification as DbNotification, Report as DbReport, Review as DbReview
+            Notification as DbNotification, Report as DbReport
         )
         from datetime import timedelta
-        from sqlalchemy import func
+        from sqlalchemy import func, text
 
-        db = await info.context.get_db()
-        now = datetime.utcnow()
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_start = today_start - timedelta(days=7)
+        try:
+            db = await info.context.get_db()
+            now = datetime.utcnow()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            week_start = today_start - timedelta(days=7)
 
-        # --- Core counts ---
-        total_users = (await db.execute(select(func.count(DbUser.id)))).scalar() or 0
-        total_movies = (await db.execute(select(func.count(DbMovie.id)))).scalar() or 0
-        total_series = (await db.execute(select(func.count(DbSeries.id)))).scalar() or 0
+            # Single combined query for all counts — 1 round-trip instead of 8
+            counts_sql = text("""
+                SELECT
+                    (SELECT count(*) FROM users) AS total_users,
+                    (SELECT count(*) FROM movies) AS total_movies,
+                    (SELECT count(*) FROM series) AS total_series,
+                    (SELECT count(*) FROM users WHERE created_at >= :today) AS new_today,
+                    (SELECT count(*) FROM users WHERE created_at >= :week) AS new_week,
+                    (SELECT count(DISTINCT user_id) FROM history WHERE updated_at >= :week) AS active_users,
+                    (SELECT count(*) FROM watchlist) AS total_watchlist,
+                    (SELECT coalesce(avg(current_time), 0) FROM history WHERE current_time > 0) AS avg_duration
+            """)
+            result = await db.execute(counts_sql, {"today": today_start, "week": week_start})
+            row = result.one()
 
-        # --- New users today / this week ---
-        new_today = (await db.execute(
-            select(func.count(DbUser.id)).where(DbUser.created_at >= today_start)
-        )).scalar() or 0
-        new_this_week = (await db.execute(
-            select(func.count(DbUser.id)).where(DbUser.created_at >= week_start)
-        )).scalar() or 0
+            total_users = row.total_users or 0
+            total_movies = (row.total_movies or 0) + (row.total_series or 0)
+            new_today = row.new_today or 0
+            new_this_week = row.new_week or 0
+            active_users = row.active_users or 0
+            total_watchlist = row.total_watchlist or 0
+            avg_secs = int(row.avg_duration or 0)
+            avg_h = avg_secs // 3600
+            avg_m = (avg_secs % 3600) // 60
+            avg_session_str = f"{avg_h}h {avg_m}m" if avg_h > 0 else f"{avg_m}m"
 
-        # --- Active users (users with watch history in last 7 days) ---
-        active_users = (await db.execute(
-            select(func.count(func.distinct(DbHistory.user_id))).where(DbHistory.updated_at >= week_start)
-        )).scalar() or 0
+            # User growth — 1 more query
+            thirty_days_ago = today_start - timedelta(days=30)
+            growth_rows = (await db.execute(
+                select(func.date(DbUser.created_at).label("day"), func.count(DbUser.id).label("cnt"))
+                .where(DbUser.created_at >= thirty_days_ago)
+                .group_by(func.date(DbUser.created_at))
+                .order_by(func.date(DbUser.created_at))
+            )).all()
+            user_growth = [GrowthPoint(date=str(r.day), count=r.cnt) for r in growth_rows]
 
-        # --- Watchlist & downloads ---
-        total_watchlist = (await db.execute(select(func.count(DbWatchlist.id)))).scalar() or 0
+            # Recent activity — 1 more query (notifications only, skip reports for speed)
+            recent_notifs = (await db.execute(
+                select(DbNotification).order_by(DbNotification.created_at.desc()).limit(20)
+            )).scalars().all()
+            activities = [
+                ActivityLog(id=str(n.id), type=n.type or "system",
+                           description=f"{n.title}: {n.message[:80]}", timestamp=str(n.created_at))
+                for n in recent_notifs
+            ]
 
-        # --- Avg session duration from watch history ---
-        avg_duration_result = (await db.execute(
-            select(func.avg(DbHistory.current_time)).where(DbHistory.current_time > 0)
-        )).scalar()
-        avg_secs = int(avg_duration_result or 0)
-        avg_h = avg_secs // 3600
-        avg_m = (avg_secs % 3600) // 60
-        avg_session_str = f"{avg_h}h {avg_m}m" if avg_h > 0 else f"{avg_m}m"
-
-        # --- User growth (last 30 days, grouped by day) ---
-        thirty_days_ago = today_start - timedelta(days=30)
-        growth_rows = (await db.execute(
-            select(
-                func.date(DbUser.created_at).label("day"),
-                func.count(DbUser.id).label("cnt")
+        except Exception as e:
+            print(f"[dashboardStats] Error: {e}")
+            return AdminDashboardStats(
+                totalUsers=0, totalMovies=0, totalGenres=14, activeUsers=0,
+                newUsersToday=0, newUsersThisWeek=0, totalDownloads=0,
+                totalWatchlistItems=0, avgSessionDuration="0m",
+                userGrowth=[], genreDistribution=[], topMovies=[], recentActivity=[]
             )
-            .where(DbUser.created_at >= thirty_days_ago)
-            .group_by(func.date(DbUser.created_at))
-            .order_by(func.date(DbUser.created_at))
-        )).all()
-        user_growth = [GrowthPoint(date=str(row.day), count=row.cnt) for row in growth_rows]
-
-        # --- Recent activity (from notifications + reports, last 20) ---
-        recent_notifs = (await db.execute(
-            select(DbNotification)
-            .order_by(DbNotification.created_at.desc())
-            .limit(15)
-        )).scalars().all()
-        recent_reports = (await db.execute(
-            select(DbReport)
-            .order_by(DbReport.created_at.desc())
-            .limit(5)
-        )).scalars().all()
-
-        activities = []
-        for n in recent_notifs:
-            activities.append(ActivityLog(
-                id=str(n.id),
-                type=n.type or "system",
-                description=f"{n.title}: {n.message[:80]}",
-                timestamp=str(n.created_at)
-            ))
-        for r in recent_reports:
-            activities.append(ActivityLog(
-                id=str(r.id),
-                type="report",
-                description=f"Report ({r.status}): {r.reason}",
-                timestamp=str(r.created_at)
-            ))
-        # Sort by timestamp descending and take top 20
-        activities.sort(key=lambda a: a.timestamp, reverse=True)
-        activities = activities[:20]
 
         return AdminDashboardStats(
             totalUsers=total_users,
-            totalMovies=total_movies + total_series,
+            totalMovies=total_movies,
             totalGenres=14,
             activeUsers=active_users,
             newUsersToday=new_today,
@@ -992,13 +976,21 @@ class Query:
     @strawberry.field
     async def landingReviews(self, info: strawberry.Info) -> List[Review]:
         db = await info.context.get_db()
-        q = await db.execute(select(DbReview).where(DbReview.is_featured == True).order_by(DbReview.created_at.desc()).limit(10))
+        from sqlalchemy.orm import selectinload
+        q = await db.execute(
+            select(DbReview)
+            .options(selectinload(DbReview.user))
+            .order_by(DbReview.created_at.desc())
+            .limit(12)
+        )
         db_items = q.scalars().all()
         return [
             Review(
                 id=str(r.id),
                 content=r.content,
                 rating=r.rating,
+                userName=r.user.name if r.user else "Anonymous",
+                userAvatar=r.user.avatar if r.user else None,
                 isFeatured=r.is_featured,
                 createdAt=str(r.created_at)
             ) for r in db_items
@@ -1085,6 +1077,51 @@ class Query:
         return AdminUsersResponse(users=users, totalCount=total_count)
 
     @strawberry.field
+    async def adminUserDetail(self, info: strawberry.Info, id: strawberry.ID) -> AdminUser:
+        """Get full details of a single user for admin viewing."""
+        user = await info.context.user
+        if not user or user.role != "admin":
+            raise ValueError("Admin access required")
+        from app.models.database import User as DbUser, Watchlist as DbWatchlist
+        from sqlalchemy import func
+        db = await info.context.get_db()
+        result = await db.execute(select(DbUser).where(DbUser.id == id))
+        u = result.scalars().first()
+        if not u:
+            raise ValueError("User not found")
+        wl_count = (await db.execute(select(func.count()).where(DbWatchlist.user_id == u.id))).scalar() or 0
+        return AdminUser(
+            id=str(u.id), email=u.email,
+            username=u.name, firstName=u.name.split(' ')[0] if u.name else '',
+            lastName=' '.join(u.name.split(' ')[1:]) if u.name and ' ' in u.name else '',
+            avatar=u.avatar, isActive=True, isBanned=False,
+            lastActive=str(u.created_at), createdAt=str(u.created_at),
+            watchlistCount=wl_count, downloadCount=0
+        )
+
+    @strawberry.field
+    async def adminNotifications(self, info: strawberry.Info, limit: Optional[int] = 50) -> List[Notification]:
+        """Get all notifications sent by admin (for the notifications management page)."""
+        user = await info.context.user
+        if not user or user.role != "admin":
+            raise ValueError("Admin access required")
+        db = await info.context.get_db()
+        result = await db.execute(
+            select(DbNotification)
+            .order_by(DbNotification.created_at.desc())
+            .limit(limit or 50)
+        )
+        notifs = result.scalars().all()
+        return [
+            Notification(
+                id=str(n.id), title=n.title, message=n.message,
+                type=n.type or "system",
+                actionUrl=n.action_url, isRead=n.is_read,
+                createdAt=str(n.created_at)
+            ) for n in notifs
+        ]
+
+    @strawberry.field
     async def chatMessages(self, info: strawberry.Info, room: Optional[str] = "global", limit: Optional[int] = 50, before: Optional[str] = None) -> List[ChatMessageType]:
         """Fetch recent chat messages for a room."""
         from app.models.database import ChatMessage as DbChatMessage, User as DbUser
@@ -1117,28 +1154,29 @@ class Query:
 class Mutation:
     @strawberry.mutation
     async def login(self, info: strawberry.Info, email: str, password: str) -> AuthResponse:
-        try:
-            db = await info.context.get_db()
-            result = await db.execute(select(DbUser).where(DbUser.email == email))
-            user = result.scalars().first()
-        except Exception as e:
-            print(f"[LOGIN] DB error for {email}: {e}")
-            raise Exception("Login service temporarily unavailable. Please try again.")
+        user = None
+        for attempt in range(2):
+            try:
+                db = await info.context.get_db()
+                result = await db.execute(select(DbUser).where(DbUser.email == email))
+                user = result.scalars().first()
+                break
+            except Exception as e:
+                print(f"[LOGIN] DB error (attempt {attempt+1}): {type(e).__name__}")
+                info.context._db = None
+                if attempt == 1:
+                    raise Exception("Login service temporarily unavailable. Please try again.")
 
         if not user:
-            print(f"[LOGIN] No user found for email: {email}")
             raise Exception("Invalid email or password")
 
         if not user.password:
-            print(f"[LOGIN] User {email} has no password set (OAuth-only account)")
             raise Exception("This account uses Google sign-in. Please log in with Google.")
 
         if not verify_password(password, user.password):
-            print(f"[LOGIN] Wrong password for {email}")
             raise Exception("Invalid email or password")
 
         token = create_access_token({"sub": user.email})
-        print(f"[LOGIN] Success: {email} (role={user.role})")
         return AuthResponse(
             token=token,
             user=create_user_response(user)
@@ -1353,9 +1391,11 @@ class Mutation:
     @strawberry.mutation
     async def submitReport(self, info: strawberry.Info, reason: str, description: str, movieboxId: Optional[str] = None) -> SuccessResponse:
         user = await info.context.user
+        if not user:
+            raise ValueError("You must be logged in to submit a report")
         db = await info.context.get_db()
         r = DbReport(
-            user_id=user.id if user else None,
+            user_id=user.id,
             reason=reason,
             description=description,
             moviebox_id=movieboxId
@@ -1480,5 +1520,102 @@ class Mutation:
             content=msg.content,
             createdAt=str(msg.created_at)
         )
+
+    @strawberry.mutation
+    async def submitReview(self, info: strawberry.Info, content: str, rating: float) -> Review:
+        """Submit a site review (shown on landing page)."""
+        user = await info.context.user
+        if not user:
+            raise ValueError("Must be logged in to submit a review")
+        if not content.strip() or len(content.strip()) < 10:
+            raise ValueError("Review must be at least 10 characters")
+        if rating < 1 or rating > 5:
+            raise ValueError("Rating must be between 1 and 5")
+        
+        db = await info.context.get_db()
+        review = DbReview(
+            user_id=user.id,
+            content=content.strip()[:500],
+            rating=rating,
+            is_featured=False,
+        )
+        db.add(review)
+        await db.commit()
+        await db.refresh(review)
+        return Review(
+            id=str(review.id),
+            content=review.content,
+            rating=review.rating,
+            userName=user.name or "User",
+            userAvatar=user.avatar,
+            isFeatured=False,
+            createdAt=str(review.created_at)
+        )
+
+    @strawberry.mutation
+    async def adminSendNotification(
+        self, info: strawberry.Info, title: str, message: str,
+        userId: Optional[strawberry.ID] = None, notifType: Optional[str] = "system"
+    ) -> SuccessResponse:
+        """Send a notification to a specific user (by userId) or broadcast to all users (userId=None)."""
+        user = await info.context.user
+        if not user or user.role != "admin":
+            raise ValueError("Admin access required")
+        db = await info.context.get_db()
+        if userId:
+            # Send to single user
+            notif = DbNotification(
+                user_id=userId, title=title, message=message,
+                type=notifType or "system"
+            )
+            db.add(notif)
+            await db.commit()
+            return SuccessResponse(success=True, message="Notification sent")
+        else:
+            # Broadcast to all users
+            result = await db.execute(select(DbUser.id))
+            user_ids = [str(row[0]) for row in result.all()]
+            for uid in user_ids:
+                notif = DbNotification(
+                    user_id=uid, title=title, message=message,
+                    type=notifType or "system"
+                )
+                db.add(notif)
+            await db.commit()
+            return SuccessResponse(success=True, message=f"Notification sent to {len(user_ids)} users")
+
+    @strawberry.mutation
+    async def adminUpdateUserRole(self, info: strawberry.Info, id: strawberry.ID, role: str) -> SuccessResponse:
+        """Change a user's role (admin/user)."""
+        user = await info.context.user
+        if not user or user.role != "admin":
+            raise ValueError("Admin access required")
+        if role not in ("admin", "user"):
+            raise ValueError("Invalid role. Must be 'admin' or 'user'")
+        db = await info.context.get_db()
+        result = await db.execute(select(DbUser).where(DbUser.id == id))
+        target = result.scalars().first()
+        if not target:
+            raise ValueError("User not found")
+        target.role = role
+        await db.commit()
+        return SuccessResponse(success=True, message=f"User role updated to {role}")
+
+    @strawberry.mutation
+    async def adminDeleteUser(self, info: strawberry.Info, id: strawberry.ID) -> SuccessResponse:
+        """Permanently delete a user and all their data."""
+        user = await info.context.user
+        if not user or user.role != "admin":
+            raise ValueError("Admin access required")
+        if str(user.id) == str(id):
+            raise ValueError("Cannot delete yourself")
+        db = await info.context.get_db()
+        result = await db.execute(select(DbUser).where(DbUser.id == id))
+        target = result.scalars().first()
+        if not target:
+            raise ValueError("User not found")
+        await db.delete(target)
+        await db.commit()
+        return SuccessResponse(success=True, message="User deleted")
 
 schema = strawberry.Schema(query=Query, mutation=Mutation)

@@ -157,9 +157,9 @@ export default function Header() {
         : 'bg-gradient-to-b from-black/80 via-black/20 to-transparent'
         }`}
     >
-      <div className="container mx-auto px-3">
+      <div className="container mx-auto">
         <div className="flex items-center justify-between h-16 md:h-20">
-          <Link href={homeLink} className="flex items-center  px-4 md:px-8 gap-2 group">
+          <Link href={homeLink} className="flex items-center  px-2 md:px-3 gap-2 group">
             <span className="text-2xl md:text-3xl font-black text-primary-500 uppercase italic tracking-tighter group-hover:scale-110 transition-transform">
               clip<span className="text-white group-hover:text-primary-400 transition-colors text-3xl">X</span>
             </span>

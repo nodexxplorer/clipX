@@ -13,12 +13,22 @@ if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
 else:
     ASYNC_DATABASE_URL = DATABASE_URL
 
-engine = create_async_engine(ASYNC_DATABASE_URL, echo=False, poolclass=NullPool, connect_args={"prepared_statement_cache_size": 0})
+# NullPool + command_timeout: prevents hanging on slow Supabase connections
+engine = create_async_engine(
+    ASYNC_DATABASE_URL,
+    echo=False,
+    poolclass=NullPool,
+    connect_args={
+        "prepared_statement_cache_size": 0,  # Required for Supabase pgBouncer
+        "statement_cache_size": 0,
+        "command_timeout": 15,               # Timeout individual queries after 15s
+    },
+)
 AsyncSessionLocal = sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
 )
 
-# Context manager version for use outside of FastAPI dependency injection (e.g. WebSockets)
+# Context manager version for WebSockets etc.
 async_session = AsyncSessionLocal
 
 async def get_db():

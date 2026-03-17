@@ -17,14 +17,13 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 
 export default function LoginPage() {
   const router = useRouter();
-  const { 
-    login, 
+  const {
+    login,
     handleGoogleAuth,
-    signInWithGoogle,
-    isAuthenticated, 
+    isAuthenticated,
     user,
-    loading, 
-    error, 
+    loading,
+    error,
     clearError
   } = useAuth();
 
@@ -82,12 +81,12 @@ export default function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
 
     setIsSubmitting(true);
     const result = await login(formData.email, formData.password);
-    
+
     if (!result.success) {
       setFormError(result.error);
     }
@@ -109,7 +108,7 @@ export default function LoginPage() {
     }
 
     const result = await handler(credentialResponse.credential);
-    
+
     if (!result.success) {
       setFormError(result.error || 'Google authentication failed');
     }
@@ -139,20 +138,20 @@ export default function LoginPage() {
       <div className="min-h-screen flex bg-gray-900">
         {/* Left Side - Branding */}
         <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
-          <div 
+          <div
             className="absolute inset-0 bg-cover bg-center"
             style={{ backgroundImage: "url('/images/auth-bg.jpg')" }}
           />
           <div className="absolute inset-0 bg-gradient-to-r from-gray-900 via-gray-900/80 to-transparent" />
           <div className="relative z-10 flex flex-col justify-center px-12">
-            <Link href="/" className="text-4xl font-bold text-white mb-4">
+            {/* <Link href="/" className="text-4xl font-bold text-white mb-4">
               🎬 clipX
-            </Link>
+            </Link> */}
             <h1 className="text-3xl font-bold text-white mb-4">
               Welcome Back
             </h1>
             <p className="text-gray-300 text-lg max-w-md">
-              Sign in to access your personalized recommendations, 
+              Sign in to access your personalized recommendations,
               watchlist, and discover your next favorite movie.
             </p>
           </div>
@@ -167,9 +166,9 @@ export default function LoginPage() {
           >
             {/* Mobile Logo */}
             <div className="lg:hidden text-center mb-8">
-              <Link href="/" className="text-3xl font-bold text-white">
+              {/* <Link href="/" className="text-3xl font-bold text-white">
                 🎬 clipX
-              </Link>
+              </Link> */}
             </div>
 
             <div className="bg-gray-800 rounded-2xl p-8 shadow-xl">
@@ -180,7 +179,7 @@ export default function LoginPage() {
                   Sign up
                 </Link>
               </p>
-              
+
               {/* Google Sign In - Using @react-oauth/google */}
               <div className="mb-6 ">
                 <GoogleLogin

@@ -43,10 +43,6 @@ export const GET_HOME_PAGE_DATA = gql`
     popular(limit: $popularLimit) {
       ...MovieWithGenres
     }
-    featured {
-      ...MovieWithGenres
-      tagline
-    }
     genres {
       id
       name

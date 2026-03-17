@@ -190,9 +190,9 @@ export default function RegisterPage() {
           >
             {/* Mobile Logo */}
             <div className="lg:hidden text-center mb-8">
-              <Link href="/" className="text-3xl font-bold text-white">
+              {/* <Link href="/" className="text-3xl font-bold text-white">
                 🎬 clipX
-              </Link>
+              </Link> */}
             </div>
 
             <div className="bg-gray-800 rounded-2xl p-8 shadow-xl">

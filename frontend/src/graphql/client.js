@@ -23,14 +23,23 @@ const authLink = setContext((_, { headers }) => {
   };
 });
 
-// Error handling
-const errorLink = onError(({ graphQLErrors, networkError }) => {
+// Error handling — only logout on REAL auth failures, not other GraphQL errors
+const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
   if (graphQLErrors) {
-    graphQLErrors.forEach(({ message, locations, path }) => {
+    for (const { message, locations, path } of graphQLErrors) {
       if (process.env.NODE_ENV === 'development') {
-        console.error(`[GraphQL error]: Message: ${message}, Location: ${locations}, Path: ${path}`);
+        console.error(`[GraphQL error]: Message: ${message}, Path: ${path}`);
       }
-    });
+      // Only clear auth on explicit token failures — NOT on "Admin access required" etc.
+      const msg = message?.toLowerCase() || '';
+      if (
+        (msg.includes('invalid token') || msg.includes('expired token') || msg.includes('jwt')) &&
+        typeof window !== 'undefined'
+      ) {
+        localStorage.removeItem('token');
+        // Don't redirect — let AuthContext handle it gracefully
+      }
+    }
   }
   if (networkError && process.env.NODE_ENV === 'development') {
     console.error(`[Network error]: ${networkError}`);
@@ -82,4 +91,4 @@ const client = new ApolloClient({
   connectToDevTools: process.env.NODE_ENV === 'development',
 });
 
-export default client;
+export default client;

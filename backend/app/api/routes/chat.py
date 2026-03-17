@@ -116,8 +116,10 @@ async def websocket_chat(websocket: WebSocket):
     name = websocket.query_params.get("name", "Anonymous")
     avatar = websocket.query_params.get("avatar")
 
-    # Try to authenticate via JWT
-    user_info = {"id": str(uuid.uuid4()), "name": name, "avatar": avatar}
+    # Build default user info from query params
+    user_info = {"id": None, "name": name, "avatar": avatar, "authenticated": False}
+
+    # Try to authenticate via JWT (non-blocking — failures just use fallback info)
     if token:
         try:
             from app.core.auth import decode_access_token
@@ -135,10 +137,16 @@ async def websocket_chat(websocket: WebSocket):
                             "id": str(db_user.id),
                             "name": db_user.name or db_user.email.split("@")[0],
                             "avatar": db_user.avatar,
+                            "authenticated": True,
                         }
         except Exception as e:
-            print(f"Chat auth fallback: {e}")
+            print(f"Chat auth fallback: {type(e).__name__}")
 
+    # Give unauthenticated users a display-only ID (not saved to DB)
+    if not user_info["id"]:
+        user_info["id"] = str(uuid.uuid4())
+
+    # Accept and register the connection
     await manager.connect(websocket, room, user_info)
 
     try:
@@ -153,26 +161,27 @@ async def websocket_chat(websocket: WebSocket):
             content = data.get("content", "").strip()
 
             if msg_type == "message" and content:
-                # Persist to DB
+                # Persist to DB only if user is authenticated (has real user_id)
                 msg_id = str(uuid.uuid4())
                 now = str(datetime.utcnow())
 
-                try:
-                    from app.core.database import async_session
-                    from app.models.database import ChatMessage as DbChatMessage
-                    async with async_session() as db:
-                        db_msg = DbChatMessage(
-                            user_id=user_info["id"],
-                            room=room,
-                            content=content[:2000],
-                        )
-                        db.add(db_msg)
-                        await db.commit()
-                        await db.refresh(db_msg)
-                        msg_id = str(db_msg.id)
-                        now = str(db_msg.created_at)
-                except Exception as e:
-                    print(f"Chat persist error: {e}")
+                if user_info.get("authenticated"):
+                    try:
+                        from app.core.database import async_session
+                        from app.models.database import ChatMessage as DbChatMessage
+                        async with async_session() as db:
+                            db_msg = DbChatMessage(
+                                user_id=user_info["id"],
+                                room=room,
+                                content=content[:2000],
+                            )
+                            db.add(db_msg)
+                            await db.commit()
+                            await db.refresh(db_msg)
+                            msg_id = str(db_msg.id)
+                            now = str(db_msg.created_at)
+                    except Exception as e:
+                        print(f"Chat persist error: {type(e).__name__}")
 
                 broadcast_data = {
                     "type": "message",
@@ -202,3 +211,4 @@ async def websocket_chat(websocket: WebSocket):
     except Exception as e:
         print(f"Chat WS error: {e}")
         manager.disconnect(websocket, room)
+

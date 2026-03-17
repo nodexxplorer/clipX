@@ -11,7 +11,7 @@ import { useQuery } from '@apollo/client/react';
 import { motion } from 'framer-motion';
 import {
   FiPlay, FiClock, FiStar,
-  FiFilm, FiBookmark, FiChevronRight
+  FiFilm, FiBookmark, FiChevronRight, FiEye
 } from 'react-icons/fi';
 
 import { useAuth } from '@/contexts/AuthContext';
@@ -146,6 +146,41 @@ export default function DashboardPage() {
         </div>
 
         <MovieRow title="Highly Recommended" movies={popularMovies} />
+
+        {/* Watch History List */}
+        {recentlyViewed.length > 0 && (
+          <div className="px-4 md:px-12 mb-12">
+            <SectionHeader title="Watch History" />
+            <div className="glass-card rounded-2xl border border-white/5 overflow-hidden">
+              {recentlyViewed.map((item, idx) => (
+                <Link key={item.id} href={`/movies/${item.id}`}>
+                  <div className={`flex items-center gap-4 p-4 hover:bg-white/5 transition-colors cursor-pointer group ${idx !== recentlyViewed.length - 1 ? 'border-b border-white/5' : ''}`}>
+                    <span className="text-xs font-bold text-gray-600 w-6 text-center">{idx + 1}</span>
+                    <img
+                      src={item.posterUrl}
+                      alt={item.title}
+                      className="w-12 h-16 rounded-lg object-cover flex-shrink-0 ring-1 ring-white/10 group-hover:ring-primary-500/30 transition-all"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-white font-bold text-sm truncate group-hover:text-primary-400 transition-colors">{item.title}</h4>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {item.rating > 0 && (
+                          <span className="flex items-center gap-1 text-xs text-yellow-400">
+                            <FiStar className="w-3 h-3 fill-current" /> {item.rating.toFixed(1)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest hidden sm:block">Watch Again</span>
+                      <FiPlay className="w-4 h-4 text-gray-500 group-hover:text-primary-400 transition-colors" />
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
 
         {recentlyViewed.length > 0 && (
           <MovieRow title="Recently Viewed" movies={recentlyViewed} />

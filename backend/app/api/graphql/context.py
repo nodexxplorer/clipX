@@ -12,9 +12,19 @@ class Context(BaseContext):
         self._db: Optional[Any] = None
 
     async def get_db(self):
+        """Lazily create a DB session. Caller must call close_db() when done."""
         if not self._db:
             self._db = AsyncSessionLocal()
         return self._db
+
+    async def close_db(self):
+        """Close the DB session if one was opened."""
+        if self._db:
+            try:
+                await self._db.close()
+            except Exception:
+                pass
+            self._db = None
 
     @property
     async def user(self) -> Optional[User]:

@@ -179,7 +179,7 @@ export default function DownloadModal({ isOpen, onClose, movie, season, episode 
                                         {/* Subtitles */}
                                         {downloadData?.subtitles?.length > 0 && (
                                             <div>
-                                                <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Subtitles</h4>
+                                                <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Subtitles — {movie?.title}</h4>
                                                 <div className="flex flex-wrap gap-2">
                                                     {downloadData.subtitles.map((sub, idx) => (
                                                         <a
@@ -188,6 +188,7 @@ export default function DownloadModal({ isOpen, onClose, movie, season, episode 
                                                             target="_blank"
                                                             rel="noreferrer"
                                                             referrerPolicy="no-referrer"
+                                                            download={`${movie?.title || 'subtitle'} - ${sub.lang}.srt`}
                                                             className="px-3 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition-colors border border-gray-700"
                                                         >
                                                             {sub.lang}

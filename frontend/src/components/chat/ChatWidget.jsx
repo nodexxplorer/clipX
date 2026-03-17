@@ -117,7 +117,7 @@ export default function ChatWidget({ room = 'global' }) {
     if (!user) return null;
 
     return (
-        <>
+        <div style={{ position: 'fixed', zIndex: 9999, pointerEvents: 'none' }}>
             {/* Floating Bubble */}
             <AnimatePresence>
                 {!isOpen && (
@@ -128,7 +128,8 @@ export default function ChatWidget({ room = 'global' }) {
                         whileHover={{ scale: 1.1 }}
                         whileTap={{ scale: 0.9 }}
                         onClick={() => setIsOpen(true)}
-                        className="fixed bottom-6 right-6 z-[90] w-14 h-14 bg-gradient-to-br from-primary-500 to-purple-600 rounded-full flex items-center justify-center text-white shadow-2xl shadow-primary-500/30 hover:shadow-primary-500/50 transition-shadow"
+                        className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-br from-primary-500 to-purple-600 rounded-full flex items-center justify-center text-white shadow-2xl shadow-primary-500/30 hover:shadow-primary-500/50 transition-shadow"
+                        style={{ pointerEvents: 'auto' }}
                     >
                         <FiMessageCircle className="w-6 h-6" />
                         {unreadCount > 0 && (
@@ -137,9 +138,7 @@ export default function ChatWidget({ room = 'global' }) {
                             </span>
                         )}
                         {/* Pulse ring when connected */}
-                        {isConnected && (
-                            <span className="absolute inset-0 rounded-full bg-primary-500/30 animate-ping pointer-events-none" style={{ animationDuration: '3s' }} />
-                        )}
+                        {/* Removed animated ping to prevent layout jank */}
                     </motion.button>
                 )}
             </AnimatePresence>
@@ -152,7 +151,8 @@ export default function ChatWidget({ room = 'global' }) {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 100, scale: 0.9 }}
                         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                        className="fixed bottom-6 right-6 z-[91] w-[380px] h-[520px] max-h-[80vh] bg-gray-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden"
+                        className="fixed bottom-6 right-6 w-[380px] h-[520px] max-h-[80vh] bg-gray-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden"
+                        style={{ pointerEvents: 'auto', willChange: 'transform, opacity' }}
                     >
                         {/* Header */}
                         <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between bg-gradient-to-r from-primary-600/20 to-purple-600/20 flex-shrink-0">
@@ -316,6 +316,6 @@ export default function ChatWidget({ room = 'global' }) {
                     </motion.div>
                 )}
             </AnimatePresence>
-        </>
+        </div>
     );
 }

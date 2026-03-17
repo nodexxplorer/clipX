@@ -1,29 +1,6 @@
 // frontend/src/graphql/queries/adminQueries.js
 import { gql } from '@apollo/client';
 
-export const GET_ADMIN_ME = gql`
-  query AdminMe {
-    adminMe {
-      id
-      email
-      firstName
-      lastName
-      fullName
-      role
-      avatar
-      twoFactorEnabled
-      mustChangePassword
-      permissions {
-        movies { read write delete }
-        users { read write delete }
-        analytics { read export }
-        settings { read write delete }
-        moderation { read action }
-      }
-    }
-  }
-`;
-
 export const GET_DASHBOARD_STATS = gql`
   query DashboardStats($dateRange: DateRangeInput) {
     dashboardStats(dateRange: $dateRange) {
@@ -39,7 +16,7 @@ export const GET_DASHBOARD_STATS = gql`
       userGrowth { date count }
       genreDistribution { genre { id name } movieCount viewCount }
       topMovies {
-        movie { id title posterUrl releaseYear }
+        movie { id title posterUrl releaseDate }
         views
         downloads
         watchlistAdds
@@ -50,20 +27,15 @@ export const GET_DASHBOARD_STATS = gql`
 `;
 
 export const GET_ADMIN_MOVIES = gql`
-  query AdminMovies($limit: Int, $offset: Int, $search: String) {
-    adminMovies(limit: $limit, offset: $offset, search: $search) {
-      movies {
-        id
-        title
-        posterUrl
-        releaseYear
-        rating
-        isActive
-        viewCount
-        downloadCount
-        genres { id name }
-      }
-      totalCount
+  query AdminMovies($limit: Int) {
+    trending(limit: $limit) {
+      id
+      title
+      posterUrl
+      year
+      rating
+      downloadCount
+      genres { id name }
     }
   }
 `;
@@ -71,16 +43,13 @@ export const GET_ADMIN_MOVIES = gql`
 export const GET_ADMIN_MOVIE = gql`
   query AdminMovie($id: ID!) {
     movie(id: $id) {
-      id title originalTitle overview tagline
+      id title overview tagline
       posterUrl backdropUrl trailerUrl
-      releaseDate releaseYear runtime
+      releaseDate year runtime
       rating voteCount popularity
-      budget revenue
-      language country status
-      isActive isFeatured
+      status
       genres { id name }
-      cast { id name character profileUrl }
-      createdAt updatedAt
+      cast { id name character profileImage }
     }
   }
 `;
@@ -100,68 +69,39 @@ export const GET_ADMIN_USERS = gql`
   }
 `;
 
-export const GET_ADMIN_USER = gql`
-  query AdminUser($id: ID!) {
-    user(id: $id) {
+export const GET_ADMIN_USER_DETAIL = gql`
+  query AdminUserDetail($id: ID!) {
+    adminUserDetail(id: $id) {
       id email username
-      firstName lastName avatar bio
-      isActive isBanned banReason
+      firstName lastName avatar
+      isActive isBanned
       lastActive createdAt
-      watchlist { id movie { id title posterUrl } }
-      interactions { id type movieId createdAt }
+      watchlistCount downloadCount
     }
   }
 `;
 
-export const GET_ADMIN_LOGS = gql`
-  query AdminLogs($filter: AdminLogFilterInput, $limit: Int, $offset: Int) {
-    adminLogs(filter: $filter, limit: $limit, offset: $offset) {
-      logs {
-        id
-        action
-        resource
-        resourceId
-        description
-        severity
-        ipAddress
-        createdAt
-        admin { id email firstName lastName }
-      }
-      totalCount
-      pageInfo { hasMore total }
+export const GET_ADMIN_NOTIFICATIONS = gql`
+  query AdminNotifications($limit: Int) {
+    adminNotifications(limit: $limit) {
+      id title message type
+      actionUrl isRead createdAt
     }
   }
 `;
 
-export const GET_BANNERS = gql`
-  query Banners($position: String, $isActive: Boolean) {
-    banners(position: $position, isActive: $isActive) {
-      id title subtitle
-      imageUrl linkUrl linkType
-      position priority
-      isActive startDate endDate
-      impressions clicks ctr
-      createdAt
+export const GET_ADMIN_REPORTS = gql`
+  query AdminReports {
+    getReports {
+      id reason description status createdAt
     }
   }
 `;
 
-export const GET_SETTINGS = gql`
-  query Settings($category: String) {
-    settings(category: $category) {
-      id key value category description isPublic updatedAt
+export const GET_GENRES = gql`
+  query Genres {
+    genres {
+      id name slug movieCount
     }
-  }
-`;
-
-export const GET_USER_ANALYTICS = gql`
-  query UserAnalytics($dateRange: DateRangeInput!) {
-    userAnalytics(dateRange: $dateRange)
-  }
-`;
-
-export const GET_MOVIE_ANALYTICS = gql`
-  query MovieAnalytics($dateRange: DateRangeInput!) {
-    movieAnalytics(dateRange: $dateRange)
   }
 `;

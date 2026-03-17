@@ -46,6 +46,7 @@ export const GET_DASHBOARD_DATA = gql`
           id
           title
           backdropUrl
+          posterUrl
           durationMinutes
         }
         currentTime
@@ -55,6 +56,8 @@ export const GET_DASHBOARD_DATA = gql`
         moviesWatched
         totalWatchTime
         monthlyWatchTime
+        watchlistCount
+        reviewsWritten
       }
     }
   }
@@ -99,6 +102,8 @@ export const GET_LANDING_REVIEWS = gql`
       id
       content
       rating
+      userName
+      userAvatar
       isFeatured
       createdAt
     }

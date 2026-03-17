@@ -4,7 +4,11 @@ from typing import List
 class Settings(BaseSettings):
     PROJECT_NAME: str = "ClipX Movie API"
     API_V1_STR: str = "/api"
-    CORS_ORIGINS: List[str] = ["*"]
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+    ]
     
     # Moviebox API config
     MOVIEBOX_HOST: str = "movieboxapp.in"

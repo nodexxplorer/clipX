@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Optional, Any, Union
+from typing import Optional
 from jose import jwt
 from passlib.context import CryptContext
 import os
@@ -7,10 +7,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# JWT Configuration
-SECRET_KEY = os.getenv("JWT_SECRET", "3ba1444ca49c9e03125cc3feacd701fe49a80b5984448a806a0c5a76c699ae221dff1f667844854957663bd8ae985aa2cc9b205b7be4360621e33724a82f8f0d")
+# JWT Configuration — MUST be set in .env, no fallback
+SECRET_KEY = os.getenv("JWT_SECRET")
+if not SECRET_KEY:
+    raise RuntimeError("JWT_SECRET environment variable is not set. Server cannot start without it.")
+
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 

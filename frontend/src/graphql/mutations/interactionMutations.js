@@ -63,11 +63,16 @@ export const DELETE_NOTIFICATION = gql`
   }
 `;
 
-export const ADD_REVIEW = gql`
-  mutation AddReview($content: String!, $rating: Float!, $movieboxId: String, $isFeatured: Boolean) {
-    addReview(content: $content, rating: $rating, movieboxId: $movieboxId, isFeatured: $isFeatured) {
-      success
-      message
+export const SUBMIT_REVIEW = gql`
+  mutation SubmitReview($content: String!, $rating: Float!) {
+    submitReview(content: $content, rating: $rating) {
+      id
+      content
+      rating
+      userName
+      userAvatar
+      isFeatured
+      createdAt
     }
   }
 `;

@@ -12,7 +12,7 @@ import { useQuery } from '@apollo/client/react';
 import { motion, useInView } from 'framer-motion';
 import {
   FiChevronRight, FiPlay, FiZap, FiGlobe, FiShield,
-  FiDownload, FiSmartphone, FiTrendingUp, FiClock, FiHeart
+  FiDownload, FiSmartphone, FiTrendingUp, FiClock, FiHeart, FiStar
 } from 'react-icons/fi';
 
 import MovieHero from '@/components/movies/MovieHero';
@@ -24,6 +24,8 @@ import ErrorMessage from '@/components/common/ErrorMessage';
 
 import { useAuth } from '@/contexts/AuthContext';
 import { GET_HOME_PAGE_DATA, GET_TRENDING_SERIES } from '@/graphql/queries/movieQueries';
+import { GET_LANDING_REVIEWS } from '@/graphql/queries/userQueries';
+import { SUBMIT_REVIEW } from '@/graphql/mutations/interactionMutations';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -174,6 +176,9 @@ export default function Home() {
           <SectionHeader title="Explore Genres" href="/genres" />
           <GenreGrid genres={genres} />
         </section>
+
+        {/* ═══ Reviews Section ═══ */}
+        <ReviewsSection />
 
         {/* ═══ FAQ Section ═══ */}
         <FAQSection />
@@ -408,6 +413,207 @@ function QuickAccessGrid() {
             </motion.div>
           </Link>
         ))}
+      </div>
+    </section>
+  );
+}
+/* ─── Reviews Section ─────────────────────────── */
+function ReviewsSection() {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true, margin: '-80px' });
+  const { user, isAuthenticated } = useAuth();
+  const { data, refetch } = useQuery(GET_LANDING_REVIEWS);
+  const [showForm, setShowForm] = useState(false);
+  const [reviewContent, setReviewContent] = useState('');
+  const [reviewRating, setReviewRating] = useState(5);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+
+  const reviews = data?.landingReviews || [];
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!reviewContent.trim() || reviewContent.trim().length < 10) {
+      setSubmitError('Review must be at least 10 characters');
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      const { default: apolloClient } = await import('@/graphql/client');
+      await apolloClient.mutate({
+        mutation: SUBMIT_REVIEW,
+        variables: { content: reviewContent.trim(), rating: reviewRating },
+      });
+      setReviewContent('');
+      setReviewRating(5);
+      setShowForm(false);
+      setSubmitted(true);
+      refetch();
+    } catch (err) {
+      setSubmitError(err.message || 'Failed to submit review');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const timeAgo = (dateStr) => {
+    if (!dateStr) return '';
+    const diff = Math.max(0, Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000));
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    return new Date(dateStr).toLocaleDateString();
+  };
+
+  return (
+    <section ref={ref} className="px-4 md:px-12 py-20">
+      <motion.div initial={{ opacity: 0, y: 30 }} animate={isInView ? { opacity: 1, y: 0 } : {}} className="text-center mb-12">
+        <h2 className="text-3xl md:text-5xl font-black text-white uppercase italic tracking-tighter mb-4">
+          What Users Say
+        </h2>
+        <p className="text-gray-400 text-lg max-w-xl mx-auto">
+          Hear from our community of movie lovers
+        </p>
+      </motion.div>
+
+      {/* Review Cards */}
+      {reviews.length > 0 ? (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto mb-10">
+          {reviews.slice(0, 6).map((review, i) => (
+            <motion.div
+              key={review.id}
+              initial={{ opacity: 0, y: 30 }}
+              animate={isInView ? { opacity: 1, y: 0 } : {}}
+              transition={{ delay: 0.05 * i }}
+              className="glass-card rounded-2xl p-6 flex flex-col gap-4 hover:scale-[1.02] transition-transform"
+            >
+              <div className="flex items-center gap-3">
+                {review.userAvatar ? (
+                  <img src={review.userAvatar} alt="" className="w-10 h-10 rounded-full object-cover ring-2 ring-white/10" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-purple-500 flex items-center justify-center text-sm font-bold text-white ring-2 ring-white/10">
+                    {(review.userName || 'U').charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-bold text-sm truncate">{review.userName || 'Anonymous'}</p>
+                  <p className="text-[10px] text-gray-500">{timeAgo(review.createdAt)}</p>
+                </div>
+                {review.isFeatured && (
+                  <span className="text-[9px] font-bold text-primary-400 uppercase tracking-widest bg-primary-500/10 px-2 py-0.5 rounded-full">Featured</span>
+                )}
+              </div>
+              {/* Stars */}
+              <div className="flex gap-0.5">
+                {[1, 2, 3, 4, 5].map(star => (
+                  <FiStar
+                    key={star}
+                    className={`w-4 h-4 ${star <= (review.rating || 0) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-700'}`}
+                  />
+                ))}
+              </div>
+              <p className="text-gray-300 text-sm leading-relaxed flex-1">{review.content}</p>
+            </motion.div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-10 mb-10">
+          <p className="text-gray-500">No reviews yet — be the first to share your thoughts!</p>
+        </div>
+      )}
+
+      {/* Write Review */}
+      <div className="max-w-2xl mx-auto">
+        {submitted && !showForm && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center py-4 mb-4 bg-green-500/10 border border-green-500/20 rounded-xl"
+          >
+            <p className="text-green-400 font-bold text-sm">✓ Thank you for your review!</p>
+          </motion.div>
+        )}
+
+        {isAuthenticated ? (
+          showForm ? (
+            <motion.form
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              onSubmit={handleSubmit}
+              className="glass-card rounded-2xl p-6 space-y-4"
+            >
+              <h3 className="text-white font-bold text-lg">Write a Review</h3>
+              {/* Star rating picker */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400 mr-2">Rating:</span>
+                {[1, 2, 3, 4, 5].map(star => (
+                  <button
+                    key={star}
+                    type="button"
+                    onMouseEnter={() => setHoverRating(star)}
+                    onMouseLeave={() => setHoverRating(0)}
+                    onClick={() => setReviewRating(star)}
+                    className="focus:outline-none transition-transform hover:scale-125"
+                  >
+                    <FiStar
+                      className={`w-6 h-6 ${star <= (hoverRating || reviewRating) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-600'} transition-colors`}
+                    />
+                  </button>
+                ))}
+                <span className="text-sm text-gray-500 ml-2">{reviewRating}/5</span>
+              </div>
+              <textarea
+                value={reviewContent}
+                onChange={(e) => setReviewContent(e.target.value)}
+                placeholder="Share your experience with clipX..."
+                maxLength={500}
+                rows={4}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder-gray-500 outline-none focus:border-primary-500/50 resize-none"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-gray-500">{reviewContent.length}/500</span>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowForm(false)}
+                    className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+                  >Cancel</button>
+                  <button
+                    type="submit"
+                    disabled={submitting || reviewContent.trim().length < 10}
+                    className="px-6 py-2 bg-primary-600 hover:bg-primary-500 disabled:bg-gray-700 disabled:text-gray-500 text-white text-sm font-bold rounded-xl transition-colors"
+                  >
+                    {submitting ? 'Submitting...' : 'Submit Review'}
+                  </button>
+                </div>
+              </div>
+              {submitError && <p className="text-red-400 text-sm">{submitError}</p>}
+            </motion.form>
+          ) : (
+            <div className="text-center">
+              <button
+                onClick={() => { setShowForm(true); setSubmitted(false); }}
+                className="px-8 py-3 bg-gradient-to-r from-primary-600 to-purple-600 text-white font-bold rounded-xl hover:scale-105 transition-transform shadow-lg shadow-primary-500/20"
+              >
+                <FiStar className="inline w-4 h-4 mr-2 -mt-0.5" />
+                Write a Review
+              </button>
+            </div>
+          )
+        ) : (
+          <div className="text-center">
+            <Link
+              href="/auth/login"
+              className="px-8 py-3 bg-gradient-to-r from-primary-600 to-purple-600 text-white font-bold rounded-xl hover:scale-105 transition-transform shadow-lg shadow-primary-500/20 inline-block"
+            >
+              Log in to Write a Review
+            </Link>
+          </div>
+        )}
       </div>
     </section>
   );

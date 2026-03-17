@@ -15,7 +15,7 @@ class User(Base):
     avatar = Column(String(500))
     role = Column(String(50), default="user")
     bio = Column(Text)
-    preferences = Column(JSON, default={})
+    preferences = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     watchlist = relationship("Watchlist", back_populates="user")
@@ -90,7 +90,7 @@ class Notification(Base):
     message = Column(Text, nullable=False)
     type = Column(String(50), default="system")  # watchlist, watch, milestone, content, review, report, system, social
     action_url = Column(String(500), nullable=True)  # Deep link URL
-    extra_data = Column(JSON, default={})  # Extra context (movie poster, etc.)
+    extra_data = Column(JSON, default=dict)  # Extra context (movie poster, etc.)
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     

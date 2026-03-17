@@ -35,7 +35,7 @@ const Layout = ({ children }) => {
       {/* Footer - hide on watch page */}
       {!isWatchPage && <Footer />}
 
-      {/* Real-time Chat Widget */}
+      {/* Chat Widget */}
       {!isWatchPage && <ChatWidget room="global" />}
     </div>
   );

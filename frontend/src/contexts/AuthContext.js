@@ -33,6 +33,11 @@ export function AuthProvider({ children }) {
 	// Fetch current user on mount (client-side only)
 	const refetchUser = async () => {
 		try {
+			const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+			if (!token) {
+				setLoading(false);
+				return;
+			}
 			const { data } = await client.query({
 				query: GET_CURRENT_USER,
 				fetchPolicy: 'network-only', // always fresh — user data must be accurate
@@ -44,6 +49,11 @@ export function AuthProvider({ children }) {
 				}
 			}
 		} catch (err) {
+			// Only clear user if it's an auth error (401/403), not a network error
+			if (err?.graphQLErrors?.some(e => e.message?.toLowerCase().includes('unauthorized') || e.message?.toLowerCase().includes('not authenticated'))) {
+				setUser(null);
+				localStorage.removeItem('token');
+			}
 			if (process.env.NODE_ENV === 'development') console.error('Error fetching user:', err);
 		} finally {
 			setLoading(false);
@@ -301,6 +311,7 @@ export function AuthProvider({ children }) {
 		completeOnboarding,
 		updateProfile,
 		logout,
+		refetchUser,
 		clearError: () => setError(null)
 	};
 
