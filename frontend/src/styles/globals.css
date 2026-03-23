@@ -133,6 +133,13 @@
 	animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* Shimmer animation for loading skeletons */
+@keyframes shimmer {
+	100% {
+		transform: translateX(100%);
+	}
+}
+
 /* Button Hover Effects & Gradients */
 .btn-primary {
 	background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);

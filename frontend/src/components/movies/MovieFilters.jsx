@@ -16,7 +16,7 @@ const MovieFilters = ({ onFilterChange, initialFilters = {} }) => {
 
   const { data: genresData } = useQuery(GET_ALL_GENRES);
 
-  const types = ['All', 'TV', 'Kids'];
+  const types = ['All', 'Movie', 'Series', 'Anime', 'TV', 'Kids'];
   const countries = ['All', 'United States', 'United Kingdom', 'Korea', 'Japan', 'Hollywood', 'Nollywood', 'Bollywood', 'China', 'France'];
 
   const currentYear = new Date().getFullYear();

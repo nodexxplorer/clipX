@@ -28,14 +28,6 @@ export const ADD_TO_WATCHLIST = gql`
     addToWatchlist(movieId: $movieId) {
       success
       message
-      watchlist {
-        id
-        movies {
-          id
-          title
-          posterUrl
-        }
-      }
     }
   }
 `;

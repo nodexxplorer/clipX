@@ -19,22 +19,8 @@ export {
 
 // User Queries
 export {
-  GET_USER_PREFERENCES,
-  GET_WATCH_HISTORY,
   GET_WATCHLIST,
-} from './genreQueries';
-
-// Cast Queries
-export {
-  GET_CAST_MEMBER,
-  SEARCH_CAST,
-} from './genreQueries';
-
-// Stats Queries
-export {
-  GET_SITE_STATS,
-  GET_MOVIE_STATS,
-} from './genreQueries';
+} from './userQueries';
 
 // Recommendation Queries
 export {

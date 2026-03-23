@@ -1,18 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/router';
-import { FiPlay, FiHeart, FiStar, FiFilm, FiDownload } from 'react-icons/fi';
+import { FiPlay, FiHeart, FiStar, FiFilm, FiDownload, FiCheck } from 'react-icons/fi';
 import Image from 'next/image';
-
-const getSlug = (text) => text ? text.toString().toLowerCase().replace(/\s+/g, '-').replace(/[^\w\-]+/g, '').replace(/\-\-+/g, '-').replace(/^-+/, '').replace(/-+$/, '') : '';
-
-/**
- * Stores slug→id mapping in sessionStorage so [id].js can resolve
- * a clean slug URL back to the real API id on page load / refresh.
- */
-const storeSlugMapping = (slug, id) => {
-  try { sessionStorage.setItem('clipx_s_' + slug, String(id)); } catch { }
-};
+import { toSlug, storeSlugMapping } from '@/utils/slug';
 
 const MovieCard = ({ movie, size = 'md', showWatchlistButton = false, isSeries = false, isAnime = false }) => {
   const router = useRouter();
@@ -23,7 +14,32 @@ const MovieCard = ({ movie, size = 'md', showWatchlistButton = false, isSeries =
 
   const sizeClasses = { sm: 'aspect-[2/3]', md: 'aspect-[2/3]', lg: 'aspect-[2/3]' };
 
-  const slug = getSlug(movie.title);
+  const slug = toSlug(movie.title, movie.id);
+
+  // Watchlist state backed by localStorage
+  const [isInWatchlist, setIsInWatchlist] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('watchlist');
+      const list = raw ? JSON.parse(raw) : [];
+      setIsInWatchlist(list.includes(String(movie.id)));
+    } catch { }
+
+    const handleUpdate = () => {
+      try {
+        const raw = localStorage.getItem('watchlist');
+        const list = raw ? JSON.parse(raw) : [];
+        setIsInWatchlist(list.includes(String(movie.id)));
+      } catch { }
+    };
+    window.addEventListener('watchlist_updated', handleUpdate);
+    window.addEventListener('storage', handleUpdate);
+    return () => {
+      window.removeEventListener('watchlist_updated', handleUpdate);
+      window.removeEventListener('storage', handleUpdate);
+    };
+  }, [movie.id]);
 
   const handleCardClick = () => {
     storeSlugMapping(slug, movie.id);
@@ -44,13 +60,28 @@ const MovieCard = ({ movie, size = 'md', showWatchlistButton = false, isSeries =
 
   const handleAddToWatchlist = (e) => {
     e.stopPropagation();
-    // TODO: wire to Apollo mutation
+    try {
+      const raw = localStorage.getItem('watchlist');
+      const list = raw ? JSON.parse(raw) : [];
+      const mid = String(movie.id);
+      let updated;
+      if (list.includes(mid)) {
+        updated = list.filter(id => id !== mid);
+      } else {
+        updated = [...list, mid];
+      }
+      localStorage.setItem('watchlist', JSON.stringify(updated));
+      window.dispatchEvent(new Event('watchlist_updated'));
+      setIsInWatchlist(updated.includes(mid));
+    } catch { }
   };
 
   const [imgError, setImgError] = useState(false);
 
   // ── Determine media type badge ─────────────────
+  // Series classification: anything with episodes/seasons = series
   const getMediaLabel = () => {
+    if (movie.seasons?.length > 0) return 'Series';
     if (movie.type) {
       const t = movie.type.toLowerCase();
       if (t === 'tv' || t === 'series') return 'Series';
@@ -132,9 +163,10 @@ const MovieCard = ({ movie, size = 'md', showWatchlistButton = false, isSeries =
             </button>
             <button
               onClick={handleAddToWatchlist}
-              className="w-8 h-8 bg-white/20 backdrop-blur-md rounded flex items-center justify-center text-white hover:bg-white/40 transition-colors"
+              className={`w-8 h-8 backdrop-blur-md rounded flex items-center justify-center text-white transition-colors ${isInWatchlist ? 'bg-primary-500/80 hover:bg-primary-400' : 'bg-white/20 hover:bg-white/40'
+                }`}
             >
-              <FiHeart size={13} />
+              {isInWatchlist ? <FiCheck size={13} /> : <FiHeart size={13} />}
             </button>
           </div>
         </div>

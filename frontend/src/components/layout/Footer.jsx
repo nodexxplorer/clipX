@@ -35,7 +35,18 @@ const Footer = () => {
   const handleSubscribe = (e) => {
     e.preventDefault();
     if (email) {
-      // Handle subscription logic (TODO: send to backend)
+      // Save subscription locally (persists across sessions)
+      try {
+        const subs = JSON.parse(localStorage.getItem('clipx_newsletter') || '[]');
+        if (subs.includes(email.toLowerCase())) {
+          setSubscribed(true);
+          setEmail('');
+          setTimeout(() => setSubscribed(false), 3000);
+          return;
+        }
+        subs.push(email.toLowerCase());
+        localStorage.setItem('clipx_newsletter', JSON.stringify(subs));
+      } catch { }
       setSubscribed(true);
       setEmail('');
       setTimeout(() => setSubscribed(false), 3000);
@@ -173,7 +184,7 @@ const Footer = () => {
         <div className="border-t border-white/10 pt-8">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-gray-400 text-sm flex items-center gap-1">
-              © {new Date().getFullYear()} clipX. 
+              © {new Date().getFullYear()} clipX.
               All rights reserved.
             </p>
 
@@ -187,9 +198,9 @@ const Footer = () => {
               <Link href="/cookies" className="text-gray-400 hover:text-primary-500 transition-colors">
                 Cookie Policy
               </Link>
-              <Link href="/dmca" className="text-gray-400 hover:text-primary-500 transition-colors">
+              {/* <Link href="/dmca" className="text-gray-400 hover:text-primary-500 transition-colors">
                 DMCA
-              </Link>
+              </Link> */}
             </div>
           </div>
         </div>

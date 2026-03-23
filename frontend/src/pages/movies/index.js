@@ -1,75 +1,121 @@
 // src/pages/movies/index.js
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery } from '@apollo/client/react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { FiChevronLeft } from 'react-icons/fi';
+import { FiChevronLeft, FiLoader } from 'react-icons/fi';
 import MovieCard from '@/components/movies/MovieCard';
 import MovieFilters from '@/components/movies/MovieFilters';
-import Pagination from '@/components/common/Pagination';
-import { LoadingSpinner, ErrorMessage, EmptyState, MovieCardSkeleton } from '@/components/common/LoadingSpinner';
+import { ErrorMessage, EmptyState, MovieCardSkeleton } from '@/components/common/LoadingSpinner';
 import { gql } from '@apollo/client';
 
 const GET_MOVIES = gql`
-  query GetMovies($filter: MovieFilter, $sort: String, $limit: Int, $offset: Int) {
-    movies(filter: $filter, sort: $sort, limit: $limit, offset: $offset) {
-      movies {
-        id
-        title
-        description
-        year
-        durationMinutes
-        rating
-        posterUrl
-        genres {
-          id
-          name
-          slug
-        }
-      }
-      total
-      hasMore
-    }
+  query GetMovies($filter: JSON, $sort: String, $limit: Int, $offset: Int) {
+    movies(filter: $filter, sort: $sort, limit: $limit, offset: $offset)
   }
 `;
 
 const MOVIES_PER_PAGE = 20;
 
 export default function MoviesPage() {
-  const [currentPage, setCurrentPage] = useState(1);
   const [filters, setFilters] = useState({
+    type: 'All',
     genre: 'All',
-    year: 'All',
     country: 'All',
+    year: 'All',
+    dub: 'All',
     sort: 'Hottest',
   });
 
+  // Accumulated movies list for infinite scroll
+  const [allMovies, setAllMovies] = useState([]);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const loaderRef = useRef(null);
+
+  // Build the filter object
+  const buildFilter = () => {
+    const f = {};
+    if (filters.type && filters.type !== 'All') f.type = filters.type;
+    if (filters.genre && filters.genre !== 'All') f.genre = filters.genre;
+    if (filters.country && filters.country !== 'All') f.country = filters.country;
+    if (filters.year && filters.year !== 'All') f.year = filters.year;
+    return Object.keys(f).length > 0 ? f : null;
+  };
+
+  const sortMap = {
+    Hottest: 'popular',
+    Latest: 'latest',
+    Rating: 'rating',
+    Popular: 'popular',
+    ForYou: 'popular',
+  };
+
   const { loading, error, data, refetch } = useQuery(GET_MOVIES, {
     variables: {
-      filter: {
-        genre: filters.genre && filters.genre !== 'All' ? filters.genre : undefined,
-        year: filters.year && filters.year !== 'All' ? parseInt(filters.year) : undefined,
-      },
-      sort: filters.sort !== 'Hottest' ? filters.sort : 'popular',
+      filter: buildFilter(),
+      sort: sortMap[filters.sort] || 'popular',
       limit: MOVIES_PER_PAGE,
-      offset: (currentPage - 1) * MOVIES_PER_PAGE,
+      offset,
     },
+    notifyOnNetworkStatusChange: true,
   });
 
+  // When fresh data arrives, append or replace
+  useEffect(() => {
+    if (data?.movies?.movies) {
+      const newMovies = data.movies.movies;
+      if (offset === 0) {
+        setAllMovies(newMovies);
+      } else {
+        setAllMovies(prev => {
+          // Deduplicate by ID
+          const existingIds = new Set(prev.map(m => m.id));
+          const unique = newMovies.filter(m => !existingIds.has(m.id));
+          return [...prev, ...unique];
+        });
+      }
+      setHasMore(data.movies.hasMore || newMovies.length >= MOVIES_PER_PAGE);
+      setIsLoadingMore(false);
+    }
+  }, [data, offset]);
+
+  // Reset when filters change
   const handleFilterChange = (newFilters) => {
     setFilters(newFilters);
-    setCurrentPage(1); // Reset to first page when filters change
+    setOffset(0);
+    setAllMovies([]);
+    setHasMore(true);
   };
 
-  const handlePageChange = (page) => {
-    setCurrentPage(page);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
+  // Infinite scroll with IntersectionObserver
+  const loadMore = useCallback(() => {
+    if (!loading && hasMore && !isLoadingMore) {
+      setIsLoadingMore(true);
+      setOffset(prev => prev + MOVIES_PER_PAGE);
+    }
+  }, [loading, hasMore, isLoadingMore]);
 
-  const totalPages = data?.movies?.total
-    ? Math.ceil(data.movies.total / MOVIES_PER_PAGE)
-    : 1;
+  useEffect(() => {
+    const node = loaderRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1, rootMargin: '200px' }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [loadMore]);
+
+  const isInitialLoad = loading && allMovies.length === 0;
 
   return (
     <>
@@ -99,7 +145,7 @@ export default function MoviesPage() {
               Browse Movies
             </h1>
             <p className="text-gray-400 max-w-2xl leading-relaxed">
-              Discover your next favorite movie from our curated collection of {data?.movies?.total || 'thousands of'} cinematic masterpieces.
+              Discover your next favorite movie from our curated collection of cinematic masterpieces.
             </p>
           </motion.div>
 
@@ -110,8 +156,8 @@ export default function MoviesPage() {
           />
 
           {/* Movies Grid */}
-          {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+          {isInitialLoad ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
               {[...Array(MOVIES_PER_PAGE)].map((_, i) => (
                 <MovieCardSkeleton key={i} />
               ))}
@@ -119,34 +165,43 @@ export default function MoviesPage() {
           ) : error ? (
             <ErrorMessage
               message="Failed to load movies. Please try again."
-              retry={() => refetch()}
+              retry={() => { setOffset(0); refetch(); }}
             />
-          ) : data?.movies?.movies?.length > 0 ? (
+          ) : allMovies.length > 0 ? (
             <>
               <motion.div
-                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6"
+                className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.5 }}
               >
-                {data.movies.movies.map((movie, index) => (
+                {allMovies.map((movie, index) => (
                   <motion.div
                     key={movie.id}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: index * 0.05 }}
+                    transition={{ duration: 0.3, delay: Math.min(index * 0.02, 0.4) }}
                   >
                     <MovieCard movie={movie} />
                   </motion.div>
                 ))}
               </motion.div>
 
-              {/* Pagination */}
-              <Pagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={handlePageChange}
-              />
+              {/* Infinite Scroll Trigger */}
+              {hasMore && (
+                <div ref={loaderRef} className="flex justify-center py-12">
+                  <div className="flex items-center gap-3 text-gray-500">
+                    <FiLoader className="w-5 h-5 animate-spin" />
+                    <span className="text-sm font-medium">Loading more movies...</span>
+                  </div>
+                </div>
+              )}
+
+              {!hasMore && allMovies.length > 0 && (
+                <div className="text-center py-12">
+                  <p className="text-gray-600 text-sm">You've reached the end — {allMovies.length} movies loaded</p>
+                </div>
+              )}
             </>
           ) : (
             <EmptyState
@@ -154,7 +209,7 @@ export default function MoviesPage() {
               message="Try adjusting your filters to see more results"
               action={
                 <button
-                  onClick={() => handleFilterChange({ genre: 'All', year: 'All', country: 'All', sort: 'Hottest' })}
+                  onClick={() => handleFilterChange({ type: 'All', genre: 'All', country: 'All', year: 'All', dub: 'All', sort: 'Hottest' })}
                   className="btn-primary"
                 >
                   Clear Filters

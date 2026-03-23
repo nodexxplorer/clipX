@@ -11,7 +11,7 @@ import { useQuery } from '@apollo/client/react';
 import { motion } from 'framer-motion';
 import {
   FiPlay, FiClock, FiStar,
-  FiFilm, FiBookmark, FiChevronRight, FiEye
+  FiFilm, FiBookmark, FiChevronRight, FiEye, FiCpu
 } from 'react-icons/fi';
 
 import { useAuth } from '@/contexts/AuthContext';
@@ -143,6 +143,36 @@ export default function DashboardPage() {
             <StatCard icon={FiBookmark} label="In Watchlist" value={stats?.watchlistCount || 0} color="yellow" />
             <StatCard icon={FiStar} label="Reviews Written" value={stats?.reviewsWritten || 0} color="green" />
           </div>
+        </div>
+
+        {/* AI Assistant Card */}
+        <div className="px-4 md:px-12 mb-12">
+          <Link href="/ai-assistant">
+            <motion.div
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600/20 via-purple-600/20 to-pink-600/20 border border-white/10 p-6 md:p-8 cursor-pointer group hover:border-primary-500/30 transition-all"
+            >
+              {/* Glow effect */}
+              <div className="absolute -top-20 -right-20 w-60 h-60 bg-purple-500/10 rounded-full blur-3xl group-hover:bg-purple-500/20 transition-all" />
+              <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl group-hover:bg-blue-500/20 transition-all" />
+
+              <div className="relative flex items-center gap-4 md:gap-6">
+                <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/30 flex-shrink-0">
+                  <FiCpu className="w-7 h-7 md:w-8 md:h-8 text-white" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg md:text-xl font-bold text-white mb-1">
+                    Ask ClipX AI
+                  </h3>
+                  <p className="text-sm text-gray-400">
+                    Get personalized movie recommendations powered by Gemini AI — find your next favorite film in seconds.
+                  </p>
+                </div>
+                <FiChevronRight className="w-6 h-6 text-gray-500 group-hover:text-primary-400 group-hover:translate-x-1 transition-all flex-shrink-0" />
+              </div>
+            </motion.div>
+          </Link>
         </div>
 
         <MovieRow title="Highly Recommended" movies={popularMovies} />

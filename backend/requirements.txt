@@ -15,3 +15,6 @@ passlib[bcrypt]
 python-jose[cryptography]
 python-multipart
 google-auth
+google-generativeai
+argon2-cffi
+certifi

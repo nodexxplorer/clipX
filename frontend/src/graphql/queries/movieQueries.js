@@ -176,9 +176,12 @@ export const GET_SIMILAR_MOVIES = gql`
       id
       title
       posterPath
+      posterUrl
       backdropPath
       releaseDate
       voteAverage
+      rating
+      year
       genres {
         id
         name

@@ -74,12 +74,32 @@ export default function AnimeDetailPage() {
             router.push(`/auth/login?redirect=/anime/${id}`);
             return;
         }
-        if (isInWatchlist) {
-            await removeFromWatchlist({ variables: { movieId: id } });
-            setIsInWatchlist(false);
-        } else {
-            await addToWatchlist({ variables: { movieId: id } });
-            setIsInWatchlist(true);
+        try {
+            if (isInWatchlist) {
+                await removeFromWatchlist({ variables: { movieId: id } });
+                setIsInWatchlist(false);
+                try {
+                    const raw = localStorage.getItem('watchlist');
+                    const list = raw ? JSON.parse(raw) : [];
+                    const updated = list.filter(mid => mid !== id);
+                    localStorage.setItem('watchlist', JSON.stringify(updated));
+                    window.dispatchEvent(new Event('watchlist_updated'));
+                } catch { }
+            } else {
+                await addToWatchlist({ variables: { movieId: id } });
+                setIsInWatchlist(true);
+                try {
+                    const raw = localStorage.getItem('watchlist');
+                    const list = raw ? JSON.parse(raw) : [];
+                    if (!list.includes(id)) {
+                        list.push(id);
+                        localStorage.setItem('watchlist', JSON.stringify(list));
+                        window.dispatchEvent(new Event('watchlist_updated'));
+                    }
+                } catch { }
+            }
+        } catch (err) {
+            console.error('Watchlist toggle error:', err);
         }
     };
 

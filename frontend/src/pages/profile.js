@@ -1,8 +1,3 @@
-/**
- * Profile Page
- * User profile with settings, preferences, and account management
- */
-
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
@@ -11,10 +6,21 @@ import {
   FiUser, FiMail, FiCamera, FiEdit2, FiSave, FiLock,
   FiTrash2, FiBell, FiMonitor, FiLogOut, FiCheck, FiX
 } from 'react-icons/fi';
+import { useMutation } from '@apollo/client/react';
+import { gql } from '@apollo/client';
 import { useAuth } from '@/contexts/AuthContext';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
 import { useTheme } from '@/contexts/ThemeContext';
+
+const DELETE_ACCOUNT_MUTATION = gql`
+  mutation DeleteAccount($password: String) {
+    deleteAccount(password: $password) {
+      success
+      message
+    }
+  }
+`;
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -25,6 +31,9 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
   // Form state - Initialize from user
@@ -652,33 +661,103 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        {/* Referral Link Section */}
+        <div className="max-w-4xl mx-auto mt-8 px-4 sm:px-6">
+          <div className="bg-gradient-to-br from-primary-600/10 to-purple-600/10 border border-primary-500/20 rounded-2xl p-6 sm:p-8">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-white mb-1">🎁 Invite Friends</h3>
+                <p className="text-sm text-gray-400 leading-relaxed">
+                  Share your referral link with friends. When they sign up, both of you benefit!
+                </p>
+              </div>
+              <div className="w-full sm:w-auto">
+                <div className="flex items-center gap-2 bg-black/30 rounded-xl px-4 py-2.5 border border-white/10">
+                  <code className="text-primary-400 font-mono text-sm tracking-wider flex-1">
+                    {user?.id ? String(user.id).replace(/-/g, '').slice(0, 8).toUpperCase() : '--------'}
+                  </code>
+                  <button
+                    onClick={() => {
+                      const code = String(user?.id || '').replace(/-/g, '').slice(0, 8).toUpperCase();
+                      const url = `${window.location.origin}/auth/register?ref=${code}`;
+                      navigator.clipboard.writeText(url).then(() => {
+                        setMessage({ type: 'success', text: 'Referral link copied!' });
+                        setTimeout(() => setMessage({ type: '', text: '' }), 3000);
+                      });
+                    }}
+                    className="px-3 py-1.5 bg-primary-600 text-white text-xs font-bold rounded-lg hover:bg-primary-500 transition-colors whitespace-nowrap"
+                  >
+                    Copy Link
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Delete Confirmation Modal */}
         {showDeleteModal && (
-          <Modal isOpen={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
+          <Modal isOpen={showDeleteModal} onClose={() => { setShowDeleteModal(false); setDeleteError(''); setDeletePassword(''); }}>
             <div className="text-center">
               <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
                 <FiTrash2 className="w-8 h-8 text-red-400" />
               </div>
               <h3 className="text-xl font-bold text-white mb-2">Delete Account?</h3>
-              <p className="text-gray-400 mb-6">
+              <p className="text-gray-400 mb-4">
                 This action cannot be undone. All your data will be permanently deleted.
               </p>
+
+              {/* Password input for email accounts */}
+              {user?.email && (
+                <div className="mb-4">
+                  <input
+                    type="password"
+                    value={deletePassword}
+                    onChange={(e) => setDeletePassword(e.target.value)}
+                    placeholder="Enter your password to confirm"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white placeholder-gray-500 outline-none focus:border-red-500/50 text-sm"
+                  />
+                </div>
+              )}
+
+              {deleteError && (
+                <p className="text-red-400 text-sm mb-4">{deleteError}</p>
+              )}
+
               <div className="flex gap-3 justify-center">
                 <button
-                  onClick={() => setShowDeleteModal(false)}
+                  onClick={() => { setShowDeleteModal(false); setDeleteError(''); setDeletePassword(''); }}
                   className="px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
-                    // TODO: Implement account deletion
-                    console.log('Delete account');
-                    setShowDeleteModal(false);
+                  onClick={async () => {
+                    setIsDeleting(true);
+                    setDeleteError('');
+                    try {
+                      const { data } = await (await import('@/graphql/client')).default.mutate({
+                        mutation: DELETE_ACCOUNT_MUTATION,
+                        variables: { password: deletePassword || null }
+                      });
+                      if (data?.deleteAccount?.success) {
+                        localStorage.clear();
+                        setShowDeleteModal(false);
+                        await logout();
+                      } else {
+                        setDeleteError(data?.deleteAccount?.message || 'Failed to delete account');
+                      }
+                    } catch (err) {
+                      const msg = err.graphQLErrors?.[0]?.message || err.message || 'Failed to delete account';
+                      setDeleteError(msg);
+                    } finally {
+                      setIsDeleting(false);
+                    }
                   }}
-                  className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  disabled={isDeleting}
+                  className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-bold"
                 >
-                  Delete Account
+                  {isDeleting ? 'Deleting...' : 'Delete Account'}
                 </button>
               </div>
             </div>

@@ -4,7 +4,7 @@ import Head from 'next/head';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     FiSend, FiUsers, FiMessageCircle, FiHash, FiChevronDown,
-    FiSmile, FiImage, FiMoreVertical
+    FiSmile, FiImage, FiMoreVertical, FiCpu
 } from 'react-icons/fi';
 import { useChat } from '@/hooks/useChat';
 import { useAuth } from '@/contexts/AuthContext';
@@ -110,8 +110,8 @@ export default function ChatPage() {
                                 key={room.id}
                                 onClick={() => setActiveRoom(room.id)}
                                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${activeRoom === room.id
-                                        ? 'bg-primary-500/10 text-primary-400 border border-primary-500/20'
-                                        : 'text-gray-400 hover:bg-white/5 hover:text-white border border-transparent'
+                                    ? 'bg-primary-500/10 text-primary-400 border border-primary-500/20'
+                                    : 'text-gray-400 hover:bg-white/5 hover:text-white border border-transparent'
                                     }`}
                             >
                                 <room.icon className="w-4 h-4 flex-shrink-0" />
@@ -242,8 +242,8 @@ export default function ChatPage() {
                                         )}
                                         <div
                                             className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed break-words ${isMe
-                                                    ? 'bg-primary-600 text-white rounded-br-md'
-                                                    : 'bg-white/[0.06] text-gray-200 rounded-bl-md border border-white/5'
+                                                ? 'bg-primary-600 text-white rounded-br-md'
+                                                : 'bg-white/[0.06] text-gray-200 rounded-bl-md border border-white/5'
                                                 }`}
                                         >
                                             {msg.content}
@@ -310,6 +310,25 @@ export default function ChatPage() {
                     </form>
                 </div>
             </div>
+            {/* Floating AI Assistant Button */}
+            <motion.button
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ delay: 0.5, type: 'spring', stiffness: 200 }}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => router.push('/ai-assistant')}
+                className="fixed bottom-24 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-2xl shadow-purple-500/40 hover:shadow-purple-500/60 transition-shadow group"
+                title="Ask ClipX AI"
+            >
+                <FiCpu className="w-6 h-6 text-white" />
+                {/* Pulse ring */}
+                <span className="absolute inset-0 rounded-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 animate-ping opacity-20" />
+                {/* Tooltip */}
+                <span className="absolute right-full mr-3 px-3 py-1.5 rounded-lg bg-gray-900 border border-white/10 text-xs text-white font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-xl">
+                    Ask ClipX AI ✨
+                </span>
+            </motion.button>
         </>
     );
 }

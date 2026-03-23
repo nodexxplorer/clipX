@@ -12,7 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   FiSearch, FiMenu, FiX, FiUser, FiLogOut, FiSettings,
   FiBookmark, FiFilm, FiTrendingUp, FiGrid, FiBell, FiChevronDown, FiSun, FiMoon,
-  FiPlay, FiStar, FiFlag, FiCheckCircle, FiAward, FiTrash2
+  FiPlay, FiStar, FiFlag, FiCheckCircle, FiAward, FiTrash2, FiCpu, FiClock
 } from 'react-icons/fi';
 
 import { useAuth } from '@/contexts/AuthContext';
@@ -144,10 +144,9 @@ export default function Header() {
   const navLinks = [
     { href: homeLink, label: 'Home' },
     { href: '/movies', label: 'Movies', icon: FiFilm },
-    { href: '/series', label: 'Series', icon: FiFilm },
-    { href: '/anime', label: 'Anime', icon: FiFilm },
     { href: '/movies/trending', label: 'Trending', icon: FiTrendingUp },
     { href: '/genres', label: 'Genres', icon: FiGrid },
+    { href: '/pricing', label: 'Pricing', icon: FiStar },
   ];
 
   return (
@@ -301,6 +300,12 @@ export default function Header() {
                           </MenuItem>
                           <MenuItem href="/watchlist" icon={FiBookmark} onClick={() => setIsUserMenuOpen(false)}>
                             My Watchlist
+                          </MenuItem>
+                          <MenuItem href="/ai-assistant" icon={FiCpu} onClick={() => setIsUserMenuOpen(false)}>
+                            AI Chat
+                          </MenuItem>
+                          <MenuItem href="/history" icon={FiClock} onClick={() => setIsUserMenuOpen(false)}>
+                            Watch History
                           </MenuItem>
                           <MenuItem href="/profile" icon={FiSettings} onClick={() => setIsUserMenuOpen(false)}>
                             Settings

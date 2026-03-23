@@ -7,6 +7,7 @@
 
 import { createContext, useContext, useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { gql } from '@apollo/client';
 import apolloClient from '@/graphql/client';
 import {
 	LOGIN_MUTATION,
@@ -65,6 +66,36 @@ export function AuthProvider({ children }) {
 		if (typeof window === 'undefined') return;
 		refetchUser();
 	}, []);
+
+	// ---------- Token Refresh ----------
+	// Silently refresh the JWT every 6 hours to prevent session expiry
+	useEffect(() => {
+		if (typeof window === 'undefined') return;
+		const REFRESH_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
+
+		const refreshFn = async () => {
+			const token = localStorage.getItem('token');
+			if (!token) return;
+			try {
+				const { data } = await client.mutate({
+					mutation: gql`mutation RefreshToken { refreshToken { token user { id email name avatar role } } }`,
+				});
+				if (data?.refreshToken?.token) {
+					localStorage.setItem('token', data.refreshToken.token);
+					if (data.refreshToken.user) {
+						setUser(prev => ({ ...prev, ...data.refreshToken.user }));
+					}
+				}
+			} catch {
+				// Token expired entirely — user needs to log in again
+			}
+		};
+
+		// Refresh once shortly after mount (5s delay to avoid race with initial fetch)
+		const initial = setTimeout(refreshFn, 5000);
+		const interval = setInterval(refreshFn, REFRESH_INTERVAL);
+		return () => { clearTimeout(initial); clearInterval(interval); };
+	}, [client]);
 
 	// Handle Google OAuth
 	const handleGoogleAuth = async (credentialToken) => {

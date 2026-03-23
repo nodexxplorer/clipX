@@ -42,7 +42,16 @@ async def get_movie(movie_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/movie/{movie_id}/stream", response_model=ContentStreamResponse)
 async def get_stream(movie_id: str, season: int = 0, episode: int = 1, db: AsyncSession = Depends(get_db)):
     try:
-        return await movie_service.get_stream_links(movie_id, season=season, episode=episode, db=db)
+        data = await movie_service.get_stream_links(movie_id, season=season, episode=episode, db=db)
+        # Obfuscate stream URLs — replace raw CDN URLs with signed proxy tokens
+        from app.core.stream_token import create_stream_token
+        if hasattr(data, 'links'):
+            for link in data.links:
+                if link.url and link.url.startswith('http'):
+                    token = create_stream_token(link.url)
+                    # Replace with proxy URL — frontend will call /api/proxy/stream?token=xxx
+                    link.url = f'/api/proxy/stream?token={token}'
+        return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

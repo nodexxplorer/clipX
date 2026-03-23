@@ -20,6 +20,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { GET_MOVIE, GET_STREAMING_URL } from '@/graphql/queries/movieQueries';
 import { RECORD_WATCH_PROGRESS } from '@/graphql/mutations/interactionMutations';
+import { fromSlug } from '@/utils/slug';
 
 // Code splitting: only load spinner when needed
 const LoadingSpinner = dynamic(() => import('@/components/common/LoadingSpinner'), { ssr: false });
@@ -33,16 +34,7 @@ export default function WatchPage() {
   const episode = e ? parseInt(e) : null;
 
   // Extract actual ID from potential slug string — declared early so all hooks below can reference it
-  const actualId = (() => {
-    if (!id) return null;
-    const match = id.match(/^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d+)/i);
-    if (match) return match[0];
-    try {
-      const stored = sessionStorage.getItem('clipx_s_' + id);
-      if (stored) return stored;
-    } catch { }
-    return id;
-  })();
+  const actualId = fromSlug(id);
 
   // Video player refs and state
   const videoRef = useRef(null);
@@ -92,6 +84,10 @@ export default function WatchPage() {
   // Volume OSD
   const [volumeOSD, setVolumeOSD] = useState(false);
   const volumeOSDTimer = useRef(null);
+  // Next episode autoplay
+  const [showNextEpisode, setShowNextEpisode] = useState(false);
+  const [autoplayCountdown, setAutoplayCountdown] = useState(10);
+  const autoplayTimerRef = useRef(null);
 
   // Restore persisted volume on mount
   useEffect(() => {
@@ -332,7 +328,14 @@ export default function WatchPage() {
     ? availableLinks[0]
     : availableLinks.find(l => l.quality.includes(quality));
 
-  const streamingUrl = selectedLink?.url || streamData?.streamingUrl || movie?.streamingUrl;
+  // Resolve proxy token paths (e.g. /api/proxy/stream?token=xxx) to full URLs
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/graphql', '') || 'http://localhost:8000';
+  const resolveUrl = (u) => {
+    if (!u) return null;
+    if (u.startsWith('/api/')) return `${baseUrl}${u}`;
+    return u;
+  };
+  const streamingUrl = resolveUrl(selectedLink?.url) || streamData?.streamingUrl || movie?.streamingUrl;
   // Memoize subtitles so the array reference is stable (avoids re-fetch loop)
   const subtitles = useMemo(
     () => [...(streamDataFetch?.subtitles || []), ...localSubtitles],
@@ -509,6 +512,70 @@ export default function WatchPage() {
     });
   }, []);
 
+  // ---------- Next Episode / Season Autoplay ----------
+  const isSeries = movie?.seasons?.length > 0 || movie?.isSeries || (movie?.type?.toLowerCase() === 'series') || (movie?.type?.toLowerCase() === 'tv');
+
+  const nextEpisodeInfo = useMemo(() => {
+    if (!isSeries || !season || !movie?.seasons) return null;
+    const currentSeason = movie.seasons.find(s => s.seasonNumber === season);
+    if (!currentSeason) return null;
+    const eps = currentSeason.episodes || [];
+    const currentEpIdx = eps.findIndex(ep => ep.episodeNumber === episode);
+
+    // Next episode in same season
+    if (currentEpIdx >= 0 && currentEpIdx < eps.length - 1) {
+      const next = eps[currentEpIdx + 1];
+      return { season: season, episode: next.episodeNumber, title: next.title || `Episode ${next.episodeNumber}` };
+    }
+
+    // First episode of next season
+    const nextSeason = movie.seasons.find(s => s.seasonNumber === season + 1);
+    if (nextSeason && nextSeason.episodes?.length > 0) {
+      const first = nextSeason.episodes[0];
+      return { season: season + 1, episode: first.episodeNumber, title: first.title || `Episode ${first.episodeNumber}` };
+    }
+
+    return null; // No more episodes
+  }, [isSeries, season, episode, movie?.seasons]);
+
+  const handleNextEpisode = useCallback(() => {
+    if (!nextEpisodeInfo) return;
+    clearInterval(autoplayTimerRef.current);
+    setShowNextEpisode(false);
+    setAutoplayCountdown(10);
+    router.push(`/watch/${id}?s=${nextEpisodeInfo.season}&e=${nextEpisodeInfo.episode}`);
+  }, [nextEpisodeInfo, id, router]);
+
+  const cancelAutoplay = useCallback(() => {
+    clearInterval(autoplayTimerRef.current);
+    setShowNextEpisode(false);
+    setAutoplayCountdown(10);
+  }, []);
+
+  // Video ended handler — trigger autoplay countdown
+  const handleVideoEnded = useCallback(() => {
+    setIsPlaying(false);
+    if (nextEpisodeInfo) {
+      setShowNextEpisode(true);
+      setAutoplayCountdown(10);
+      clearInterval(autoplayTimerRef.current);
+      autoplayTimerRef.current = setInterval(() => {
+        setAutoplayCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(autoplayTimerRef.current);
+            handleNextEpisode();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+  }, [nextEpisodeInfo, handleNextEpisode]);
+
+  // Cleanup autoplay timer on unmount
+  useEffect(() => () => clearInterval(autoplayTimerRef.current), []);
+
+
   // Handle keyboard shortcuts (placed after all useCallback declarations to avoid temporal dead zone)
   useEffect(() => {
     const handleKeyPress = (e) => {
@@ -640,11 +707,18 @@ export default function WatchPage() {
     setCurrentCue(cue?.text || null);
   }, [currentTime, parsedCues]);
 
-  // Auto-enable first subtitle when available — using stable key
+  // Auto-enable English subtitle (or first available) when subtitles load
   useEffect(() => {
     if (subtitles.length > 0 && activeSubtitle === 'off') {
-      const first = subtitles[0];
-      const key = first.code || first.lang || 'sub-0';
+      // Prefer English subtitle
+      const engIdx = subtitles.findIndex((s) => {
+        const lang = (s.lang || '').toLowerCase();
+        const code = (s.code || '').toLowerCase();
+        return lang.includes('english') || lang === 'eng' || code.includes('english') || code === 'eng' || code === 'en';
+      });
+      const targetIdx = engIdx !== -1 ? engIdx : 0;
+      const target = subtitles[targetIdx];
+      const key = target.code || target.lang || `sub-${targetIdx}`;
       setActiveSubtitle(key);
     }
   }, [subtitles, activeSubtitle]);
@@ -749,16 +823,20 @@ export default function WatchPage() {
               videoFit === 'fill' ? 'object-fill' :
                 'object-contain'
             }`}
-          style={videoFit === '16:9' ? { aspectRatio: '16/9', objectFit: 'contain' } : videoFit === '4:3' ? { aspectRatio: '4/3', objectFit: 'contain' } : undefined}
+          style={{
+            filter: `brightness(${brightness})`,
+            ...(videoFit === '16:9' ? { aspectRatio: '16/9', objectFit: 'contain' } :
+              videoFit === '4:3' ? { aspectRatio: '4/3', objectFit: 'contain' } : {})
+          }}
           onClick={togglePlay}
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
           onCanPlay={handleStreamReady}
           onWaiting={() => setIsLoading(true)}
           onPlaying={() => setIsLoading(false)}
-          onEnded={() => setIsPlaying(false)}
+          onEnded={handleVideoEnded}
+          onError={handleVideoError}
           playsInline
-          style={{ filter: `brightness(${brightness})` }}
           referrerPolicy="no-referrer"
         >
           {/* No native <track> elements — we use a custom overlay below */}
@@ -863,6 +941,74 @@ export default function WatchPage() {
             >
               <FiWifiOff className="w-4 h-4 flex-shrink-0" />
               You&rsquo;re offline &mdash; playback may stop
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Next Episode Autoplay Overlay */}
+        <AnimatePresence>
+          {showNextEpisode && nextEpisodeInfo && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="flex flex-col items-center gap-6 text-center px-8"
+              >
+                {/* Countdown Circle */}
+                <div className="relative w-28 h-28">
+                  <svg className="w-28 h-28 -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="45" stroke="rgba(255,255,255,0.1)" strokeWidth="4" fill="none" />
+                    <circle
+                      cx="50" cy="50" r="45"
+                      stroke="url(#countdown-gradient)"
+                      strokeWidth="4" fill="none"
+                      strokeLinecap="round"
+                      strokeDasharray={`${2 * Math.PI * 45}`}
+                      strokeDashoffset={`${2 * Math.PI * 45 * (1 - autoplayCountdown / 10)}`}
+                      style={{ transition: 'stroke-dashoffset 1s linear' }}
+                    />
+                    <defs>
+                      <linearGradient id="countdown-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#8b5cf6" />
+                        <stop offset="100%" stopColor="#06b6d4" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-3xl font-black text-white tabular-nums">{autoplayCountdown}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-gray-400 text-sm font-medium uppercase tracking-widest mb-1">Up Next</p>
+                  <h3 className="text-white text-2xl font-bold">
+                    S{nextEpisodeInfo.season} E{nextEpisodeInfo.episode}
+                  </h3>
+                  <p className="text-gray-300 text-sm mt-1">{nextEpisodeInfo.title}</p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleNextEpisode}
+                    className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-primary-600 to-purple-600 text-white font-bold rounded-xl hover:from-primary-500 hover:to-purple-500 transition-all shadow-lg shadow-primary-600/30 text-sm"
+                  >
+                    <FiPlay className="w-5 h-5" />
+                    Play Now
+                  </button>
+                  <button
+                    onClick={cancelAutoplay}
+                    className="px-6 py-3 bg-white/10 text-white font-bold rounded-xl hover:bg-white/20 transition-colors text-sm border border-white/10"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -1201,28 +1347,30 @@ export default function WatchPage() {
                       {showSubtitlesMenu && (
                         <div className="absolute bottom-full right-0 mb-4 w-56 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] overflow-hidden z-50 py-2">
                           <div className="px-3 py-2">
-                            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">Subtitles</p>
-                            <button
-                              onClick={() => handleSubtitleChange('off')}
-                              className={`w-full text-left px-3 py-2 text-sm rounded-lg font-medium transition-colors ${activeSubtitle === 'off' ? 'bg-primary-500/20 text-primary-400' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`}
-                            >
-                              Off
-                            </button>
-                            {subtitles.map((sub, idx) => {
-                              const key = sub.code || sub.lang || `sub-${idx}`;
-                              return (
-                                <button
-                                  key={idx}
-                                  onClick={() => handleSubtitleChange(key)}
-                                  className={`w-full text-left px-3 py-2 text-sm rounded-lg font-medium transition-colors ${activeSubtitle === key
-                                    ? 'bg-primary-500/20 text-primary-400'
-                                    : 'text-gray-300 hover:bg-white/10 hover:text-white truncate'
-                                    }`}
-                                >
-                                  {sub.lang || sub.code || `Subtitle ${idx + 1}`}
-                                </button>
-                              );
-                            })}
+                            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">Subtitles ({subtitles.length})</p>
+                            <div className="max-h-64 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.2) transparent' }}>
+                              <button
+                                onClick={() => handleSubtitleChange('off')}
+                                className={`w-full text-left px-3 py-2 text-sm rounded-lg font-medium transition-colors ${activeSubtitle === 'off' ? 'bg-primary-500/20 text-primary-400' : 'text-gray-300 hover:bg-white/10 hover:text-white'}`}
+                              >
+                                Off
+                              </button>
+                              {subtitles.map((sub, idx) => {
+                                const key = sub.code || sub.lang || `sub-${idx}`;
+                                return (
+                                  <button
+                                    key={idx}
+                                    onClick={() => handleSubtitleChange(key)}
+                                    className={`w-full text-left px-3 py-2 text-sm rounded-lg font-medium transition-colors ${activeSubtitle === key
+                                      ? 'bg-primary-500/20 text-primary-400'
+                                      : 'text-gray-300 hover:bg-white/10 hover:text-white truncate'
+                                      }`}
+                                  >
+                                    {sub.lang || sub.code || `Subtitle ${idx + 1}`}
+                                  </button>
+                                );
+                              })}
+                            </div>
 
                             <div className="w-full h-px bg-white/10 my-2" />
 

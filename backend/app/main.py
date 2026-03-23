@@ -54,6 +54,56 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+# ---------------------------------------------------------------------------
+# Input sanitization — strip dangerous HTML/script tags from GraphQL inputs
+# ---------------------------------------------------------------------------
+import re
+import json
+
+class InputSanitizationMiddleware(BaseHTTPMiddleware):
+    """
+    Sanitizes string inputs in GraphQL requests to prevent XSS.
+    Strips <script>, onclick, onerror, javascript: etc.
+    """
+    DANGEROUS_PATTERNS = [
+        re.compile(r'<\s*script[^>]*>.*?<\s*/\s*script\s*>', re.I | re.S),
+        re.compile(r'<\s*script[^>]*>', re.I),
+        re.compile(r'javascript\s*:', re.I),
+        re.compile(r'on\w+\s*=', re.I),  # onclick=, onerror=, etc.
+        re.compile(r'<\s*iframe[^>]*>', re.I),
+        re.compile(r'<\s*object[^>]*>', re.I),
+        re.compile(r'<\s*embed[^>]*>', re.I),
+    ]
+
+    def _sanitize(self, value):
+        if isinstance(value, str):
+            for pattern in self.DANGEROUS_PATTERNS:
+                value = pattern.sub('', value)
+            return value.strip()
+        elif isinstance(value, dict):
+            return {k: self._sanitize(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [self._sanitize(v) for v in value]
+        return value
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "POST" and "/graphql" in request.url.path:
+            try:
+                body = await request.body()
+                data = json.loads(body)
+                if "variables" in data and data["variables"]:
+                    data["variables"] = self._sanitize(data["variables"])
+                # Reconstruct the request with sanitized body
+                sanitized_body = json.dumps(data).encode()
+                # Replace the request's receive with our sanitized body
+                async def receive():
+                    return {"type": "http.request", "body": sanitized_body}
+                request._receive = receive
+            except (json.JSONDecodeError, Exception):
+                pass  # If we can't parse, let it through for the endpoint to handle
+        return await call_next(request)
+
+
 async def _warmup_moviebox_session():
     """Pre-warm the moviebox session so CDN cookies are ready before the first request."""
     try:
@@ -71,7 +121,7 @@ async def lifespan(app: FastAPI):
 
 
 def get_app() -> FastAPI:
-    from app.api.routes import movies, proxy, chat
+    from app.api.routes import movies, proxy, chat, ai, webhooks, invoices
     from app.api.graphql.schema import schema
 
     app = FastAPI(
@@ -82,6 +132,9 @@ def get_app() -> FastAPI:
 
     # Rate limiting — MUST be added BEFORE CORS middleware
     app.add_middleware(RateLimitMiddleware, max_requests=30, window_seconds=60)
+
+    # Input sanitization — strip XSS patterns from GraphQL inputs
+    app.add_middleware(InputSanitizationMiddleware)
 
     app.add_middleware(
         CORSMiddleware,
@@ -94,6 +147,9 @@ def get_app() -> FastAPI:
     app.include_router(movies.router, prefix=settings.API_V1_STR, tags=["movies"])
     app.include_router(proxy.router, prefix=f"{settings.API_V1_STR}/proxy", tags=["proxy"])
     app.include_router(chat.router, tags=["chat"])
+    app.include_router(ai.router, prefix=settings.API_V1_STR, tags=["ai"])
+    app.include_router(webhooks.router, prefix=settings.API_V1_STR, tags=["webhooks"])
+    app.include_router(invoices.router, prefix=settings.API_V1_STR, tags=["invoices"])
 
     # GraphQL router
     graphql_app = GraphQLRouter(schema, context_getter=get_context)

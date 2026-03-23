@@ -23,9 +23,11 @@ import { ADD_TO_WATCHLIST, REMOVE_FROM_WATCHLIST } from '@/graphql/mutations/wat
 import { RECORD_INTERACTION } from '@/graphql/mutations/interactionMutations';
 import CastList from '@/components/movies/CastList';
 import SimilarMovies from '@/components/recommendations/SimilarMovies';
+import MovieReviews from '@/components/movies/MovieReviews';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import DownloadModal from '@/components/common/DownloadModal';
 import Modal from '@/components/common/Modal';
+import { fromSlug } from '@/utils/slug';
 
 export default function MovieDetailPage() {
   const router = useRouter();
@@ -39,22 +41,7 @@ export default function MovieDetailPage() {
   const [selectedEpisode, setSelectedEpisode] = useState(1);
   const [shareCopied, setShareCopied] = useState(false);
 
-  // Extract actual ID from URL:
-  //  1. Try numeric ID or UUID pattern (backward compat: /movies/12345-slug)
-  //  2. If slug-only URL, look up sessionStorage mapping set by MovieCard
-  const actualId = (() => {
-    if (!id) return null;
-    // Check numeric / UUID pattern at start (legacy URLs)
-    const match = id.match(/^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d+)/i);
-    if (match) return match[0];
-    // Slug-only URL — resolve from sessionStorage
-    try {
-      const stored = sessionStorage.getItem('clipx_s_' + id);
-      if (stored) return stored;
-    } catch { }
-    // Fallback: pass the slug as-is (backend will 404 but we handle that)
-    return id;
-  })();
+  const actualId = fromSlug(id);
 
   // Fetch movie data
   const { data, loading, error } = useQuery(GET_MOVIE, {
@@ -99,12 +86,34 @@ export default function MovieDetailPage() {
       return;
     }
 
-    if (isInWatchlist) {
-      await removeFromWatchlist({ variables: { movieId: actualId } });
-      setIsInWatchlist(false);
-    } else {
-      await addToWatchlist({ variables: { movieId: actualId } });
-      setIsInWatchlist(true);
+    try {
+      if (isInWatchlist) {
+        await removeFromWatchlist({ variables: { movieId: actualId } });
+        setIsInWatchlist(false);
+        // Sync localStorage watchlist
+        try {
+          const raw = localStorage.getItem('watchlist');
+          const list = raw ? JSON.parse(raw) : [];
+          const updated = list.filter(id => id !== actualId);
+          localStorage.setItem('watchlist', JSON.stringify(updated));
+          window.dispatchEvent(new Event('watchlist_updated'));
+        } catch { }
+      } else {
+        await addToWatchlist({ variables: { movieId: actualId } });
+        setIsInWatchlist(true);
+        // Sync localStorage watchlist
+        try {
+          const raw = localStorage.getItem('watchlist');
+          const list = raw ? JSON.parse(raw) : [];
+          if (!list.includes(actualId)) {
+            list.push(actualId);
+            localStorage.setItem('watchlist', JSON.stringify(list));
+            window.dispatchEvent(new Event('watchlist_updated'));
+          }
+        } catch { }
+      }
+    } catch (err) {
+      console.error('Watchlist toggle error:', err);
     }
   };
 
@@ -404,6 +413,13 @@ export default function MovieDetailPage() {
           season={selectedSeason}
           episode={selectedEpisode}
         />
+
+        {/* User Reviews */}
+        {actualId && (
+          <div className="max-w-7xl mx-auto px-6 pb-20">
+            <MovieReviews movieId={actualId} />
+          </div>
+        )}
       </>
     </>
   );

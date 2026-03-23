@@ -32,9 +32,16 @@ def _get_moviebox_client() -> httpx.AsyncClient:
 
 
 @router.get("/stream")
-async def proxy_stream(url: str, request: Request):
-    if not url:
-        raise HTTPException(status_code=400, detail="Missing url parameter")
+async def proxy_stream(request: Request, url: str = None, token: str = None):
+    # Resolve token-based URL or use direct URL
+    actual_url = url
+    if token:
+        from app.core.stream_token import resolve_stream_token
+        actual_url = resolve_stream_token(token)
+        if not actual_url:
+            raise HTTPException(status_code=403, detail="Invalid or expired stream token")
+    if not actual_url:
+        raise HTTPException(status_code=400, detail="Missing url or token parameter")
 
     # Build request headers — merge stream defaults with any Range header from browser
     headers = dict(STREAM_HEADERS)
@@ -46,7 +53,7 @@ async def proxy_stream(url: str, request: Request):
 
     if moviebox_client:
         try:
-            req = moviebox_client.build_request("GET", url, headers=headers)
+            req = moviebox_client.build_request("GET", actual_url, headers=headers)
             r = await moviebox_client.send(req, stream=True)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Upstream fetch failed: {e}")
@@ -58,7 +65,7 @@ async def proxy_stream(url: str, request: Request):
             verify=False,
         )
         try:
-            req = fallback_client.build_request("GET", url, headers=headers)
+            req = fallback_client.build_request("GET", actual_url, headers=headers)
             r = await fallback_client.send(req, stream=True)
         except Exception as e:
             await fallback_client.aclose()

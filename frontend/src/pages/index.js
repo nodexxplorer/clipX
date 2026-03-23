@@ -19,6 +19,7 @@ import MovieHero from '@/components/movies/MovieHero';
 import MovieRow from '@/components/movies/MovieRow';
 import GenreGrid from '@/components/home/GenreGrid';
 import PersonalizedRecommendations from '@/components/recommendations/PersonalizedRecommendations';
+import ContinueWatching from '@/components/movies/ContinueWatching';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ErrorMessage from '@/components/common/ErrorMessage';
 
@@ -119,6 +120,13 @@ export default function Home() {
         animate="visible"
         className="relative z-20 -mt-8 md:-mt-16 pb-24"
       >
+        {/* Continue Watching */}
+        {isAuthenticated && (
+          <div className="px-4 md:px-12 mb-4">
+            <ContinueWatching />
+          </div>
+        )}
+
         {/* Trending Row */}
         <MovieRow title="Trending Now" movies={trending} />
 

@@ -16,6 +16,13 @@ class User(Base):
     role = Column(String(50), default="user")
     bio = Column(Text)
     preferences = Column(JSON, default=dict)
+    email_verified = Column(Boolean, default=False)
+    last_active = Column(DateTime, default=datetime.utcnow)
+    subscription_tier = Column(String(20), default="free")
+    subscription_expires_at = Column(DateTime, nullable=True)
+    paystack_customer_code = Column(String(255), nullable=True)
+    referral_count = Column(Integer, default=0)
+    grace_period_end = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     watchlist = relationship("Watchlist", back_populates="user")
@@ -112,6 +119,7 @@ class Review(Base):
     __tablename__ = "reviews"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    moviebox_id = Column(String, nullable=True, index=True)  # null = site review, set = movie review
     content = Column(Text, nullable=False)
     rating = Column(Float, nullable=True)
     is_featured = Column(Boolean, default=False)
