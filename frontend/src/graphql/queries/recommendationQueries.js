@@ -149,6 +149,44 @@ export const GET_RECOMMENDATION_FEED = gql`
   }
 `;
 
+// Combined recommendations query for AI Recs section
+export const GET_RECOMMENDATIONS = gql`
+  query GetRecommendations($limit: Int) {
+    recommendations(limit: $limit) {
+      becauseYouWatched {
+        source {
+          id
+          title
+          posterUrl
+          posterPath
+        }
+        items {
+          id
+          title
+          posterUrl
+          posterPath
+          releaseDate
+          voteAverage
+          year
+          matchScore
+          genres { name }
+        }
+      }
+      forYou {
+        id
+        title
+        posterUrl
+        posterPath
+        releaseDate
+        voteAverage
+        year
+        matchScore
+        genres { name }
+      }
+    }
+  }
+`;
+
 export default {
   GET_PERSONALIZED_RECOMMENDATIONS,
   GET_SIMILAR_MOVIES,
@@ -158,4 +196,5 @@ export default {
   GET_RECOMMENDATIONS_BY_GENRE,
   GET_BECAUSE_YOU_WATCHED,
   GET_RECOMMENDATION_FEED,
+  GET_RECOMMENDATIONS,
 };

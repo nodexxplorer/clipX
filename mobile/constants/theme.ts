@@ -86,5 +86,5 @@ export const fontWeight = {
 export const POSTER_ASPECT = 2 / 3;
 export const BACKDROP_ASPECT = 16 / 9;
 
-export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:8000';
+export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.24.170:8000';
 export const GRAPHQL_URL = `${API_URL}/graphql`;

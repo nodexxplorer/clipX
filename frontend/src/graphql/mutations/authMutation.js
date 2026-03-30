@@ -5,22 +5,8 @@
 import { gql } from '@apollo/client';
 
 export const LOGIN_MUTATION = gql`
-  mutation Login($email: String!, $password: String!) {
-    login(email: $email, password: $password) {
-      token
-      user {
-        id
-        email
-        name
-        avatar
-        role
-        createdAt
-        preferences {
-          favoriteGenres
-          theme
-        }
-      }
-    }
+  mutation Login($email: String!, $password: String!, $totpCode: String) {
+    login(email: $email, password: $password, totpCode: $totpCode)
   }
 `;
 
@@ -142,3 +128,76 @@ export const UPDATE_AVATAR_MUTATION = gql`
     }
   }
 `;
+
+// ─── 2FA Mutations ───────────────────────────────────
+export const SETUP_2FA_MUTATION = gql`
+  mutation Setup2FA {
+    setup2FA {
+      secret
+      qrUri
+      backupCodes
+    }
+  }
+`;
+
+export const VERIFY_2FA_MUTATION = gql`
+  mutation Verify2FA($code: String!) {
+    verify2FA(code: $code) {
+      success
+      message
+    }
+  }
+`;
+
+export const DISABLE_2FA_MUTATION = gql`
+  mutation Disable2FA($password: String) {
+    disable2FA(password: $password) {
+      success
+      message
+    }
+  }
+`;
+
+// ─── Promo Code ───────────────────────────────────────
+export const APPLY_PROMO_CODE_MUTATION = gql`
+  mutation ApplyPromoCode($code: String!) {
+    applyPromoCode(code: $code) {
+      success
+      message
+      discountPercent
+      plan
+    }
+  }
+`;
+
+// ─── Queries (often used from auth context) ──────────
+export const GET_LOGIN_ACTIVITY = gql`
+  query LoginActivity($limit: Int) {
+    loginActivity(limit: $limit) {
+      id
+      action
+      deviceInfo
+      ipAddress
+      location
+      success
+      createdAt
+    }
+  }
+`;
+
+export const GET_PREMIUM_STATS = gql`
+  query PremiumSignupStats {
+    premiumSignupStats {
+      totalPremiumUsers
+      remainingSlots
+      isEligible
+      isActive
+    }
+  }
+`;
+
+export const GET_2FA_STATUS = gql`
+  query My2FAStatus {
+    my2FAStatus
+  }
+`;

@@ -57,23 +57,38 @@ export default function ProfileScreen() {
             title: 'Account',
             items: [
                 { icon: 'person-outline', label: 'Edit Profile', sub: user.email, onPress: () => { } },
-                { icon: tier.icon, label: 'Subscription', sub: `${tier.label} Plan`, onPress: () => { }, badge: tier.label, color: tier.color },
-                { icon: 'card-outline', label: 'Payment History', onPress: () => { } },
+                { icon: tier.icon, label: 'Subscription', sub: `${tier.label} Plan`, onPress: () => router.push('/subscription'), badge: tier.label, color: tier.color },
+                { icon: 'grid-outline', label: 'Dashboard', sub: 'Stats & activity', onPress: () => router.push('/dashboard') },
+                { icon: 'shield-checkmark-outline', label: 'Security & Privacy', sub: '2FA, password, activity', onPress: () => router.push('/security') },
+            ],
+        },
+        {
+            title: 'Browse',
+            items: [
+                { icon: 'film-outline', label: 'Movies', onPress: () => router.push('/movies') },
+                { icon: 'tv-outline', label: 'Series & Anime', onPress: () => router.push('/series') },
+                { icon: 'albums-outline', label: 'Browse Genres', onPress: () => router.push('/genres') },
+            ],
+        },
+        {
+            title: 'Activity',
+            items: [
+                { icon: 'time-outline', label: 'Watch History', onPress: () => router.push('/history') },
+                { icon: 'notifications-outline', label: 'Notifications', onPress: () => router.push('/notifications') },
             ],
         },
         {
             title: 'Preferences',
             items: [
-                { icon: 'notifications-outline', label: 'Notifications', onPress: () => { } },
-                { icon: 'download-outline', label: 'Downloads', sub: 'Manage offline content', onPress: () => { } },
-                { icon: 'color-palette-outline', label: 'Display', sub: 'Quality & data usage', onPress: () => { } },
+                { icon: 'download-outline', label: 'Downloads', sub: 'Manage offline content', onPress: () => router.push('/downloads') },
+                { icon: 'color-palette-outline', label: 'Display & Settings', sub: 'Quality, data & options', onPress: () => router.push('/dashboard?tab=preference') },
             ],
         },
         {
             title: 'Support',
             items: [
                 { icon: 'help-circle-outline', label: 'Help Center', onPress: () => { } },
-                { icon: 'chatbubble-outline', label: 'Contact Support', onPress: () => { } },
+                { icon: 'flag-outline', label: 'Report an Issue', onPress: () => router.push('/report') },
                 { icon: 'document-text-outline', label: 'Terms & Privacy', onPress: () => { } },
             ],
         },

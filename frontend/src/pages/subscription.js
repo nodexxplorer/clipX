@@ -15,6 +15,8 @@ import {
 } from 'react-icons/fi';
 import { useAuth } from '@/contexts/AuthContext';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+import PromoCodeInput from '@/components/common/PromoCodeInput';
+import GracePeriodBanner from '@/components/common/GracePeriodBanner';
 import { gql } from '@apollo/client';
 import { useMutation } from '@apollo/client/react';
 
@@ -290,6 +292,9 @@ export default function SubscriptionPage() {
                         </div>
                     )}
 
+                    {/* Grace Period Banner (shows only if payment failed) */}
+                    <GracePeriodBanner />
+
                     {/* Current Plan Card */}
                     <motion.div
                         initial={{ opacity: 0, y: 10 }}
@@ -428,6 +433,14 @@ export default function SubscriptionPage() {
                                     <FiChevronRight className="w-4 h-4 text-gray-500 group-hover:text-white" />
                                 </Link>
                             </div>
+
+                            {/* Promo Code Input */}
+                            <PromoCodeInput onApplied={(result) => {
+                                if (result.plan) {
+                                    setCurrentTier(result.plan);
+                                    setMessage({ type: 'success', text: result.message });
+                                }
+                            }} />
                         </motion.div>
                     )}
 

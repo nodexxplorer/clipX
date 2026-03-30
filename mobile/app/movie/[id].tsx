@@ -4,8 +4,8 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery, useMutation } from '@apollo/client';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useQuery, useMutation } from '@apollo/client/react';
+import Gradient from '@/components/Gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { GET_MOVIE, TOGGLE_WATCHLIST } from '@/lib/graphql';
 import { colors, spacing, radius, fontSize, fontWeight, POSTER_ASPECT } from '@/constants/theme';
@@ -73,13 +73,20 @@ function EpisodeList({ seasons }: { seasons: Season[] }) {
     );
 }
 
+import { useApolloClient } from '@apollo/client/react';
+import { GET_STREAMING_URL } from '@/lib/graphql';
+import { startDownload } from '@/lib/downloads';
+import { Alert } from 'react-native';
+
 export default function MovieDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const router = useRouter();
     const { isAuthenticated } = useAuth();
-    const { data, loading, error } = useQuery(GET_MOVIE, { variables: { id } });
-    const [toggleWatchlist] = useMutation(TOGGLE_WATCHLIST);
+    const client = useApolloClient();
+    const { data, loading, error } = useQuery<any>(GET_MOVIE, { variables: { id } });
+    const [toggleWatchlist] = useMutation<any>(TOGGLE_WATCHLIST);
     const [inWatchlist, setInWatchlist] = useState(false);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     const movie: Movie | undefined = data?.movie;
 
@@ -89,6 +96,39 @@ export default function MovieDetailScreen() {
             const { data: res } = await toggleWatchlist({ variables: { movieId: id } });
             setInWatchlist(res?.toggleWatchlist?.added ?? false);
         } catch { }
+    };
+
+    const handleDownload = async () => {
+        if (!isAuthenticated) { router.push('/auth/login'); return; }
+        if (!movie) return;
+        
+        setIsDownloading(true);
+        try {
+            // Lazily fetch the URL to download
+            const { data: streamData } = await client.query<{ streamingUrl: string }>({
+                query: GET_STREAMING_URL,
+                variables: { movieId: id },
+                fetchPolicy: 'network-only' // ensure fresh link for download
+            });
+            
+            if (!streamData?.streamingUrl) {
+                Alert.alert('Error', 'Stream is currently unavailable for download.');
+                setIsDownloading(false);
+                return;
+            }
+            
+            Alert.alert('Download Started', 'You can check the progress in your Downloads tab.');
+            await startDownload(
+                movie.id,
+                movie.title,
+                streamData.streamingUrl,
+                getPoster(movie) || ''
+            );
+        } catch (e: any) {
+            Alert.alert('Error', 'Failed to start download. ' + (e.message || ''));
+        } finally {
+            setIsDownloading(false);
+        }
     };
 
     if (loading) {
@@ -117,7 +157,7 @@ export default function MovieDetailScreen() {
             {/* Backdrop */}
             <View style={styles.backdrop}>
                 <Image source={{ uri: getBackdrop(movie) }} style={styles.backdropImg} contentFit="cover" transition={300} />
-                <LinearGradient colors={['transparent', colors.background]} style={styles.backdropGradient} />
+                <Gradient colors={['transparent', colors.background]} style={styles.backdropGradient} />
                 <Pressable style={styles.closeBtn} onPress={() => router.back()}>
                     <Ionicons name="arrow-back" size={22} color="#fff" />
                 </Pressable>
@@ -156,8 +196,15 @@ export default function MovieDetailScreen() {
                     <Pressable style={styles.actionBtn} onPress={handleWatchlistToggle}>
                         <Ionicons name={inWatchlist ? 'heart' : 'heart-outline'} size={20} color={inWatchlist ? colors.error : colors.text} />
                     </Pressable>
-                    <Pressable style={styles.actionBtn}>
-                        <Ionicons name="share-outline" size={20} color={colors.text} />
+                    <Pressable style={styles.actionBtn} onPress={handleDownload} disabled={isDownloading}>
+                        {isDownloading ? (
+                            <ActivityIndicator size="small" color={colors.text} />
+                        ) : (
+                            <Ionicons name="download-outline" size={20} color={colors.text} />
+                        )}
+                    </Pressable>
+                    <Pressable style={styles.actionBtn} onPress={() => router.push({ pathname: '/report', params: { movieId: movie.id, movieTitle: movie.title } })}>
+                        <Ionicons name="flag-outline" size={20} color={colors.text} />
                     </Pressable>
                 </View>
 

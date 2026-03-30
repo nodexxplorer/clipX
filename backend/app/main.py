@@ -23,36 +23,59 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-        self._requests: dict[str, list[float]] = defaultdict(list)
+        self._requests: dict[str, list[float]] = defaultdict(list)      
 
     async def dispatch(self, request: Request, call_next):
         # Only rate-limit POST to /graphql (where login/register mutations go)
         if request.method == "POST" and request.url.path == "/graphql":
             client_ip = request.client.host if request.client else "unknown"
-            now = time.time()
-            # Clean old entries
-            self._requests[client_ip] = [
-                t for t in self._requests[client_ip]
-                if now - t < self.window_seconds
-            ]
-            if len(self._requests[client_ip]) >= self.max_requests:
-                return Response(
-                    content='{"errors":[{"message":"Too many requests. Please try again later."}]}',
-                    status_code=429,
-                    media_type="application/json",
-                    headers={"Retry-After": str(self.window_seconds)}
-                )
-            self._requests[client_ip].append(now)
 
-            # Periodic cleanup (every ~100 requests, remove stale IPs)
-            if len(self._requests) > 200:
-                cutoff = now - self.window_seconds
-                stale = [ip for ip, times in self._requests.items() if not times or times[-1] < cutoff]
-                for ip in stale:
-                    del self._requests[ip]
+            from app.core.cache import cache
+            redis_available = await cache._ensure_connected()
+            if redis_available and cache._redis:
+                try:
+                    redis_key = f"rate_limit:{client_ip}"
+                    current = await cache._redis.get(redis_key)
+                    if current and int(current) >= self.max_requests:
+                        return Response(
+                            content='{"errors":[{"message":"Too many requests. Please try again later."}]}',
+                            status_code=429,
+                            media_type="application/json",
+                            headers={"Retry-After": str(self.window_seconds)}
+                        )
+                    pipe = cache._redis.pipeline()
+                    pipe.incr(redis_key)
+                    if not current:
+                        pipe.expire(redis_key, self.window_seconds)
+                    await pipe.execute()
+                except Exception as e:
+                    print(f"[RATE LIMIT] Redis error, falling back to in-memory: {e}")
+                    # fall through to in-memory below
+                    redis_available = False
+
+            if not redis_available:
+                now = time.time()
+                self._requests[client_ip] = [
+                    t for t in self._requests[client_ip]
+                    if now - t < self.window_seconds
+                ]
+                if len(self._requests[client_ip]) >= self.max_requests:
+                    return Response(
+                        content='{"errors":[{"message":"Too many requests. Please try again later."}]}',
+                        status_code=429,
+                        media_type="application/json",
+                        headers={"Retry-After": str(self.window_seconds)}
+                    )
+                self._requests[client_ip].append(now)
+
+                # Periodic cleanup
+                if len(self._requests) > 200:
+                    cutoff = now - self.window_seconds
+                    stale = [ip for ip, times in self._requests.items() if not times or times[-1] < cutoff]
+                    for ip in stale:
+                        del self._requests[ip]
 
         return await call_next(request)
-
 
 # ---------------------------------------------------------------------------
 # Input sanitization — strip dangerous HTML/script tags from GraphQL inputs
@@ -139,6 +162,7 @@ def get_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
+        allow_origin_regex=r"http://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:\d+)?",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

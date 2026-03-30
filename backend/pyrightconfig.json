@@ -1,0 +1,24 @@
+{
+  "include": ["app"],
+  "exclude": ["venv", "__pycache__", ".git"],
+  "venvPath": ".",
+  "venv": "venv",
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": false,
+  "reportMissingModuleSource": false,
+  "reportGeneralTypeIssues": false,
+  "reportAttributeAccessIssue": false,
+  "reportArgumentType": false,
+  "reportIndexIssue": false,
+  "reportCallIssue": false,
+  "reportOperatorIssue": false,
+  "reportOptionalMemberAccess": false,
+  "reportUnnecessaryComparison": false,
+  "executionEnvironments": [
+    {
+      "root": "app",
+      "pythonVersion": "3.11"
+    }
+  ]
+}

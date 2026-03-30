@@ -1,0 +1,28 @@
+{
+  "cli": {
+    "version": ">= 14.7.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      }
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://clipx-api.example.com",
+        "EXPO_PUBLIC_REVENUECAT_APPLE": "appl_YOUR_APPLE_API_KEY_HERE",
+        "EXPO_PUBLIC_REVENUECAT_GOOGLE": "goog_YOUR_GOOGLE_API_KEY_HERE"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

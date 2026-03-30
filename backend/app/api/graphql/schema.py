@@ -1,10 +1,11 @@
+# pyright: reportCallIssue=false, reportArgumentType=false, reportGeneralTypeIssues=false, reportReturnType=false
 import strawberry
 import asyncio
 from typing import List, Optional, Any
 from app.services.movie_service import movie_service
 from app.services.notification_service import notification_service
-from app.core.auth import verify_password, get_password_hash, create_access_token
-from app.models.database import User as DbUser, Watchlist as DbWatchlist, History as DbHistory, Notification as DbNotification, Report as DbReport, Review as DbReview
+from app.core.auth import verify_password, get_password_hash, create_access_token, decode_access_token
+from app.models.database import User as DbUser, Watchlist as DbWatchlist, History as DbHistory, Notification as DbNotification, Report as DbReport, Review as DbReview, RecentlyViewed as DbRecentlyViewed
 from sqlalchemy.future import select
 import os
 from datetime import datetime
@@ -14,16 +15,16 @@ from google.auth.transport import requests as google_requests
 
 @strawberry.type
 class UserPreferences:
-    favoriteGenres: List[str] = strawberry.field(default_factory=list)
-    theme: str = "dark"
-    emailNotifications: bool = True
-    autoPlayTrailers: bool = True
+    favorite_genres: List[str] = strawberry.field(default_factory=list)
+    theme: str = strawberry.field(default="dark")
+    email_notifications: bool = strawberry.field(default=True)
+    auto_play_trailers: bool = strawberry.field(default=True)
 
 @strawberry.input
 class UserPreferencesInput:
     theme: Optional[str] = "dark"
-    emailNotifications: Optional[bool] = True
-    autoPlayTrailers: Optional[bool] = True
+    email_notifications: Optional[bool] = True
+    auto_play_trailers: Optional[bool] = True
 
 @strawberry.type
 class UserStats:
@@ -41,9 +42,12 @@ class User:
     avatar: Optional[str] = None
     bio: Optional[str] = None
     role: str = "user"
-    createdAt: str = strawberry.field(resolver=lambda self: str(datetime.now()))
     preferences: UserPreferences = strawberry.field(default_factory=UserPreferences)
     stats: UserStats = strawberry.field(default_factory=UserStats)
+
+    @strawberry.field
+    def createdAt(self) -> str:
+        return str(datetime.now())
 
 @strawberry.type
 class SuccessResponse:
@@ -97,20 +101,14 @@ class Movie:
     title: str
     overview: Optional[str] = None
     posterPath: Optional[str] = None
-    posterUrl: Optional[str] = strawberry.field(resolver=lambda self: self.posterPath)
     backdropPath: Optional[str] = None
-    backdropUrl: Optional[str] = strawberry.field(resolver=lambda self: self.backdropPath)
     releaseDate: Optional[str] = None
-    firstAirDate: Optional[str] = strawberry.field(resolver=lambda self: self.releaseDate)
     voteAverage: float = 0.0
-    rating: float = strawberry.field(resolver=lambda self: self.voteAverage)
     voteCount: int = 0
     runtime: Optional[int] = None
-    durationMinutes: Optional[int] = strawberry.field(resolver=lambda self: self.runtime)
     popularity: float = 0.0
     genres: Optional[List[Genre]] = None
     tagline: Optional[str] = None
-    description: Optional[str] = strawberry.field(resolver=lambda self: self.overview)
     status: Optional[str] = None
     trailerUrl: Optional[str] = None
     inWatchlist: bool = False
@@ -122,6 +120,30 @@ class Movie:
     editorNote: Optional[str] = None
     awards: Optional[str] = None
     seasons: Optional[List[Season]] = None
+
+    @strawberry.field
+    def posterUrl(self) -> Optional[str]:
+        return self.posterPath
+
+    @strawberry.field
+    def backdropUrl(self) -> Optional[str]:
+        return self.backdropPath
+
+    @strawberry.field
+    def firstAirDate(self) -> Optional[str]:
+        return self.releaseDate
+
+    @strawberry.field
+    def rating(self) -> float:
+        return self.voteAverage
+
+    @strawberry.field
+    def durationMinutes(self) -> Optional[int]:
+        return self.runtime
+
+    @strawberry.field
+    def description(self) -> Optional[str]:
+        return self.overview
     
     @strawberry.field
     def year(self) -> Optional[int]:
@@ -187,11 +209,12 @@ class UpdateProfileInput:
 def get_user_preferences(user_db: DbUser) -> UserPreferences:
     prefs_data = user_db.preferences or {}
     return UserPreferences(
-        favoriteGenres=prefs_data.get("favoriteGenres", []),
+        favorite_genres=prefs_data.get("favoriteGenres", []),
         theme=prefs_data.get("theme", "dark"),
-        emailNotifications=prefs_data.get("emailNotifications", True),
-        autoPlayTrailers=prefs_data.get("autoPlayTrailers", True)
+        email_notifications=prefs_data.get("emailNotifications", True),
+        auto_play_trailers=prefs_data.get("autoPlayTrailers", True)
     )
+    # seasonNumber: int = strawberry.field(name="seasonNumber")
 
 def create_user_response(user_db: DbUser) -> User:
     return User(
@@ -243,20 +266,20 @@ class Notification:
     id: strawberry.ID
     title: str
     message: str
-    type: str = "system"
-    actionUrl: Optional[str] = strawberry.field(name="actionUrl", default=None)
     isRead: bool = strawberry.field(name="isRead")
     createdAt: str = strawberry.field(name="createdAt")
+    type: str = "system"
+    actionUrl: Optional[str] = strawberry.field(name="actionUrl", default=None)
 
 @strawberry.type
 class Review:
     id: strawberry.ID
     content: str
     rating: Optional[float]
-    userName: Optional[str] = None
-    userAvatar: Optional[str] = None
     isFeatured: bool = strawberry.field(name="isFeatured")
     createdAt: str = strawberry.field(name="createdAt")
+    userName: Optional[str] = None
+    userAvatar: Optional[str] = None
 
 @strawberry.type
 class Report:
@@ -338,6 +361,43 @@ class AdminUser:
 class AdminUsersResponse:
     users: List[AdminUser]
     totalCount: int
+
+@strawberry.type
+class LoginActivityEntry:
+    id: strawberry.ID
+    action: str
+    deviceInfo: Optional[str] = None
+    ipAddress: Optional[str] = None
+    location: Optional[str] = None
+    success: bool = True
+    createdAt: str = ""
+
+@strawberry.type
+class TwoFactorSetupResponse:
+    secret: str
+    qrUri: str
+    backupCodes: List[str]
+
+@strawberry.type
+class TwoFactorLoginResponse:
+    requires2FA: bool = False
+    tempToken: Optional[str] = None
+    token: Optional[str] = None
+    user: Optional[User] = None
+
+@strawberry.type
+class PromoCodeResult:
+    success: bool
+    message: str
+    discountPercent: int = 0
+    plan: Optional[str] = None
+
+@strawberry.type
+class PremiumSignupStats:
+    totalPremiumUsers: int = 0
+    remainingSlots: int = 50
+    isEligible: bool = True
+    isActive: bool = True
 
 @strawberry.type
 class ChatMessageType:
@@ -728,6 +788,12 @@ class Query:
 
     @strawberry.field
     async def personalizedRecommendations(self, info: strawberry.Info, userId: Optional[strawberry.ID] = None, limit: Optional[int] = 10) -> List[Movie]:
+        from app.core.cache import cache
+        cache_key = f"personalizedRecommendations:{userId or 'guest'}:{limit}"
+        cached = await cache.get(cache_key)
+        if cached:
+            return [Movie(**c) for c in cached]
+
         resp = await movie_service.get_trending()
         results = []
         for i, item in enumerate(resp.results[:limit]):
@@ -742,13 +808,21 @@ class Query:
                 reason="Top Choice" if i < 3 else "Trending Item",
                 score=0.99 - (i * 0.01)
             ))
+
+        await cache.set(cache_key, [vars(m) for m in results], expire=600)  # 10 min
         return results
 
     @strawberry.field
     async def trending(self, info: strawberry.Info, limit: Optional[int] = 20, timeWindow: Optional[str] = "week") -> List[Movie]:
+        from app.core.cache import cache
+        cache_key = f"trending:{limit}:{timeWindow}"
+        cached = await cache.get(cache_key)
+        if cached:
+            return [Movie(**c) for c in cached]
+
         db = await info.context.get_db()
         resp = await movie_service.get_trending(db=db)
-        return [
+        results = [
             Movie(
                 id=item.id,
                 title=item.title,
@@ -761,13 +835,21 @@ class Query:
                 popularity=0.0
             ) for item in resp.results[:limit]
         ]
+        await cache.set(cache_key, [vars(m) for m in results], expire=300)  # 5 min
+        return results
 
     @strawberry.field
     async def popular(self, info: strawberry.Info, limit: Optional[int] = 20, page: Optional[int] = 1) -> List[Movie]:
-        # Reuse trending logic directly to avoid self-reference issues
+        from app.core.cache import cache
+        cache_key = f"popular:{limit}:{page}"
+        cached = await cache.get(cache_key)
+        if cached:
+            return [Movie(**c) for c in cached]
+
+        # Reuse trending logic directly
         db = await info.context.get_db()
         resp = await movie_service.get_trending(db=db)
-        return [
+        results = [
             Movie(
                 id=item.id,
                 title=item.title,
@@ -780,12 +862,20 @@ class Query:
                 popularity=0.0
             ) for item in resp.results[:limit]
         ]
+        await cache.set(cache_key, [vars(m) for m in results], expire=300)
+        return results
 
     @strawberry.field
     async def trendingSeries(self, info: strawberry.Info, limit: Optional[int] = 10) -> List[Movie]:
+        from app.core.cache import cache
+        cache_key = f"trendingSeries:{limit}"
+        cached = await cache.get(cache_key)
+        if cached:
+            return [Movie(**c) for c in cached]
+
         db = await info.context.get_db()
         resp = await movie_service.get_series(db=db)
-        return [
+        results = [
             Movie(
                 id=item.id,
                 title=item.title,
@@ -796,6 +886,8 @@ class Query:
                 voteAverage=item.rating
             ) for item in resp.results[:limit]
         ]
+        await cache.set(cache_key, [vars(m) for m in results], expire=300)
+        return results
 
     @strawberry.field
     async def featured(self, info: strawberry.Info, limit: Optional[int] = 5) -> List[Movie]:
@@ -1338,116 +1430,295 @@ class Query:
             ) for row in reversed(rows)  # Reverse so oldest first
         ]
 
+    @strawberry.field
+    async def loginActivity(self, info: strawberry.Info, limit: Optional[int] = 20) -> List[LoginActivityEntry]:
+        """Get the current user's login activity (security logs)."""
+        user = await info.context.user
+        if not user:
+            return []
+        db = await info.context.get_db()
+        from sqlalchemy import text
+        try:
+            result = await db.execute(text(
+                "SELECT id, action, COALESCE(device_info, user_agent) as device_info, ip_address, location, success, created_at "
+                "FROM login_activity WHERE user_id = :uid ORDER BY created_at DESC LIMIT :lim"
+            ), {"uid": str(user.id), "lim": limit or 20})
+            rows = result.fetchall()
+            return [
+                LoginActivityEntry(
+                    id=str(r[0]),
+                    action=r[1] or "login",
+                    deviceInfo=r[2],
+                    ipAddress=r[3],
+                    location=r[4],
+                    success=r[5] if r[5] is not None else True,
+                    createdAt=str(r[6]) if r[6] else ""
+                ) for r in rows
+            ]
+        except Exception as e:
+            print(f"Login activity query error: {e}")
+            return []
+
+    @strawberry.field
+    async def premiumSignupStats(self) -> PremiumSignupStats:
+        """Get first-50 premium signup statistics."""
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(text(
+                    "SELECT count(*) FROM users WHERE subscription_tier != 'free'"
+                ))
+                total_premium = result.scalar() or 0
+                remaining = max(0, 50 - total_premium)
+                return PremiumSignupStats(
+                    totalPremiumUsers=total_premium,
+                    remainingSlots=remaining,
+                    isEligible=remaining > 0,
+                    isActive=remaining > 0
+                )
+        except Exception as e:
+            print(f"Premium stats error: {e}")
+            return PremiumSignupStats()
+
+    @strawberry.field
+    async def my2FAStatus(self, info: strawberry.Info) -> bool:
+        """Check if the current user has 2FA enabled."""
+        user = await info.context.user
+        if not user:
+            return False
+        return getattr(user, 'totp_enabled', False) or False
+
+# ───────────────────────────────────────
+# Login Activity Helper (module-level to avoid Strawberry `self=None` edge case)
+# ───────────────────────────────────────
+async def _log_activity(
+    db, user_id, action: str,
+    info=None, success: bool = True
+):
+    """Log a login/security event."""
+    from sqlalchemy import text
+    try:
+        ip = "unknown"
+        ua = ""
+        if info and hasattr(info.context, 'request'):
+            request = info.context.request
+            ip = request.client.host if request.client else "unknown"
+            ua = request.headers.get("user-agent", "")[:1000]
+
+        if not user_id:
+            return  # Can't log without user
+
+        await db.execute(text("""
+            INSERT INTO login_activity (user_id, action, ip_address, user_agent, success)
+            VALUES (:uid, :action, :ip, :ua, :success)
+        """), {
+            "uid": user_id,
+            "action": action,
+            "ip": ip,
+            "ua": ua,
+            "success": success,
+        })
+        await db.commit()
+    except Exception as e:
+        print(f"Log activity error: {e}")
+
 @strawberry.type
 class Mutation:
     @strawberry.mutation
-    async def login(self, info: strawberry.Info, email: str, password: str) -> AuthResponse:
-        user = None
-        for attempt in range(2):
+    async def updateWatchProgress(
+        self, info: strawberry.Info, movieId: str, contentType: str, currentTime: int, duration: int
+    ) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+            
+        db = await info.context.get_db()
+        
+        # Upsert History
+        history_query = await db.execute(select(DbHistory).where(DbHistory.user_id == user.id, DbHistory.moviebox_id == movieId))
+        history_item = history_query.scalars().first()
+        
+        if history_item:
+            # Only update duration if positive and valid
+            history_item.current_time = currentTime
+            if duration > 0:
+                history_item.duration = max(history_item.duration or 0, duration)
+            history_item.updated_at = datetime.utcnow()
+        else:
+            new_history = DbHistory(
+                user_id=user.id,
+                moviebox_id=movieId,
+                content_type=contentType,
+                current_time=currentTime,
+                duration=duration
+            )
+            db.add(new_history)
+            
+        # Update Recently Viewed
+        recent_query = await db.execute(select(DbRecentlyViewed).where(DbRecentlyViewed.user_id == user.id, DbRecentlyViewed.moviebox_id == movieId))
+        recent_item = recent_query.scalars().first()
+        
+        if recent_item:
+            recent_item.viewed_at = datetime.utcnow()
+        else:
+            new_recent = DbRecentlyViewed(
+                user_id=user.id,
+                moviebox_id=movieId,
+                content_type=contentType
+            )
+            db.add(new_recent)
+            
+        await db.commit()
+        return SuccessResponse(success=True, message="Progress saved")
+
+    @strawberry.mutation
+    async def login(self, info: strawberry.Info, email: str, password: str, totpCode: Optional[str] = None) -> strawberry.scalars.JSON:
+        from app.core.database import AsyncSessionLocal
+        from app.core.auth import verify_password, create_access_token
+
+        # Use a dedicated session to avoid pgBouncer prepared-statement conflicts
+        async with AsyncSessionLocal() as db:
             try:
-                db = await info.context.get_db()
                 result = await db.execute(select(DbUser).where(DbUser.email == email))
                 user = result.scalars().first()
-                break
             except Exception as e:
-                print(f"[LOGIN] DB error (attempt {attempt+1}): {type(e).__name__}")
-                info.context._db = None
-                if attempt == 1:
-                    raise Exception("Login service temporarily unavailable. Please try again.")
+                print(f"[LOGIN] DB error: {type(e).__name__}: {e}")
+                raise Exception("Login service temporarily unavailable. Please try again.")
 
-        if not user:
-            raise Exception("Invalid email or password")
+            if not user:
+                # Log failed attempt
+                await _log_activity(db, None, "login_failed", info, success=False)
+                raise Exception("Invalid email or password")
 
-        if not user.password:
-            raise Exception("This account uses Google sign-in. Please log in with Google.")
+            if not user.password:
+                raise Exception("This account uses Google sign-in. Please log in with Google.")
 
-        if not verify_password(password, user.password):
-            raise Exception("Invalid email or password")
+            if not verify_password(password, user.password):
+                await _log_activity(db, str(user.id), "login_failed", info, success=False)
+                raise Exception("Invalid email or password")
 
-        token = create_access_token({"sub": user.email})
+            # Check if 2FA is enabled
+            if getattr(user, 'totp_enabled', False) and user.totp_enabled:
+                if not totpCode:
+                    # Return a temporary token that requires 2FA completion
+                    temp_token = create_access_token(
+                        {"sub": user.email, "type": "2fa_pending", "awaiting_2fa": True},
+                    )
+                    return {
+                        "requires2FA": True,
+                        "tempToken": temp_token,
+                        "token": None,
+                        "user": None,
+                    }
+                # Verify TOTP code
+                from app.core.totp import verify_totp_code
+                if not verify_totp_code(user.totp_secret, totpCode):
+                    # Check backup codes
+                    backup_codes = user.backup_codes or []
+                    if totpCode.upper() in [c.upper() for c in backup_codes]:
+                        # Use and remove the backup code
+                        user.backup_codes = [c for c in backup_codes if c.upper() != totpCode.upper()]
+                        await db.commit()
+                    else:
+                        await _log_activity(db, str(user.id), "2fa_failed", info, success=False)
+                        raise Exception("Invalid 2FA code")
 
-        # Send login notification
-        try:
-            db = await info.context.get_db()
-            await notification_service.create(
-                db, str(user.id),
-                title="Welcome back! 👋",
-                message=f"You just signed in to clipX. Enjoy your session!",
-                notif_type="system",
-                action_url="/dashboard"
-            )
-        except Exception as e:
-            print(f"Login notification error: {e}")
+            token = create_access_token({"sub": user.email})
 
-        return AuthResponse(
-            token=token,
-            user=create_user_response(user)
-        )
+            # Log successful login
+            await _log_activity(db, str(user.id), "login", info, success=True)
+
+            # Send login notification (non-critical)
+            try:
+                await notification_service.create(
+                    db, str(user.id),
+                    title="Welcome back! 👋",
+                    message=f"You just signed in to clipX. Enjoy your session!",
+                    notif_type="system",
+                    action_url="/dashboard"
+                )
+            except Exception as e:
+                print(f"Login notification error: {e}")
+
+            user_resp = create_user_response(user)
+            return {
+                "requires2FA": False,
+                "tempToken": None,
+                "token": token,
+                "user": {
+                    "id": str(user.id),
+                    "email": user.email,
+                    "name": user.name,
+                    "avatar": user.avatar,
+                    "bio": user.bio,
+                    "role": user.role,
+                },
+            }
 
     @strawberry.mutation
     async def register(self, info: strawberry.Info, input: RegisterInput) -> AuthResponse:
-        db = await info.context.get_db()
-        result = await db.execute(select(DbUser).where(DbUser.email == input.email))
-        existing_user = result.scalars().first()
-        if existing_user:
-            # If user exists but has no password (e.g. created via Google Auth), allow setting password (account linking)
-            # This is a simplification. Ideally we should verify email ownership first.
-            if not existing_user.password:
-                 hashed_password = get_password_hash(input.password)
-                 existing_user.password = hashed_password
-                 await db.commit()
-                 await db.refresh(existing_user)
-                 token = create_access_token({"sub": existing_user.email})
-                 return AuthResponse(
-                    token=token,
-                    user=create_user_response(existing_user)
-                 )
-            
-            raise Exception("User already exists")
-            
-        hashed_password = get_password_hash(input.password)
-        new_user = DbUser(
-            email=input.email,
-            password=hashed_password,
-            role="user",
-            preferences={},
-            email_verified=False,
-        )
-        db.add(new_user)
-        await db.commit()
-        await db.refresh(new_user)
-        
-        # Send verification email
-        try:
-            from app.core.email_service import send_verification_email
-            send_verification_email(str(new_user.id), new_user.email, new_user.name or "")
-        except Exception as e:
-            print(f"Verification email error: {e}")
+        from app.core.database import AsyncSessionLocal
+        from app.core.auth import get_password_hash, create_access_token
 
-        # Handle referral
-        try:
-            referral_code = input.referralCode if hasattr(input, 'referralCode') else None
-            if referral_code:
-                from app.models.database import User as DbUserModel
-                all_users = await db.execute(select(DbUserModel))
-                for u in all_users.scalars().all():
-                    if str(u.id).replace("-", "")[:8].upper() == referral_code.upper():
-                        u.referral_count = (u.referral_count or 0) + 1
-                        # Auto-upgrade to standard if 5 referrals reached (3 months free)
-                        if u.referral_count >= 5 and u.subscription_tier == "free":
-                            u.subscription_tier = "standard"
-                            from datetime import timedelta
-                            u.subscription_expires_at = datetime.utcnow() + timedelta(days=90)
-                        await db.commit()
-                        break
-        except Exception as e:
-            print(f"Referral tracking error: {e}")
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(DbUser).where(DbUser.email == input.email))
+            existing_user = result.scalars().first()
+            if existing_user:
+                # If user exists but has no password (Google Auth), allow linking
+                if not existing_user.password:
+                     hashed_password = get_password_hash(input.password)
+                     existing_user.password = hashed_password
+                     await db.commit()
+                     await db.refresh(existing_user)
+                     token = create_access_token({"sub": existing_user.email})
+                     return AuthResponse(
+                        token=token,
+                        user=create_user_response(existing_user)
+                     )
+                raise Exception("User already exists")
 
-        token = create_access_token({"sub": new_user.email})
-        return AuthResponse(
-            token=token,
-            user=create_user_response(new_user)
-        )
+            hashed_password = get_password_hash(input.password)
+            new_user = DbUser(
+                email=input.email,
+                password=hashed_password,
+                role="user",
+                preferences={},
+                email_verified=False,
+            )
+            db.add(new_user)
+            await db.commit()
+            await db.refresh(new_user)
+
+            # Send verification email
+            try:
+                from app.core.email_service import send_verification_email
+                send_verification_email(str(new_user.id), new_user.email, new_user.name or "")
+            except Exception as e:
+                print(f"Verification email error: {e}")
+
+            # Handle referral
+            try:
+                referral_code = input.referralCode if hasattr(input, 'referralCode') else None
+                if referral_code:
+                    all_users = await db.execute(select(DbUser))
+                    for u in all_users.scalars().all():
+                        if str(u.id).replace("-", "")[:8].upper() == referral_code.upper():
+                            u.referral_count = (u.referral_count or 0) + 1
+                            if u.referral_count >= 5 and u.subscription_tier == "free":
+                                u.subscription_tier = "standard"
+                                from datetime import timedelta
+                                u.subscription_expires_at = datetime.utcnow() + timedelta(days=90)
+                            await db.commit()
+                            break
+            except Exception as e:
+                print(f"Referral tracking error: {e}")
+
+            token = create_access_token({"sub": new_user.email})
+            return AuthResponse(
+                token=token,
+                user=create_user_response(new_user)
+            )
 
     @strawberry.mutation
     async def googleAuth(self, info: strawberry.Info, idToken: str) -> GoogleAuthResponse:
@@ -1528,6 +1799,56 @@ class Mutation:
             raise Exception(f"Google authentication failed: {str(e)}")
 
     @strawberry.mutation
+    async def forgotPassword(self, info: strawberry.Info, email: str) -> SuccessResponse:
+        db = await info.context.get_db()
+        result = await db.execute(select(DbUser).where(DbUser.email == email))
+        user = result.scalars().first()
+        
+        if user:
+            try:
+                from app.core.email_service import send_password_reset_email
+                if user.password:
+                    send_password_reset_email(str(user.id), user.email, user.name or "User")
+            except Exception as e:
+                print(f"Failed to send reset email: {e}")
+                
+        # Always return true to prevent email enumeration
+        return SuccessResponse(success=True, message="If an account exists, a reset link was sent")
+        
+    @strawberry.mutation
+    async def resetPassword(self, info: strawberry.Info, token: str, newPassword: str) -> SuccessResponse:
+        from app.core.auth import decode_access_token, get_password_hash
+        
+        payload = decode_access_token(token)
+        if not payload or payload.get("type") != "reset":
+            raise Exception("Invalid or expired reset token")
+            
+        user_id = payload.get("sub")
+        
+        db = await info.context.get_db()
+        result = await db.execute(select(DbUser).where(DbUser.id == user_id))
+        user = result.scalars().first()
+        
+        if not user:
+            raise Exception("User not found")
+            
+        user.password = get_password_hash(newPassword)
+        await db.commit()
+        
+        try:
+            from app.services.notification_service import notification_service
+            await notification_service.create(
+                db, str(user.id),
+                title="Password Updated 🔒",
+                message="Your password was successfully changed.",
+                notif_type="system"
+            )
+        except Exception:
+            pass
+            
+        return SuccessResponse(success=True, message="Password reset successfully")
+
+    @strawberry.mutation
     async def updateProfile(self, info: strawberry.Info, input: UpdateProfileInput) -> User:
         user = await info.context.user
         if not user:
@@ -1550,10 +1871,10 @@ class Mutation:
         if input.preferences:
             if input.preferences.theme is not None:
                 current_prefs["theme"] = input.preferences.theme
-            if input.preferences.emailNotifications is not None:
-                current_prefs["emailNotifications"] = input.preferences.emailNotifications
-            if input.preferences.autoPlayTrailers is not None:
-                current_prefs["autoPlayTrailers"] = input.preferences.autoPlayTrailers
+            if input.preferences.email_notifications is not None:
+                current_prefs["emailNotifications"] = input.preferences.email_notifications
+            if input.preferences.auto_play_trailers is not None:
+                current_prefs["autoPlayTrailers"] = input.preferences.auto_play_trailers
         
         # Important: re-assign to trigger SQLalchemy update
         user.preferences = current_prefs
@@ -1562,6 +1883,25 @@ class Mutation:
         await db.refresh(user)
         
         return create_user_response(user)
+
+    @strawberry.mutation
+    async def submitReport(self, info: strawberry.Info, reason: str, description: str, movieId: Optional[str] = None) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+            
+        db = await info.context.get_db()
+        
+        new_report = DbReport(
+            user_id=user.id,
+            reason=reason,
+            description=description,
+            moviebox_id=movieId
+        )
+        db.add(new_report)
+        await db.commit()
+        
+        return SuccessResponse(success=True, message="Report submitted successfully")
 
     @strawberry.mutation
     async def recordWatchProgress(self, info: strawberry.Info, movieId: strawberry.ID, currentTime: int, duration: int) -> SuccessResponse:
@@ -2251,5 +2591,148 @@ class Mutation:
         except Exception as e:
             print(f"Payment history error: {e}")
             return {"payments": []}
+
+    # ───────────────────────────────────────
+    # 2FA (TOTP)
+    # ───────────────────────────────────────
+
+    @strawberry.mutation
+    async def setup2FA(self, info: strawberry.Info) -> TwoFactorSetupResponse:
+        """Generate a new TOTP secret for 2FA setup. User must verify before it's enabled."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        if getattr(user, 'totp_enabled', False):
+            raise Exception("2FA is already enabled")
+
+        from app.core.totp import generate_totp_secret, get_totp_uri, generate_backup_codes
+        secret = generate_totp_secret()
+        qr_uri = get_totp_uri(secret, user.email)
+        backup_codes = generate_backup_codes(8)
+
+        # Store secret temporarily (not enabled yet)
+        db = await info.context.get_db()
+        user.totp_secret = secret
+        user.backup_codes = backup_codes
+        await db.commit()
+
+        return TwoFactorSetupResponse(
+            secret=secret,
+            qrUri=qr_uri,
+            backupCodes=backup_codes
+        )
+
+    @strawberry.mutation
+    async def verify2FA(self, info: strawberry.Info, code: str) -> SuccessResponse:
+        """Verify a TOTP code to enable 2FA."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        if not user.totp_secret:
+            raise Exception("Please run setup2FA first")
+
+        from app.core.totp import verify_totp_code
+        if not verify_totp_code(user.totp_secret, code):
+            raise Exception("Invalid code. Please try again.")
+
+        db = await info.context.get_db()
+        user.totp_enabled = True
+        await db.commit()
+
+        await _log_activity(db, str(user.id), "2fa_enabled", info)
+        return SuccessResponse(success=True, message="2FA enabled successfully!")
+
+    @strawberry.mutation
+    async def disable2FA(self, info: strawberry.Info, password: Optional[str] = None) -> SuccessResponse:
+        """Disable 2FA for the current user."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        if not getattr(user, 'totp_enabled', False):
+            return SuccessResponse(success=True, message="2FA is not enabled")
+
+        # Verify password if the user has one
+        if user.password:
+            if not password:
+                raise Exception("Password required to disable 2FA")
+            if not verify_password(password, user.password):
+                raise Exception("Incorrect password")
+
+        db = await info.context.get_db()
+        user.totp_enabled = False
+        user.totp_secret = None
+        user.backup_codes = []
+        await db.commit()
+
+        await _log_activity(db, str(user.id), "2fa_disabled", info)
+        return SuccessResponse(success=True, message="2FA disabled")
+
+    # ───────────────────────────────────────
+    # Promo / Coupon Codes
+    # ───────────────────────────────────────
+
+    @strawberry.mutation
+    async def applyPromoCode(self, info: strawberry.Info, code: str) -> PromoCodeResult:
+        """Apply a promo/coupon code."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+
+        db = await info.context.get_db()
+        from sqlalchemy import text
+
+        # Find the promo code
+        result = await db.execute(text(
+            "SELECT id, code, discount_percent, discount_months, plan, max_uses, current_uses, "
+            "is_active, expires_at FROM promo_codes WHERE UPPER(code) = UPPER(:code)"
+        ), {"code": code.strip()})
+        row = result.fetchone()
+
+        if not row:
+            return PromoCodeResult(success=False, message="Invalid promo code")
+
+        promo_id, _, discount, months, plan, max_uses, current_uses, is_active, expires_at = row
+
+        if not is_active:
+            return PromoCodeResult(success=False, message="This promo code is no longer active")
+        if expires_at and datetime.utcnow() > expires_at:
+            return PromoCodeResult(success=False, message="This promo code has expired")
+        if max_uses and current_uses >= max_uses:
+            return PromoCodeResult(success=False, message="This promo code has reached its usage limit")
+
+        # Check if user already applied this code
+        existing = await db.execute(text(
+            "SELECT 1 FROM applied_promos WHERE user_id = :uid AND promo_code_id = :pid"
+        ), {"uid": str(user.id), "pid": str(promo_id)})
+        if existing.fetchone():
+            return PromoCodeResult(success=False, message="You've already used this promo code")
+
+        # Apply the promo
+        await db.execute(text(
+            "INSERT INTO applied_promos (user_id, promo_code_id) VALUES (:uid, :pid)"
+        ), {"uid": str(user.id), "pid": str(promo_id)})
+        await db.execute(text(
+            "UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = :pid"
+        ), {"pid": str(promo_id)})
+
+        # If promo gives a plan upgrade
+        if plan:
+            user.subscription_tier = plan
+            from datetime import timedelta
+            user.subscription_expires_at = datetime.utcnow() + timedelta(days=30 * (months or 1))
+
+        await db.commit()
+
+        return PromoCodeResult(
+            success=True,
+            message=f"Promo applied! {discount}% off" + (f" on {plan.capitalize()} plan" if plan else ""),
+            discountPercent=discount or 0,
+            plan=plan
+        )
+
+
+    # ───────────────────────────────────────
+    # (Login Activity helper moved to module level — see _log_activity above)
+    # ───────────────────────────────────────
 
 schema = strawberry.Schema(query=Query, mutation=Mutation)

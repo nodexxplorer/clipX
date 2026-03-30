@@ -148,35 +148,45 @@ export function AuthProvider({ children }) {
 		}
 	};
 
-	// Email/Password Login - SIMPLIFIED (one mutation only)
-	const login = async (email, password) => {
+	// Email/Password Login - handles 2FA flow
+	const login = async (email, password, totpCode = null) => {
 		try {
 			setLoading(true);
 			setError(null);
 
-
 			const { data, errors } = await client.mutate({
 				mutation: LOGIN_MUTATION,
-				variables: { email, password },
+				variables: { email, password, totpCode },
 			});
 
 			if (errors && errors.length > 0) {
 				throw new Error(errors[0].message);
 			}
 
-			if (data?.login) {
-				const { token, user: authUser } = data.login;
+			// The login mutation now returns JSON
+			const result = typeof data?.login === 'string' ? JSON.parse(data.login) : data?.login;
 
-				localStorage.setItem('token', token);
-				if (authUser.role) {
+			if (!result) {
+				return { success: false, error: 'Invalid login response' };
+			}
+
+			// 2FA required — return early so login page can show OTP input
+			if (result.requires2FA) {
+				return { success: false, requires2FA: true, tempToken: result.tempToken };
+			}
+
+			if (result.token) {
+				localStorage.setItem('token', result.token);
+				const authUser = result.user;
+				if (authUser?.role) {
 					localStorage.setItem('role', authUser.role);
 				}
 				setUser(authUser);
 
 				// Role-based routing
-				if (authUser.role === 'admin') {
+				if (authUser?.role === 'admin') {
 					router.push('/admin');
-				} else if (!authUser.name) {
+				} else if (!authUser?.name) {
 					setNeedsOnboarding(true);
 					router.push('/auth/onboarding');
 				} else {

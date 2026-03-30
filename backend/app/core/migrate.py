@@ -194,6 +194,56 @@ MIGRATIONS = [
     CREATE INDEX IF NOT EXISTS ix_refresh_tokens_token_hash ON refresh_tokens (token_hash);
     CREATE INDEX IF NOT EXISTS ix_refresh_tokens_family ON refresh_tokens (family_id);
     """,
+
+    # Login activity / security logs table
+    """
+    CREATE TABLE IF NOT EXISTS login_activity (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        action VARCHAR(50) NOT NULL DEFAULT 'login',
+        device_info VARCHAR(500),
+        ip_address VARCHAR(50),
+        location VARCHAR(255),
+        user_agent VARCHAR(1000),
+        success BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS ix_login_activity_user_id ON login_activity (user_id);
+    CREATE INDEX IF NOT EXISTS ix_login_activity_created ON login_activity (created_at DESC);
+    """,
+
+    # 2FA columns on users — run manually in SQL editor:
+    # ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64) NULL;
+    # ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE;
+    # ALTER TABLE users ADD COLUMN IF NOT EXISTS backup_codes JSONB DEFAULT '[]'::jsonb;
+
+    # Promo/coupon codes table
+    """
+    CREATE TABLE IF NOT EXISTS promo_codes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        code VARCHAR(50) UNIQUE NOT NULL,
+        discount_percent INTEGER DEFAULT 0,
+        discount_months INTEGER DEFAULT 1,
+        plan VARCHAR(20),
+        max_uses INTEGER DEFAULT 100,
+        current_uses INTEGER DEFAULT 0,
+        is_active BOOLEAN DEFAULT TRUE,
+        expires_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS ix_promo_codes_code ON promo_codes (code);
+    """,
+
+    # Track which users applied which promo
+    """
+    CREATE TABLE IF NOT EXISTS applied_promos (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        promo_code_id UUID NOT NULL REFERENCES promo_codes(id) ON DELETE CASCADE,
+        applied_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(user_id, promo_code_id)
+    );
+    """,
 ]
 
 
@@ -202,13 +252,21 @@ async def run_migrations():
     from sqlalchemy import text
 
     print("🔄 Running database migrations...")
-    async with engine.begin() as conn:
-        for i, sql in enumerate(MIGRATIONS):
-            try:
-                await conn.execute(text(sql))
-                print(f"  ✅ Migration {i + 1}/{len(MIGRATIONS)} applied")
-            except Exception as e:
-                print(f"  ⚠️  Migration {i + 1}/{len(MIGRATIONS)} skipped: {e}")
+    for i, sql in enumerate(MIGRATIONS):
+        try:
+            async with engine.begin() as conn:
+                # asyncpg does not allow multiple statements per execute().
+                # Handle `DO $$...` blocks as single executions, otherwise split on `;`
+                if "DO $$" in sql:
+                    await conn.execute(text(sql))
+                else:
+                    parts = [p.strip() for p in sql.split(';') if p.strip()]
+                    for part in parts:
+                        await conn.execute(text(part))
+
+            print(f"  ✅ Migration {i + 1}/{len(MIGRATIONS)} applied")
+        except Exception as e:
+            print(f"  ⚠️  Migration {i + 1}/{len(MIGRATIONS)} skipped: {e}")
 
     print("✅ All migrations complete!")
 

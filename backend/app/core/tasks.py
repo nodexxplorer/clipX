@@ -1,13 +1,3 @@
-"""
-Scheduled Tasks
-Background tasks that run periodically:
-- Grace period enforcement: Downgrade users whose grace period has expired
-- Renewal warnings: Send reminders 3 days before renewal
-- Cleanup: Remove expired tokens and sessions
-
-Usage: Run via cron job or background scheduler
-  python -m app.core.tasks
-"""
 
 import asyncio
 from datetime import datetime, timedelta

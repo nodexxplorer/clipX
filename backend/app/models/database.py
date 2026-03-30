@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, Table, Date
+from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, ForeignKey, Table, Date, Index
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.dialects.postgresql import UUID, JSON
 import uuid
@@ -25,7 +25,13 @@ class User(Base):
     grace_period_end = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
-    watchlist = relationship("Watchlist", back_populates="user")
+    watchlist = relationship("Watchlist", back_populates="user", lazy="dynamic")
+    history = relationship("History", back_populates="user", lazy="dynamic")
+    recently_viewed = relationship("RecentlyViewed", back_populates="user", order_by="desc(RecentlyViewed.viewed_at)", lazy="dynamic")
+    notifications = relationship("Notification", back_populates="user", order_by="desc(Notification.created_at)", lazy="dynamic")
+    reports = relationship("Report", back_populates="user", order_by="desc(Report.created_at)", lazy="dynamic")
+    reviews = relationship("Review", back_populates="user", order_by="desc(Review.created_at)", lazy="dynamic")
+    chat_messages = relationship("ChatMessage", back_populates="user", order_by="desc(ChatMessage.created_at)", lazy="dynamic")
 
 class Movie(Base):
     __tablename__ = "movies"
@@ -59,6 +65,9 @@ class Series(Base):
 
 class Watchlist(Base):
     __tablename__ = "watchlist"
+    __table_args__ = (
+        Index("ix_watchlist_user_movie", "user_id", "moviebox_id"),
+    )
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     moviebox_id = Column(String(255), nullable=False) # Store the Moviebox ID directly for easy lookup
@@ -69,6 +78,9 @@ class Watchlist(Base):
 
 class History(Base):
     __tablename__ = "history"
+    __table_args__ = (
+        Index("ix_history_user_movie", "user_id", "moviebox_id"),
+    )
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     moviebox_id = Column(String(255), nullable=False)
@@ -81,6 +93,9 @@ class History(Base):
 
 class RecentlyViewed(Base):
     __tablename__ = "recently_viewed"
+    __table_args__ = (
+        Index("ix_recently_viewed_user_movie", "user_id", "moviebox_id"),
+    )
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     moviebox_id = Column(String(255), nullable=False)
@@ -137,10 +152,3 @@ class ChatMessage(Base):
     
     user = relationship("User", back_populates="chat_messages")
 
-# Update User relationship
-User.history = relationship("History", back_populates="user")
-User.recently_viewed = relationship("RecentlyViewed", back_populates="user", order_by="desc(RecentlyViewed.viewed_at)")
-User.notifications = relationship("Notification", back_populates="user", order_by="desc(Notification.created_at)")
-User.reports = relationship("Report", back_populates="user", order_by="desc(Report.created_at)")
-User.reviews = relationship("Review", back_populates="user", order_by="desc(Review.created_at)")
-User.chat_messages = relationship("ChatMessage", back_populates="user", order_by="desc(ChatMessage.created_at)")

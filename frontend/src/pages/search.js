@@ -9,7 +9,8 @@ import SearchBar from '@/components/common/SearchBar';
 import MovieCard from '@/components/movies/MovieCard';
 import { LoadingSpinner, EmptyState, MovieCardSkeleton } from '@/components/common/LoadingSpinner';
 import { SEARCH_MOVIES } from '@/graphql/queries/movieQueries';
-import { FiSearch, FiDatabase, FiChevronLeft, FiFilter, FiX, FiChevronDown } from 'react-icons/fi';
+import ContentRating from '@/components/common/ContentRating';
+import { FiSearch, FiDatabase, FiChevronLeft, FiFilter, FiX, FiChevronDown, FiCalendar } from 'react-icons/fi';
 
 const SORT_OPTIONS = [
   { value: 'relevance', label: 'Relevance' },
@@ -35,6 +36,8 @@ export default function SearchPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedGenres, setSelectedGenres] = useState([]);
   const [minRating, setMinRating] = useState(0);
+  const [yearMin, setYearMin] = useState(1970);
+  const [yearMax, setYearMax] = useState(new Date().getFullYear());
   const [showSortMenu, setShowSortMenu] = useState(false);
 
   const { loading, data } = useQuery(SEARCH_MOVIES, {
@@ -60,6 +63,14 @@ export default function SearchPage() {
     // Rating filter
     if (minRating > 0) {
       items = items.filter(movie => (movie.voteAverage || movie.rating || 0) >= minRating);
+    }
+
+    // Year range filter
+    if (yearMin > 1970 || yearMax < new Date().getFullYear()) {
+      items = items.filter(movie => {
+        const year = parseInt(movie.releaseDate?.slice(0, 4) || movie.year || '0');
+        return year >= yearMin && year <= yearMax;
+      });
     }
 
     // Sorting
@@ -108,10 +119,12 @@ export default function SearchPage() {
   const clearFilters = () => {
     setSelectedGenres([]);
     setMinRating(0);
+    setYearMin(1970);
+    setYearMax(new Date().getFullYear());
     setSortBy('relevance');
   };
 
-  const hasActiveFilters = selectedGenres.length > 0 || minRating > 0 || sortBy !== 'relevance';
+  const hasActiveFilters = selectedGenres.length > 0 || minRating > 0 || sortBy !== 'relevance' || yearMin > 1970 || yearMax < new Date().getFullYear();
 
   return (
     <>
@@ -273,6 +286,51 @@ export default function SearchPage() {
                               ${minRating === r ? 'bg-primary-500 text-white' : 'bg-white/10 text-gray-400 hover:text-white'}`}
                           >
                             {r === 0 ? 'Any' : `${r}+`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Year Range */}
+                  <div>
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <FiCalendar className="w-3 h-3" />
+                      Year Range: <span className="text-primary-400">{yearMin} – {yearMax}</span>
+                    </p>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">From</span>
+                        <input
+                          type="number"
+                          min="1950"
+                          max={yearMax}
+                          value={yearMin}
+                          onChange={(e) => setYearMin(Math.max(1950, parseInt(e.target.value) || 1950))}
+                          className="w-20 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-sm outline-none focus:border-primary-500/30 text-center"
+                        />
+                      </div>
+                      <div className="w-8 h-px bg-white/20" />
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500">To</span>
+                        <input
+                          type="number"
+                          min={yearMin}
+                          max={new Date().getFullYear()}
+                          value={yearMax}
+                          onChange={(e) => setYearMax(Math.min(new Date().getFullYear(), parseInt(e.target.value) || new Date().getFullYear()))}
+                          className="w-20 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-white text-sm outline-none focus:border-primary-500/30 text-center"
+                        />
+                      </div>
+                      <div className="flex gap-1 ml-auto">
+                        {[{l: '2020s', min: 2020, max: 2029}, {l: '2010s', min: 2010, max: 2019}, {l: '2000s', min: 2000, max: 2009}, {l: 'All', min: 1970, max: new Date().getFullYear()}].map(p => (
+                          <button
+                            key={p.l}
+                            onClick={() => { setYearMin(p.min); setYearMax(Math.min(p.max, new Date().getFullYear())); }}
+                            className={`px-2 py-1 text-xs font-bold rounded transition-colors
+                              ${yearMin === p.min && yearMax === Math.min(p.max, new Date().getFullYear()) ? 'bg-primary-500 text-white' : 'bg-white/10 text-gray-400 hover:text-white'}`}
+                          >
+                            {p.l}
                           </button>
                         ))}
                       </div>

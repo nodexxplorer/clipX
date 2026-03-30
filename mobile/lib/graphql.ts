@@ -126,11 +126,8 @@ export const GET_NOTIFICATIONS = gql`
 
 // === Mutations ===
 export const LOGIN = gql`
-  mutation Login($email: String!, $password: String!) {
-    login(email: $email, password: $password) {
-      token
-      user { id email name avatar role }
-    }
+  mutation Login($email: String!, $password: String!, $totpCode: String) {
+    login(email: $email, password: $password, totpCode: $totpCode)
   }
 `;
 
@@ -139,6 +136,16 @@ export const REGISTER = gql`
     register(input: $input) {
       token
       user { id email name avatar role }
+    }
+  }
+`;
+
+export const GOOGLE_AUTH = gql`
+  mutation GoogleAuth($idToken: String!) {
+    googleAuth(idToken: $idToken) {
+      token
+      user { id email name avatar role createdAt }
+      isNewUser
     }
   }
 `;
@@ -167,3 +174,152 @@ export const UPDATE_PROFILE = gql`
     }
   }
 `;
+
+export const UPDATE_WATCH_PROGRESS = gql`
+  mutation UpdateWatchProgress($movieId: ID!, $contentType: String!, $currentTime: Int!, $duration: Int!) {
+    updateWatchProgress(movieId: $movieId, contentType: $contentType, currentTime: $currentTime, duration: $duration) {
+      success
+      message
+    }
+  }
+`;
+
+export const FORGOT_PASSWORD = gql`
+  mutation ForgotPassword($email: String!) {
+    forgotPassword(email: $email) {
+      success
+      message
+    }
+  }
+`;
+
+export const RESET_PASSWORD = gql`
+  mutation ResetPassword($token: String!, $newPassword: String!) {
+    resetPassword(token: $token, newPassword: $newPassword) {
+      success
+      message
+    }
+  }
+`;
+
+export const INITIALIZE_SUBSCRIPTION = gql`
+  mutation InitializeSubscription($plan: String!, $billing: String!) {
+    initializeSubscription(plan: $plan, billing: $billing)
+  }
+`;
+
+export const VERIFY_PAYMENT = gql`
+  mutation VerifyPayment($reference: String!) {
+    verifyPayment(reference: $reference) {
+      success
+      message
+    }
+  }
+`;
+
+export const CANCEL_SUBSCRIPTION = gql`
+  mutation CancelSubscription {
+    cancelSubscription {
+      success
+      message
+    }
+  }
+`;
+
+export const SUBMIT_REPORT = gql`
+  mutation SubmitReport($reason: String!, $description: String!, $movieId: String) {
+    submitReport(reason: $reason, description: $description, movieId: $movieId) {
+      success
+      message
+    }
+  }
+`;
+
+export const UPDATE_PROFILE_FULL = gql`
+  mutation UpdateProfileFull($input: UpdateProfileInput!) {
+    updateProfile(input: $input) {
+      id
+      name
+      avatar
+      preferences {
+        theme
+        emailNotifications
+        autoPlayTrailers
+      }
+    }
+  }
+`;
+
+export const MY_SUBSCRIPTION = gql`
+  mutation MySubscription {
+    mySubscription
+  }
+`;
+
+// ─── 2FA ─────────────────────────────────────────────
+export const SETUP_2FA = gql`
+  mutation Setup2FA {
+    setup2FA { secret qrUri backupCodes }
+  }
+`;
+
+export const VERIFY_2FA = gql`
+  mutation Verify2FA($code: String!) {
+    verify2FA(code: $code) { success message }
+  }
+`;
+
+export const DISABLE_2FA = gql`
+  mutation Disable2FA($password: String) {
+    disable2FA(password: $password) { success message }
+  }
+`;
+
+export const GET_2FA_STATUS = gql`
+  query My2FAStatus { my2FAStatus }
+`;
+
+// ─── Account & Security ─────────────────────────────
+export const DELETE_ACCOUNT = gql`
+  mutation DeleteAccount($password: String) {
+    deleteAccount(password: $password) { success message }
+  }
+`;
+
+export const CHANGE_PASSWORD = gql`
+  mutation ChangePassword($currentPassword: String!, $newPassword: String!) {
+    changePassword(currentPassword: $currentPassword, newPassword: $newPassword) { success message }
+  }
+`;
+
+export const RESEND_VERIFICATION = gql`
+  mutation ResendVerification {
+    resendVerification { success message }
+  }
+`;
+
+export const LOGIN_ACTIVITY = gql`
+  query LoginActivity($limit: Int) {
+    loginActivity(limit: $limit) {
+      id action deviceInfo ipAddress location success createdAt
+    }
+  }
+`;
+
+// ─── Promo & Stats ──────────────────────────────────
+export const APPLY_PROMO_CODE = gql`
+  mutation ApplyPromoCode($code: String!) {
+    applyPromoCode(code: $code) { success message discountPercent plan }
+  }
+`;
+
+export const PREMIUM_STATS = gql`
+  query PremiumSignupStats {
+    premiumSignupStats { totalPremiumUsers remainingSlots isEligible isActive }
+  }
+`;
+
+export const MY_PAYMENT_HISTORY = gql`
+  mutation MyPaymentHistory { myPaymentHistory }
+`;
+

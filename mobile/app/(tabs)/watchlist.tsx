@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@apollo/client';
+import { useQuery } from '@apollo/client/react';
 import { Ionicons } from '@expo/vector-icons';
 import { GET_WATCHLIST } from '@/lib/graphql';
 import { colors, spacing, radius, fontSize, fontWeight } from '@/constants/theme';
@@ -47,7 +47,7 @@ function WatchlistItem({ movie }: { movie: Movie }) {
 export default function WatchlistScreen() {
     const { isAuthenticated } = useAuth();
     const router = useRouter();
-    const { data, loading, refetch } = useQuery(GET_WATCHLIST, { skip: !isAuthenticated });
+    const { data, loading, refetch } = useQuery<any>(GET_WATCHLIST, { skip: !isAuthenticated });
 
     const movies: Movie[] = data?.watchlist?.movies || [];
 

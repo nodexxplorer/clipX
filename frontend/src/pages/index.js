@@ -19,6 +19,7 @@ import MovieHero from '@/components/movies/MovieHero';
 import MovieRow from '@/components/movies/MovieRow';
 import GenreGrid from '@/components/home/GenreGrid';
 import PersonalizedRecommendations from '@/components/recommendations/PersonalizedRecommendations';
+import AIRecommendations from '@/components/recommendations/AIRecommendations';
 import ContinueWatching from '@/components/movies/ContinueWatching';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ErrorMessage from '@/components/common/ErrorMessage';
@@ -139,6 +140,13 @@ export default function Home() {
 
         {/* Top Rated */}
         <MovieRow title="Top Rated Hits" movies={popular} />
+
+        {/* AI "Because You Watched" Recommendations (Pro with gate) */}
+        {isAuthenticated && (
+          <div className="px-4 md:px-12 mb-8">
+            <AIRecommendations />
+          </div>
+        )}
 
         {/* Series Row */}
         {trendingSeries.length > 0 && (

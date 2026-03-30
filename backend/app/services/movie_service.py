@@ -58,7 +58,6 @@ class MovieService:
         
         for item in items:
             try:
-                # Check if exists
                 mid = str(item.subjectId)
                 is_movie = item.subjectType == 1
                 model = DbMovie if is_movie else DbSeries
@@ -76,18 +75,24 @@ class MovieService:
                         rating=float(item.imdbRatingValue or 0),
                         year=int(item.releaseDate.year) if item.releaseDate and item.releaseDate.year else None
                     )
-                    db.add(db_item)
+                    # Use savepoint so a duplicate key doesn't poison the whole session
+                    async with db.begin_nested():
+                        db.add(db_item)
                 else:
-                    # Update detail_path if missing
                     if not db_item.detail_path:
                         db_item.detail_path = item.detailPath
             except Exception as e:
-                print(f"Error syncing item {item.title}: {e}")
+                # Savepoint rollback already happened; just log
+                print(f"Sync skip {item.title}: {e}")
         
         try:
             await db.commit()
         except Exception as e:
             print(f"Error committing synced items: {e}")
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
     async def search_content(self, query: str, page: int = 1, db: Optional[Any] = None) -> SearchResponse:
         # Check cache first
@@ -195,30 +200,35 @@ class MovieService:
         return await self.search_content("anime", page=page, db=db)
 
     async def get_details(self, movie_id: str, db: Optional[Any] = None) -> Optional[MovieDetails]:
+        from pydantic import ValidationError as PydanticValidationError
+
         # Try finding the item in provider's memory cache first
         item = await self.provider._get_item(movie_id)
         
         # If not in cache and db provided, look up slug
-        if not item and db:
-            # Try both tables
-            res = await db.execute(select(DbMovie).where(DbMovie.moviebox_id == movie_id))
-            db_movie = res.scalars().first()
-            if not db_movie:
-                res = await db.execute(select(DbSeries).where(DbSeries.moviebox_id == movie_id))
+        try:
+            if not item and db:
+                # Try both tables
+                res = await db.execute(select(DbMovie).where(DbMovie.moviebox_id == movie_id))
                 db_movie = res.scalars().first()
-            
-            if db_movie and db_movie.detail_path:
-                print(f"Found detail_path in DB for {movie_id}: {db_movie.detail_path}")
-                # Construct URL and use it to fetch
-                url = f"/detail/{db_movie.detail_path}?id={movie_id}"
-                # We can pass this URL to get_details which then calls constructor of MovieDetails/TVSeriesDetails
-                # The provider's get_details handles it.
-                raw_details = await self.provider.get_details(url, sub_type="TV_SERIES" if db_movie.subject_type == 2 else "MOVIES")
+                if not db_movie:
+                    res = await db.execute(select(DbSeries).where(DbSeries.moviebox_id == movie_id))
+                    db_movie = res.scalars().first()
+                
+                if db_movie and db_movie.detail_path:
+                    print(f"Found detail_path in DB for {movie_id}: {db_movie.detail_path}")
+                    url = f"/detail/{db_movie.detail_path}?id={movie_id}"
+                    raw_details = await self.provider.get_details(url, sub_type="TV_SERIES" if db_movie.subject_type == 2 else "MOVIES")
+                else:
+                    raw_details = await self.provider.get_details(movie_id)
             else:
-                # If still not found, we try searching by ID again (fallback)
                 raw_details = await self.provider.get_details(movie_id)
-        else:
-            raw_details = await self.provider.get_details(movie_id)
+        except PydanticValidationError as e:
+            print(f"Pydantic validation error for movie {movie_id}: {e}")
+            return None
+        except Exception as e:
+            print(f"Error fetching details for movie {movie_id}: {e}")
+            return None
             
         if not raw_details:
             return None

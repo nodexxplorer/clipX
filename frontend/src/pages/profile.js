@@ -11,6 +11,8 @@ import { gql } from '@apollo/client';
 import { useAuth } from '@/contexts/AuthContext';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
+import TwoFactorSetup from '@/components/auth/TwoFactorSetup';
+import LoginActivityLog from '@/components/common/LoginActivityLog';
 import { useTheme } from '@/contexts/ThemeContext';
 
 const DELETE_ACCOUNT_MUTATION = gql`
@@ -606,6 +608,12 @@ export default function ProfilePage() {
                       Change Password
                     </button>
                   </div>
+
+                  {/* Two-Factor Authentication */}
+                  <TwoFactorSetup />
+
+                  {/* Login Activity */}
+                  <LoginActivityLog />
 
                   <div className="bg-gray-800 rounded-xl p-6 border border-red-500/20">
                     <h2 className="text-xl font-semibold text-red-400 mb-4">Danger Zone</h2>

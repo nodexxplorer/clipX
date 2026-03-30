@@ -1,31 +1,40 @@
-import { ApolloClient, InMemoryCache, createHttpLink, ApolloLink } from '@apollo/client';
-import { setContext } from '@apollo/client/link/context';
+import { ApolloClient, InMemoryCache, createHttpLink } from '@apollo/client';
 import * as SecureStore from 'expo-secure-store';
 import { GRAPHQL_URL } from '@/constants/theme';
 
-const httpLink = createHttpLink({
-    uri: GRAPHQL_URL,
-});
+console.log('[Apollo] GraphQL endpoint:', GRAPHQL_URL);
 
-const authLink = setContext(async (_, { headers }) => {
-    let token: string | null = null;
-    try {
-        token = await SecureStore.getItemAsync('clipx_token');
-    } catch { }
-    return {
-        headers: {
-            ...headers,
-            authorization: token ? `Bearer ${token}` : '',
-        },
-    };
+// Custom fetch that injects auth token from SecureStore
+const authFetchLink = createHttpLink({
+    uri: GRAPHQL_URL,
+    fetch: async (uri, options) => {
+        let token: string | null = null;
+        try {
+            token = await SecureStore.getItemAsync('clipx_token');
+        } catch { }
+
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            ...(options?.headers as Record<string, string> || {}),
+            ...(token ? { authorization: `Bearer ${token}` } : {}),
+        };
+
+        try {
+            const response = await fetch(uri as string, { ...options, headers });
+            return response;
+        } catch (err) {
+            console.error('[Apollo] Network error:', err);
+            throw err;
+        }
+    },
 });
 
 const client = new ApolloClient({
-    link: ApolloLink.from([authLink, httpLink]),
+    link: authFetchLink,
     cache: new InMemoryCache(),
     defaultOptions: {
-        watchQuery: { fetchPolicy: 'cache-and-network' },
-        query: { fetchPolicy: 'cache-first' },
+        watchQuery: { fetchPolicy: 'cache-and-network' as const },
+        query: { fetchPolicy: 'cache-first' as const },
     },
 });
 

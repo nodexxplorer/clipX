@@ -18,9 +18,11 @@ import {
 } from 'react-icons/fi';
 
 import { useAuth } from '@/contexts/AuthContext';
+import { useSubscription } from '@/hooks/useSubscription';
 import { GET_MOVIE, GET_STREAMING_URL } from '@/graphql/queries/movieQueries';
 import { RECORD_WATCH_PROGRESS } from '@/graphql/mutations/interactionMutations';
 import { fromSlug } from '@/utils/slug';
+import SkipIntro from '@/components/player/SkipIntro';
 
 // Code splitting: only load spinner when needed
 const LoadingSpinner = dynamic(() => import('@/components/common/LoadingSpinner'), { ssr: false });
@@ -865,6 +867,19 @@ export default function WatchPage() {
           </div>
         )}
 
+        {/* Skip Intro / Skip Recap Overlay */}
+        <SkipIntro
+          currentTime={currentTime}
+          introStart={movie?.introStart ?? null}
+          introEnd={movie?.introEnd ?? null}
+          recapEnd={movie?.recapEnd ?? null}
+          onSkip={(targetTime) => {
+            if (videoRef.current) {
+              videoRef.current.currentTime = targetTime;
+            }
+          }}
+        />
+
         {/* Cover Image — shown before stream loads */}
         {!streamingUrl && movie?.posterPath && (
           <div className="absolute inset-0 flex items-center justify-center">
@@ -1471,6 +1486,25 @@ export default function WatchPage() {
                         </div>
                       )}
                     </div>
+
+                    {/* PiP (Picture-in-Picture) */}
+                    {document.pictureInPictureEnabled && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            if (document.pictureInPictureElement) {
+                              await document.exitPictureInPicture();
+                            } else if (videoRef.current) {
+                              await videoRef.current.requestPictureInPicture();
+                            }
+                          } catch {}
+                        }}
+                        className="hover:text-primary-400 hover:scale-110 transition-transform hidden sm:block"
+                        title="Picture in Picture"
+                      >
+                        <FiList className="w-5 h-5" />
+                      </button>
+                    )}
 
                     {/* Fullscreen */}
                     <button onClick={toggleFullscreen} className="hover:text-primary-400 hover:scale-110 transition-transform">

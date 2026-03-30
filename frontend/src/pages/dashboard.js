@@ -20,6 +20,8 @@ import MovieHero from '@/components/movies/MovieHero';
 import MovieRow from '@/components/movies/MovieRow';
 import PersonalizedRecommendations from '@/components/recommendations/PersonalizedRecommendations';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+import First50Banner from '@/components/common/First50Banner';
+import GracePeriodBanner from '@/components/common/GracePeriodBanner';
 import { GET_DASHBOARD_DATA } from '@/graphql/queries/userQueries';
 import { GET_TRENDING, GET_POPULAR } from '@/graphql/queries/movieQueries';
 
@@ -95,6 +97,12 @@ export default function DashboardPage() {
         animate="visible"
         className="relative z-20 -mt-16 md:-mt-32"
       >
+        {/* Banners */}
+        <div className="px-4 md:px-12 space-y-4 mb-8">
+          <GracePeriodBanner />
+          <First50Banner />
+        </div>
+
         {/* Continue Watching Row */}
         {continueWatching.length > 0 && (
           <div className="mb-12 px-4 md:px-12">
