@@ -97,6 +97,32 @@ const plans = [
         cta: 'Go Pro',
         ctaStyle: 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-600/20',
     },
+    {
+        id: 'family',
+        name: 'Family',
+        price: '₦12,000',
+        period: '/month',
+        tagline: 'Stream together, save together',
+        icon: FiUsers,
+        gradient: 'from-emerald-500 to-teal-600',
+        borderColor: 'border-emerald-500/30',
+        popular: false,
+        features: [
+            { text: '1080p + 4K Ultra HD', included: true },
+            { text: 'Up to 5 member accounts', included: true },
+            { text: 'Individual profiles & watchlists', included: true },
+            { text: 'Unlimited downloads', included: true },
+            { text: 'Full content library', included: true },
+            { text: 'AI-powered recommendations', included: true },
+            { text: 'Zero ads', included: true },
+            { text: 'Parental controls per profile', included: true },
+            { text: 'Invite members via email', included: true },
+            { text: 'Family dashboard', included: true },
+            { text: 'Priority support', included: true },
+        ],
+        cta: 'Start Family Plan',
+        ctaStyle: 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-500 hover:to-teal-500 shadow-lg shadow-emerald-600/20',
+    },
 ];
 
 const faqs = [
@@ -200,9 +226,9 @@ export default function PricingPage() {
                 </div>
 
                 {/* Plans Grid */}
-                <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-6 mb-24">
+                <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-24">
                     {plans.map((plan, idx) => {
-                        const yearlyPrice = plan.id === 'standard' ? '₦28,800' : plan.id === 'pro' ? '₦76,800' : '₦0';
+                        const yearlyPrice = plan.id === 'standard' ? '₦28,800' : plan.id === 'pro' ? '₦76,800' : plan.id === 'family' ? '₦115,200' : '₦0';
                         const displayPrice = billingCycle === 'yearly' && plan.id !== 'free' ? yearlyPrice : plan.price;
                         const displayPeriod = billingCycle === 'yearly' && plan.id !== 'free' ? '/year' : '/month';
                         const Icon = plan.icon;

@@ -1,5 +1,6 @@
 import httpx
 import urllib.parse
+import ipaddress
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from app.core.config import settings
@@ -13,6 +14,75 @@ STREAM_HEADERS = {
     "Origin": "h5.aoneroom.com",
     "Referer": "https://fmoviesunblocked.net/",
 }
+
+# ═══════════════════════════════════════════════
+# URL Allowlist — prevent SSRF attacks
+# ═══════════════════════════════════════════════
+
+ALLOWED_DOMAINS = {
+    "vod.aoneroom.com",
+    "aoneroom.com",
+    "h5.aoneroom.com",
+    "fmoviesunblocked.net",
+    "image.tmdb.org",
+    "i.ibb.co",
+}
+
+BLOCKED_IP_RANGES = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("0.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+]
+
+
+def _validate_url(url: str) -> str:
+    """
+    Validate the URL against the allowlist and block internal IPs.
+    Returns the validated URL or raises HTTPException.
+    """
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid URL format")
+
+    # Must be HTTP(S)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Only HTTP/HTTPS URLs are allowed")
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise HTTPException(status_code=400, detail="URL must have a hostname")
+
+    # Check against allowed domains
+    domain_allowed = any(
+        hostname == d or hostname.endswith(f".{d}")
+        for d in ALLOWED_DOMAINS
+    )
+    if not domain_allowed:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Domain '{hostname}' is not in the allowed proxy list"
+        )
+
+    # Block internal/private IPs (SSRF protection)
+    try:
+        ip = ipaddress.ip_address(hostname)
+        for blocked in BLOCKED_IP_RANGES:
+            if ip in blocked:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Proxying to private/internal IPs is not allowed"
+                )
+    except ValueError:
+        # hostname is not an IP — that's fine, it's a domain name
+        pass
+
+    return url
 
 
 def _get_moviebox_client() -> httpx.AsyncClient:
@@ -43,6 +113,9 @@ async def proxy_stream(request: Request, url: str = None, token: str = None):
     if not actual_url:
         raise HTTPException(status_code=400, detail="Missing url or token parameter")
 
+    # Validate URL against allowlist (SSRF protection)
+    actual_url = _validate_url(actual_url)
+
     # Build request headers — merge stream defaults with any Range header from browser
     headers = dict(STREAM_HEADERS)
     if "range" in request.headers:
@@ -58,11 +131,11 @@ async def proxy_stream(request: Request, url: str = None, token: str = None):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Upstream fetch failed: {e}")
     else:
-        # Fallback: plain httpx client (may get 403 from CDN)
+        # Fallback: plain httpx client (SSL verification enabled)
         fallback_client = httpx.AsyncClient(
             timeout=None,
             follow_redirects=True,
-            verify=False,
+            verify=True,
         )
         try:
             req = fallback_client.build_request("GET", actual_url, headers=headers)
@@ -97,7 +170,10 @@ async def proxy_stream(request: Request, url: str = None, token: str = None):
 
 @router.get("/download")
 async def proxy_download(url: str, request: Request, filename: str = None):
-    response = await proxy_stream(url, request)
+    # Validate URL first (SSRF protection)
+    _validate_url(url)
+
+    response = await proxy_stream(request, url)
 
     if response.status_code in [200, 206]:
         if not filename:

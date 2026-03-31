@@ -31,8 +31,6 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [show2FA, setShow2FA] = useState(false);
-  const [totpCode, setTotpCode] = useState('');
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -84,16 +82,13 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!show2FA && !validateForm()) return;
+    if (!validateForm()) return;
 
     setIsSubmitting(true);
     setFormError('');
-    const result = await login(formData.email, formData.password, show2FA ? totpCode : null);
+    const result = await login(formData.email, formData.password);
 
-    if (result.requires2FA) {
-      setShow2FA(true);
-      setTotpCode('');
-    } else if (!result.success) {
+    if (!result.success) {
       setFormError(result.error);
     }
     setIsSubmitting(false);
@@ -224,8 +219,6 @@ export default function LoginPage() {
 
               {/* Login Form */}
               <form onSubmit={handleSubmit} className="space-y-4">
-                {!show2FA ? (
-                  <>
                     {/* Email */}
                     <div>
                       <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
@@ -277,69 +270,20 @@ export default function LoginPage() {
                         Forgot password?
                       </Link>
                     </div>
-                  </>
-                ) : (
-                  /* 2FA Code Input */
-                  <div>
-                    <div className="text-center mb-4">
-                      <div className="w-14 h-14 rounded-2xl bg-primary-500/20 flex items-center justify-center mx-auto mb-3">
-                        <FiShield className="w-7 h-7 text-primary-400" />
-                      </div>
-                      <h3 className="text-lg font-bold text-white">Two-Factor Authentication</h3>
-                      <p className="text-gray-400 text-sm mt-1">Enter the 6-digit code from your authenticator app</p>
-                    </div>
-
-                    <div className="flex gap-2 justify-center mb-4">
-                      {Array.from({ length: 6 }).map((_, i) => (
-                        <input
-                          key={i}
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={1}
-                          value={totpCode[i] || ''}
-                          onChange={(e) => {
-                            if (!/^\d*$/.test(e.target.value)) return;
-                            const newCode = totpCode.split('');
-                            newCode[i] = e.target.value;
-                            setTotpCode(newCode.join('').slice(0, 6));
-                            if (e.target.value && e.target.nextElementSibling) {
-                              e.target.nextElementSibling.focus();
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Backspace' && !totpCode[i] && e.target.previousElementSibling) {
-                              e.target.previousElementSibling.focus();
-                            }
-                          }}
-                          className="w-12 h-14 text-center text-xl font-bold bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-primary-500 transition-colors"
-                          autoFocus={i === 0}
-                        />
-                      ))}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => { setShow2FA(false); setTotpCode(''); setFormError(''); }}
-                      className="w-full text-center text-sm text-gray-500 hover:text-gray-300 transition-colors"
-                    >
-                      ← Back to login
-                    </button>
-                  </div>
-                )}
 
                 {/* Submit Button */}
                 <button
                   type="submit"
-                  disabled={isSubmitting || (show2FA && totpCode.length !== 6)}
+                  disabled={isSubmitting}
                   className="w-full py-3 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {isSubmitting ? (
                     <span className="flex items-center justify-center gap-2">
                       <LoadingSpinner size="sm" />
-                      {show2FA ? 'Verifying...' : 'Signing in...'}
+                      Signing in...
                     </span>
                   ) : (
-                    show2FA ? 'Verify & Sign In' : 'Sign In'
+                    'Sign In'
                   )}
                 </button>
               </form>

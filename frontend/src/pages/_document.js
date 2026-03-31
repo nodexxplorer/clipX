@@ -61,7 +61,18 @@ export default function Document() {
         `}} />
       </Head>
       <body style={{ backgroundColor: '#050607', color: '#ffffff' }} className="antialiased">
-        <Main />
+        {/* Skip-to-content link for keyboard users (WCAG 2.4.1) */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[9999] focus:px-4 focus:py-2 focus:bg-cyan-600 focus:text-white focus:rounded-lg focus:text-sm focus:font-semibold focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:ring-offset-2 focus:ring-offset-[#050607]"
+        >
+          Skip to main content
+        </a>
+        {/* ARIA live region for dynamic announcements */}
+        <div id="aria-live-region" role="status" aria-live="polite" aria-atomic="true" className="sr-only" />
+        <main id="main-content" role="main" tabIndex={-1}>
+          <Main />
+        </main>
         <NextScript />
       </body>
     </Html>

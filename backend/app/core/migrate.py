@@ -244,6 +244,145 @@ MIGRATIONS = [
         UNIQUE(user_id, promo_code_id)
     );
     """,
+
+    # ═══════════════════════════════════════════════════════════
+    # V2 Tables — Social, Family Plan, Watch Party, Notifications
+    # ═══════════════════════════════════════════════════════════
+
+    # Review likes (like/dislike)
+    """
+    CREATE TABLE IF NOT EXISTS review_likes (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        like_type VARCHAR(10) NOT NULL CHECK (like_type IN ('like', 'dislike')),
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS ix_review_likes_user_review ON review_likes (user_id, review_id);
+    """,
+
+    # Review reports (moderation)
+    """
+    CREATE TABLE IF NOT EXISTS review_reports (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        review_id UUID NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+        reason VARCHAR(255) NOT NULL,
+        description TEXT,
+        status VARCHAR(50) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS ix_review_reports_user_review ON review_reports (user_id, review_id);
+    """,
+
+    # Watch party rooms
+    """
+    CREATE TABLE IF NOT EXISTS watch_party_rooms (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        host_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        moviebox_id VARCHAR(255) NOT NULL,
+        content_type VARCHAR(50) DEFAULT 'movie',
+        room_code VARCHAR(20) NOT NULL UNIQUE,
+        status VARCHAR(20) DEFAULT 'active',
+        max_participants INTEGER DEFAULT 10,
+        current_time INTEGER DEFAULT 0,
+        is_playing BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        ended_at TIMESTAMP NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_wp_room_code ON watch_party_rooms (room_code);
+    """,
+
+    # Watch party participants
+    """
+    CREATE TABLE IF NOT EXISTS watch_party_participants (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        room_id UUID NOT NULL REFERENCES watch_party_rooms(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        joined_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS ix_wp_participant_room_user ON watch_party_participants (room_id, user_id);
+    """,
+
+    # Family plans
+    """
+    CREATE TABLE IF NOT EXISTS family_plans (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        parent_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        member_slots INTEGER DEFAULT 5,
+        invite_code VARCHAR(20) NOT NULL UNIQUE,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS ix_family_plans_invite_code ON family_plans (invite_code);
+    """,
+
+    # Family members
+    """
+    CREATE TABLE IF NOT EXISTS family_members (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        family_plan_id UUID NOT NULL REFERENCES family_plans(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        role VARCHAR(20) DEFAULT 'member',
+        joined_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS ix_family_member_plan_user ON family_members (family_plan_id, user_id);
+    """,
+
+    # Family invites
+    """
+    CREATE TABLE IF NOT EXISTS family_invites (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        family_plan_id UUID NOT NULL REFERENCES family_plans(id) ON DELETE CASCADE,
+        email VARCHAR(255) NOT NULL,
+        token VARCHAR(64) NOT NULL UNIQUE,
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT NOW(),
+        expires_at TIMESTAMP NULL
+    );
+    CREATE INDEX IF NOT EXISTS ix_family_invites_token ON family_invites (token);
+    """,
+
+    # User layout preferences (drag-and-drop row ordering)
+    """
+    CREATE TABLE IF NOT EXISTS user_layout_preferences (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        layout_order JSONB DEFAULT '[]'::jsonb,
+        updated_at TIMESTAMP DEFAULT NOW()
+    );
+    """,
+
+    # Push notification subscriptions (FCM tokens)
+    """
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        fcm_token VARCHAR(500) NOT NULL,
+        device_type VARCHAR(20) DEFAULT 'web',
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS ix_push_sub_user_token ON push_subscriptions (user_id, fcm_token);
+    """,
+
+    # Yearly stats (Wrapped-style)
+    """
+    CREATE TABLE IF NOT EXISTS yearly_stats (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        year INTEGER NOT NULL,
+        total_minutes INTEGER DEFAULT 0,
+        total_titles INTEGER DEFAULT 0,
+        top_genres JSONB DEFAULT '[]'::jsonb,
+        top_actors JSONB DEFAULT '[]'::jsonb,
+        favorite_movies JSONB DEFAULT '[]'::jsonb,
+        longest_binge INTEGER DEFAULT 0,
+        data JSONB DEFAULT '{}'::jsonb,
+        generated_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS ix_yearly_stats_user_year ON yearly_stats (user_id, year);
+    """,
 ]
 
 

@@ -292,3 +292,198 @@ def send_retention_offer_email(user_email: str, user_name: str, plan: str) -> bo
     """
     return _send_email(user_email, "clipX — Stay for 50% off! 💜", html)
 
+
+# ═══════════════════════════════════════════════════════════
+# V2 Email Templates
+# ═══════════════════════════════════════════════════════════
+
+def send_watch_party_invite_email(to_email: str, host_name: str, room_code: str, movie_title: str = "a movie") -> bool:
+    """Send a watch party invitation email."""
+    join_url = f"{FRONTEND_URL}/watch-party/{room_code}"
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="margin:0;padding:0;background-color:#050607;font-family:'Inter',Arial,sans-serif;">
+      <div style="max-width:560px;margin:40px auto;background:#0f1115;border-radius:16px;border:1px solid rgba(255,255,255,0.08);overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#10b981,#06b6d4);padding:32px;text-align:center;">
+          <h1 style="color:#fff;font-size:28px;margin:0;font-weight:900;letter-spacing:-0.5px;">clip<span style="font-size:32px;">X</span></h1>
+          <p style="color:rgba(255,255,255,0.8);font-size:14px;margin:8px 0 0;">Watch Party</p>
+        </div>
+        <div style="padding:40px 32px;">
+          <h2 style="color:#fff;font-size:22px;margin:0 0 12px;">You're Invited! 🎬🍿</h2>
+          <p style="color:#9ca3af;font-size:15px;line-height:1.6;margin:0 0 28px;">
+            <strong style="color:#fff;">{host_name}</strong> has invited you to watch <strong style="color:#10b981;">{movie_title}</strong> together on clipX!
+          </p>
+          <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);border-radius:12px;padding:20px;margin:0 0 28px;text-align:center;">
+            <p style="color:#6b7280;font-size:12px;margin:0 0 4px;">Room Code</p>
+            <p style="color:#fff;font-size:28px;font-weight:900;letter-spacing:4px;margin:0;">{room_code}</p>
+          </div>
+          <a href="{join_url}"
+             style="display:inline-block;background:linear-gradient(135deg,#10b981,#06b6d4);color:#fff;text-decoration:none;padding:14px 40px;border-radius:12px;font-weight:700;font-size:15px;">
+            Join Watch Party
+          </a>
+        </div>
+        <div style="padding:16px 32px;border-top:1px solid rgba(255,255,255,0.05);text-align:center;">
+          <p style="color:#4b5563;font-size:12px;margin:0;">© {2026} clipX. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+    return _send_email(to_email, f"clipX — {host_name} invited you to a Watch Party! 🍿", html)
+
+
+def send_family_invite_email(to_email: str, owner_name: str, invite_token: str) -> bool:
+    """Send a family plan invitation email with accept link."""
+    accept_url = f"{FRONTEND_URL}/family/accept?token={invite_token}"
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="margin:0;padding:0;background-color:#050607;font-family:'Inter',Arial,sans-serif;">
+      <div style="max-width:560px;margin:40px auto;background:#0f1115;border-radius:16px;border:1px solid rgba(255,255,255,0.08);overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#10b981,#059669);padding:32px;text-align:center;">
+          <h1 style="color:#fff;font-size:28px;margin:0;font-weight:900;letter-spacing:-0.5px;">clip<span style="font-size:32px;">X</span></h1>
+          <p style="color:rgba(255,255,255,0.8);font-size:14px;margin:8px 0 0;">Family Plan</p>
+        </div>
+        <div style="padding:40px 32px;">
+          <h2 style="color:#fff;font-size:22px;margin:0 0 12px;">You're Invited to a Family Plan! 👨‍👩‍👧‍👦</h2>
+          <p style="color:#9ca3af;font-size:15px;line-height:1.6;margin:0 0 28px;">
+            <strong style="color:#fff;">{owner_name}</strong> has invited you to join their clipX Family Plan.
+            You'll get full premium access — 4K streaming, unlimited downloads, and your own personalized profile!
+          </p>
+          <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);border-radius:12px;padding:20px;margin:0 0 28px;">
+            <p style="color:#10b981;font-size:14px;font-weight:600;margin:0 0 8px;">✨ What you get:</p>
+            <ul style="color:#9ca3af;font-size:14px;line-height:1.8;margin:0;padding-left:20px;">
+              <li>4K Ultra HD streaming</li>
+              <li>Your own profile & watchlist</li>
+              <li>Unlimited downloads</li>
+              <li>Zero ads</li>
+              <li>AI-powered recommendations</li>
+            </ul>
+          </div>
+          <a href="{accept_url}"
+             style="display:inline-block;background:linear-gradient(135deg,#10b981,#059669);color:#fff;text-decoration:none;padding:14px 40px;border-radius:12px;font-weight:700;font-size:15px;">
+            Accept Invitation
+          </a>
+          <p style="color:#6b7280;font-size:13px;line-height:1.5;margin:28px 0 0;">
+            This invitation expires in 7 days. If you don't have a clipX account, you'll be asked to create one first.
+          </p>
+        </div>
+        <div style="padding:16px 32px;border-top:1px solid rgba(255,255,255,0.05);text-align:center;">
+          <p style="color:#4b5563;font-size:12px;margin:0;">© {2026} clipX. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+    return _send_email(to_email, f"clipX — {owner_name} invited you to their Family Plan! 👨‍👩‍👧‍👦", html)
+
+
+def send_welcome_email(user_email: str, user_name: str = "") -> bool:
+    """Send a welcome/onboarding email after registration."""
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="margin:0;padding:0;background-color:#050607;font-family:'Inter',Arial,sans-serif;">
+      <div style="max-width:560px;margin:40px auto;background:#0f1115;border-radius:16px;border:1px solid rgba(255,255,255,0.08);overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#0891b2,#8b5cf6);padding:40px;text-align:center;">
+          <h1 style="color:#fff;font-size:36px;margin:0;font-weight:900;letter-spacing:-0.5px;">clip<span style="font-size:42px;">X</span></h1>
+          <p style="color:rgba(255,255,255,0.9);font-size:16px;margin:12px 0 0;">Welcome aboard! 🎉</p>
+        </div>
+        <div style="padding:40px 32px;">
+          <h2 style="color:#fff;font-size:22px;margin:0 0 12px;">Hey {user_name or 'there'}! 👋</h2>
+          <p style="color:#9ca3af;font-size:15px;line-height:1.6;margin:0 0 28px;">
+            Your clipX account is ready. Here's what you can do right away:
+          </p>
+
+          <div style="margin:0 0 16px;">
+            <div style="display:flex;align-items:center;margin:0 0 16px;padding:16px;background:rgba(139,92,246,0.1);border-radius:12px;border:1px solid rgba(139,92,246,0.15);">
+              <span style="font-size:24px;margin-right:12px;">🎬</span>
+              <div>
+                <p style="color:#fff;font-size:14px;font-weight:600;margin:0;">Browse 50,000+ titles</p>
+                <p style="color:#6b7280;font-size:13px;margin:2px 0 0;">Movies, series, anime — all in one place</p>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;margin:0 0 16px;padding:16px;background:rgba(8,145,178,0.1);border-radius:12px;border:1px solid rgba(8,145,178,0.15);">
+              <span style="font-size:24px;margin-right:12px;">🤖</span>
+              <div>
+                <p style="color:#fff;font-size:14px;font-weight:600;margin:0;">AI-powered recommendations</p>
+                <p style="color:#6b7280;font-size:13px;margin:2px 0 0;">Tell us your mood and we'll find the perfect watch</p>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;padding:16px;background:rgba(16,185,129,0.1);border-radius:12px;border:1px solid rgba(16,185,129,0.15);">
+              <span style="font-size:24px;margin-right:12px;">🍿</span>
+              <div>
+                <p style="color:#fff;font-size:14px;font-weight:600;margin:0;">Watch Parties</p>
+                <p style="color:#6b7280;font-size:13px;margin:2px 0 0;">Stream together with friends in real-time</p>
+              </div>
+            </div>
+          </div>
+
+          <a href="{FRONTEND_URL}/dashboard"
+             style="display:inline-block;width:100%;box-sizing:border-box;text-align:center;background:linear-gradient(135deg,#0891b2,#8b5cf6);color:#fff;text-decoration:none;padding:14px;border-radius:12px;font-weight:700;font-size:15px;margin-top:20px;">
+            Start Exploring →
+          </a>
+        </div>
+        <div style="padding:16px 32px;border-top:1px solid rgba(255,255,255,0.05);text-align:center;">
+          <p style="color:#4b5563;font-size:12px;margin:0;">© {2026} clipX. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+    return _send_email(user_email, "Welcome to clipX! 🎬🍿", html)
+
+
+def send_weekly_digest_email(user_email: str, user_name: str, new_releases: list, recommendations: list) -> bool:
+    """Send a weekly digest email with new releases and personalized picks."""
+    releases_html = ""
+    for r in new_releases[:5]:
+        releases_html += f"""
+        <div style="display:inline-block;width:90px;margin:0 8px 8px 0;vertical-align:top;">
+          <img src="{r.get('poster', '')}" width="90" style="border-radius:8px;display:block;" alt="{r.get('title', '')}">
+          <p style="color:#fff;font-size:11px;margin:4px 0 0;line-height:1.3;">{r.get('title', '')}</p>
+        </div>"""
+
+    recs_html = ""
+    for r in recommendations[:5]:
+        recs_html += f"""
+        <div style="display:inline-block;width:90px;margin:0 8px 8px 0;vertical-align:top;">
+          <img src="{r.get('poster', '')}" width="90" style="border-radius:8px;display:block;" alt="{r.get('title', '')}">
+          <p style="color:#fff;font-size:11px;margin:4px 0 0;line-height:1.3;">{r.get('title', '')}</p>
+        </div>"""
+
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body style="margin:0;padding:0;background-color:#050607;font-family:'Inter',Arial,sans-serif;">
+      <div style="max-width:560px;margin:40px auto;background:#0f1115;border-radius:16px;border:1px solid rgba(255,255,255,0.08);overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#0891b2,#3b82f6);padding:32px;text-align:center;">
+          <h1 style="color:#fff;font-size:28px;margin:0;font-weight:900;">clip<span style="font-size:32px;">X</span></h1>
+          <p style="color:rgba(255,255,255,0.8);font-size:14px;margin:8px 0 0;">Your Weekly Digest 📬</p>
+        </div>
+        <div style="padding:32px;">
+          <p style="color:#9ca3af;font-size:15px;margin:0 0 24px;">Hi {user_name or 'there'}, here's what's new this week!</p>
+
+          {"<h3 style='color:#fff;font-size:16px;margin:0 0 12px;'>🆕 New Releases</h3><div style='margin:0 0 24px;'>" + releases_html + "</div>" if releases_html else ""}
+
+          {"<h3 style='color:#fff;font-size:16px;margin:0 0 12px;'>🎯 Picked For You</h3><div style='margin:0 0 24px;'>" + recs_html + "</div>" if recs_html else ""}
+
+          <a href="{FRONTEND_URL}/dashboard"
+             style="display:inline-block;background:linear-gradient(135deg,#0891b2,#3b82f6);color:#fff;text-decoration:none;padding:12px 32px;border-radius:12px;font-weight:700;font-size:14px;">
+            Explore More →
+          </a>
+        </div>
+        <div style="padding:16px 32px;border-top:1px solid rgba(255,255,255,0.05);text-align:center;">
+          <p style="color:#4b5563;font-size:12px;margin:0;">© {2026} clipX. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    """
+    return _send_email(user_email, "clipX — Your Weekly Picks 🎬", html)
+

@@ -5,8 +5,8 @@
 import { gql } from '@apollo/client';
 
 export const LOGIN_MUTATION = gql`
-  mutation Login($email: String!, $password: String!, $totpCode: String) {
-    login(email: $email, password: $password, totpCode: $totpCode)
+  mutation Login($email: String!, $password: String!) {
+    login(email: $email, password: $password)
   }
 `;
 
@@ -129,34 +129,7 @@ export const UPDATE_AVATAR_MUTATION = gql`
   }
 `;
 
-// ─── 2FA Mutations ───────────────────────────────────
-export const SETUP_2FA_MUTATION = gql`
-  mutation Setup2FA {
-    setup2FA {
-      secret
-      qrUri
-      backupCodes
-    }
-  }
-`;
 
-export const VERIFY_2FA_MUTATION = gql`
-  mutation Verify2FA($code: String!) {
-    verify2FA(code: $code) {
-      success
-      message
-    }
-  }
-`;
-
-export const DISABLE_2FA_MUTATION = gql`
-  mutation Disable2FA($password: String) {
-    disable2FA(password: $password) {
-      success
-      message
-    }
-  }
-`;
 
 // ─── Promo Code ───────────────────────────────────────
 export const APPLY_PROMO_CODE_MUTATION = gql`
@@ -196,8 +169,118 @@ export const GET_PREMIUM_STATS = gql`
   }
 `;
 
-export const GET_2FA_STATUS = gql`
-  query My2FAStatus {
-    my2FAStatus
+// ═══════════════════════════════════════════════════════════
+// V2 — Review Interactions
+// ═══════════════════════════════════════════════════════════
+
+export const LIKE_REVIEW_MUTATION = gql`
+  mutation LikeReview($reviewId: String!, $likeType: String!) {
+    likeReview(reviewId: $reviewId, likeType: $likeType) {
+      success
+      message
+    }
   }
-`;
+`;
+
+export const REPORT_REVIEW_MUTATION = gql`
+  mutation ReportReview($reviewId: String!, $reason: String!, $description: String) {
+    reportReview(reviewId: $reviewId, reason: $reason, description: $description) {
+      success
+      message
+    }
+  }
+`;
+
+// ═══════════════════════════════════════════════════════════
+// V2 — Watch Party
+// ═══════════════════════════════════════════════════════════
+
+export const CREATE_WATCH_PARTY = gql`
+  mutation CreateWatchParty($movieboxId: String!, $contentType: String) {
+    createWatchParty(movieboxId: $movieboxId, contentType: $contentType)
+  }
+`;
+
+export const JOIN_WATCH_PARTY = gql`
+  mutation JoinWatchParty($roomCode: String!) {
+    joinWatchParty(roomCode: $roomCode)
+  }
+`;
+
+export const END_WATCH_PARTY = gql`
+  mutation EndWatchParty($roomCode: String!) {
+    endWatchParty(roomCode: $roomCode) {
+      success
+      message
+    }
+  }
+`;
+
+// ═══════════════════════════════════════════════════════════
+// V2 — Family Plan
+// ═══════════════════════════════════════════════════════════
+
+export const CREATE_FAMILY_PLAN = gql`
+  mutation CreateFamilyPlan {
+    createFamilyPlan
+  }
+`;
+
+export const INVITE_FAMILY_MEMBER = gql`
+  mutation InviteFamilyMember($email: String!) {
+    inviteFamilyMember(email: $email) {
+      success
+      message
+    }
+  }
+`;
+
+export const ACCEPT_FAMILY_INVITE = gql`
+  mutation AcceptFamilyInvite($token: String!) {
+    acceptFamilyInvite(token: $token) {
+      success
+      message
+    }
+  }
+`;
+
+export const REMOVE_FAMILY_MEMBER = gql`
+  mutation RemoveFamilyMember($memberId: String!) {
+    removeFamilyMember(memberId: $memberId) {
+      success
+      message
+    }
+  }
+`;
+
+// ═══════════════════════════════════════════════════════════
+// V2 — Layout Preferences & Push Notifications
+// ═══════════════════════════════════════════════════════════
+
+export const SAVE_LAYOUT_PREFERENCE = gql`
+  mutation SaveLayoutPreference($layoutOrder: [String!]!) {
+    saveLayoutPreference(layoutOrder: $layoutOrder) {
+      success
+      message
+    }
+  }
+`;
+
+export const REGISTER_PUSH_TOKEN = gql`
+  mutation RegisterPushToken($fcmToken: String!, $deviceType: String) {
+    registerPushToken(fcmToken: $fcmToken, deviceType: $deviceType) {
+      success
+      message
+    }
+  }
+`;
+
+export const UNREGISTER_PUSH_TOKEN = gql`
+  mutation UnregisterPushToken($fcmToken: String!) {
+    unregisterPushToken(fcmToken: $fcmToken) {
+      success
+      message
+    }
+  }
+`;
+

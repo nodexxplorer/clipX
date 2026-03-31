@@ -144,7 +144,7 @@ async def lifespan(app: FastAPI):
 
 
 def get_app() -> FastAPI:
-    from app.api.routes import movies, proxy, chat, ai, webhooks, invoices
+    from app.api.routes import movies, proxy, chat, ai, webhooks, invoices, watch_party
     from app.api.graphql.schema import schema
 
     app = FastAPI(
@@ -174,6 +174,7 @@ def get_app() -> FastAPI:
     app.include_router(ai.router, prefix=settings.API_V1_STR, tags=["ai"])
     app.include_router(webhooks.router, prefix=settings.API_V1_STR, tags=["webhooks"])
     app.include_router(invoices.router, prefix=settings.API_V1_STR, tags=["invoices"])
+    app.include_router(watch_party.router, tags=["watch_party"])
 
     # GraphQL router
     graphql_app = GraphQLRouter(schema, context_getter=get_context)
@@ -182,6 +183,42 @@ def get_app() -> FastAPI:
     @app.get("/")
     async def root():
         return {"message": "Welcome to ClipX Movie API", "status": "online"}
+
+    @app.get("/health")
+    async def health_check():
+        """Health check endpoint for monitoring and load balancers."""
+        import os
+        from datetime import datetime
+
+        health = {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "version": os.getenv("APP_VERSION", "2.0.0"),
+            "services": {}
+        }
+
+        # Check database connectivity
+        try:
+            from app.core.database import AsyncSessionLocal
+            from sqlalchemy import text
+            async with AsyncSessionLocal() as db:
+                await db.execute(text("SELECT 1"))
+            health["services"]["database"] = "up"
+        except Exception as e:
+            health["services"]["database"] = f"down: {str(e)[:100]}"
+            health["status"] = "degraded"
+
+        # Check movie service
+        try:
+            from app.services.movie_service import movie_service
+            if movie_service and movie_service.provider:
+                health["services"]["movie_provider"] = "up"
+            else:
+                health["services"]["movie_provider"] = "not initialized"
+        except Exception:
+            health["services"]["movie_provider"] = "down"
+
+        return health
 
     return app
 

@@ -148,15 +148,15 @@ export function AuthProvider({ children }) {
 		}
 	};
 
-	// Email/Password Login - handles 2FA flow
-	const login = async (email, password, totpCode = null) => {
+	// Email/Password Login
+	const login = async (email, password) => {
 		try {
 			setLoading(true);
 			setError(null);
 
 			const { data, errors } = await client.mutate({
 				mutation: LOGIN_MUTATION,
-				variables: { email, password, totpCode },
+				variables: { email, password },
 			});
 
 			if (errors && errors.length > 0) {
@@ -168,11 +168,6 @@ export function AuthProvider({ children }) {
 
 			if (!result) {
 				return { success: false, error: 'Invalid login response' };
-			}
-
-			// 2FA required — return early so login page can show OTP input
-			if (result.requires2FA) {
-				return { success: false, requires2FA: true, tempToken: result.tempToken };
 			}
 
 			if (result.token) {

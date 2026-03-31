@@ -11,7 +11,6 @@ import { gql } from '@apollo/client';
 import { useAuth } from '@/contexts/AuthContext';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Modal from '@/components/common/Modal';
-import TwoFactorSetup from '@/components/auth/TwoFactorSetup';
 import LoginActivityLog from '@/components/common/LoginActivityLog';
 import { useTheme } from '@/contexts/ThemeContext';
 
@@ -609,8 +608,7 @@ export default function ProfilePage() {
                     </button>
                   </div>
 
-                  {/* Two-Factor Authentication */}
-                  <TwoFactorSetup />
+
 
                   {/* Login Activity */}
                   <LoginActivityLog />

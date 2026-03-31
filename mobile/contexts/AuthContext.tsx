@@ -8,18 +8,10 @@ interface MeData { me: User }
 interface RegisterData { register: { token: string; user: User } }
 interface GoogleAuthData { googleAuth: { token: string; user: User; isNewUser: boolean } }
 
-// Custom error for 2FA requirement
-export class TwoFactorRequiredError extends Error {
-    tempToken: string;
-    constructor(tempToken: string) {
-        super('2FA required');
-        this.name = 'TwoFactorRequiredError';
-        this.tempToken = tempToken;
-    }
-}
+
 
 interface AuthContextType extends AuthState {
-    login: (email: string, password: string, totpCode?: string) => Promise<void>;
+    login: (email: string, password: string) => Promise<void>;
     register: (name: string, email: string, password: string, referralCode?: string) => Promise<void>;
     googleAuth: (idToken: string) => Promise<void>;
     logout: () => Promise<void>;
@@ -71,17 +63,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })();
     }, []);
 
-    const login = useCallback(async (email: string, password: string, totpCode?: string) => {
-        const { data } = await loginMutation({ variables: { email, password, totpCode } });
+    const login = useCallback(async (email: string, password: string) => {
+        const { data } = await loginMutation({ variables: { email, password } });
         if (!data?.login) throw new Error('Login failed');
 
         // Parse JSON response (backend returns JSON scalar)
         const result = typeof data.login === 'string' ? JSON.parse(data.login) : data.login;
-
-        // 2FA required — throw special error so login screen can show OTP input
-        if (result.requires2FA) {
-            throw new TwoFactorRequiredError(result.tempToken || '');
-        }
 
         if (!result.token) throw new Error('Login failed — no token');
 

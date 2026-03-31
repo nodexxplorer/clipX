@@ -528,3 +528,69 @@
 .light .animate-pulse {
 	color: #64748b !important;
 }
+
+/* ═══════════════════════════════════════════════════════
+   ACCESSIBILITY — WCAG 2.1 Level AA
+   ═══════════════════════════════════════════════════════ */
+
+/* Focus-visible ring for keyboard navigation (WCAG 2.4.7) */
+*:focus-visible {
+	outline: 2px solid #06b6d4;
+	outline-offset: 2px;
+	border-radius: 4px;
+}
+
+/* Remove focus outline for mouse users */
+*:focus:not(:focus-visible) {
+	outline: none;
+}
+
+/* Reduced motion for users who prefer it (WCAG 2.3.3) */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+
+	.animate-fade-in {
+		animation: none !important;
+	}
+
+	.movie-card:hover {
+		transform: none !important;
+	}
+}
+
+/* High contrast mode adjustments */
+@media (prefers-contrast: high) {
+	.glass-card {
+		border-width: 2px !important;
+		border-color: rgba(255, 255, 255, 0.3) !important;
+	}
+
+	.btn-primary,
+	.btn-secondary {
+		border: 2px solid currentColor !important;
+	}
+
+	.movie-card {
+		border-width: 2px !important;
+	}
+}
+
+/* Screen reader only — visually hidden but accessible */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border-width: 0;
+}

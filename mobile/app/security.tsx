@@ -6,7 +6,6 @@ import { useMutation, useQuery } from '@apollo/client/react';
 import { useAuth } from '@/contexts/AuthContext';
 import { colors, spacing, radius, fontSize, fontWeight } from '@/constants/theme';
 import {
-    SETUP_2FA, VERIFY_2FA, DISABLE_2FA, GET_2FA_STATUS,
     CHANGE_PASSWORD, LOGIN_ACTIVITY,
 } from '@/lib/graphql';
 
@@ -15,12 +14,6 @@ export default function SecurityScreen() {
     const { user, deleteAccount } = useAuth();
     const [activeSection, setActiveSection] = useState<string | null>(null);
 
-    // 2FA queries/mutations
-    const { data: twoFAData, refetch: refetch2FA } = useQuery(GET_2FA_STATUS, { fetchPolicy: 'network-only' });
-    const is2FAEnabled = twoFAData?.my2FAStatus || false;
-    const [setup2FA, { loading: setupLoading }] = useMutation(SETUP_2FA);
-    const [verify2FA, { loading: verifyLoading }] = useMutation(VERIFY_2FA);
-    const [disable2FA, { loading: disableLoading }] = useMutation(DISABLE_2FA);
 
     // Change password
     const [changePasswordMutation, { loading: changePwLoading }] = useMutation(CHANGE_PASSWORD);
@@ -33,52 +26,8 @@ export default function SecurityScreen() {
         fetchPolicy: 'network-only',
     });
 
-    // 2FA setup state
-    const [setupData, setSetupData] = useState<any>(null);
-    const [otpCode, setOtpCode] = useState('');
-    const [disablePw, setDisablePw] = useState('');
     const [deletePw, setDeletePw] = useState('');
 
-    const handle2FASetup = async () => {
-        try {
-            const { data } = await setup2FA();
-            if (data?.setup2FA) {
-                setSetupData(data.setup2FA);
-                setActiveSection('2fa-verify');
-            }
-        } catch (err: any) {
-            Alert.alert('Error', err.message);
-        }
-    };
-
-    const handle2FAVerify = async () => {
-        try {
-            const { data } = await verify2FA({ variables: { code: otpCode } });
-            if (data?.verify2FA?.success) {
-                Alert.alert('Success', '2FA enabled!');
-                setActiveSection(null);
-                setSetupData(null);
-                setOtpCode('');
-                refetch2FA();
-            }
-        } catch (err: any) {
-            Alert.alert('Error', err.message);
-        }
-    };
-
-    const handle2FADisable = async () => {
-        try {
-            const { data } = await disable2FA({ variables: { password: disablePw || null } });
-            if (data?.disable2FA?.success) {
-                Alert.alert('Done', '2FA disabled');
-                setActiveSection(null);
-                setDisablePw('');
-                refetch2FA();
-            }
-        } catch (err: any) {
-            Alert.alert('Error', err.message);
-        }
-    };
 
     const handleChangePassword = async () => {
         if (!currentPw || !newPw || newPw.length < 6) {
@@ -126,22 +75,17 @@ export default function SecurityScreen() {
         const map: Record<string, string> = {
             login: 'Sign In',
             login_failed: 'Failed Login',
-            '2fa_enabled': '2FA Enabled',
-            '2fa_disabled': '2FA Disabled',
-            '2fa_failed': 'Failed 2FA',
         };
         return map[action] || action;
     };
 
     const getActionIcon = (action: string): React.ComponentProps<typeof Ionicons>['name'] => {
         if (action.includes('fail')) return 'close-circle';
-        if (action.includes('2fa')) return 'shield-checkmark';
         return 'checkmark-circle';
     };
 
     const getActionColor = (action: string) => {
         if (action.includes('fail')) return colors.error;
-        if (action.includes('2fa')) return '#6366f1';
         return '#22c55e';
     };
 
@@ -169,84 +113,6 @@ export default function SecurityScreen() {
                 <View style={{ width: 40 }} />
             </View>
 
-            {/* ─── 2FA Section ─── */}
-            <View style={styles.section}>
-                <Text style={styles.sectionLabel}>TWO-FACTOR AUTHENTICATION</Text>
-                <View style={styles.card}>
-                    <View style={styles.row}>
-                        <View style={[styles.iconCircle, { backgroundColor: is2FAEnabled ? '#22c55e20' : `${colors.primary}20` }]}>
-                            <Ionicons name="shield-checkmark" size={20} color={is2FAEnabled ? '#22c55e' : colors.primary} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Text style={styles.rowTitle}>2FA Protection</Text>
-                            <Text style={[styles.rowSub, is2FAEnabled && { color: '#22c55e' }]}>
-                                {is2FAEnabled ? 'Enabled ✓' : 'Not enabled'}
-                            </Text>
-                        </View>
-                        {is2FAEnabled ? (
-                            <Pressable style={styles.dangerSmallBtn} onPress={() => setActiveSection('2fa-disable')}>
-                                <Text style={styles.dangerSmallBtnText}>Disable</Text>
-                            </Pressable>
-                        ) : (
-                            <Pressable style={styles.primarySmallBtn} onPress={handle2FASetup} disabled={setupLoading}>
-                                <Text style={styles.primarySmallBtnText}>{setupLoading ? '...' : 'Enable'}</Text>
-                            </Pressable>
-                        )}
-                    </View>
-                </View>
-            </View>
-
-            {/* 2FA Verify Modal (inline) */}
-            {activeSection === '2fa-verify' && setupData && (
-                <View style={styles.inlinePanel}>
-                    <Text style={styles.panelTitle}>Enter code from authenticator</Text>
-                    <Text style={styles.panelSub}>Secret: {setupData.secret}</Text>
-                    <TextInput
-                        style={styles.otpInput}
-                        placeholder="6-digit code"
-                        placeholderTextColor={colors.textMuted}
-                        value={otpCode}
-                        onChangeText={setOtpCode}
-                        keyboardType="number-pad"
-                        maxLength={6}
-                    />
-                    <View style={styles.panelActions}>
-                        <Pressable style={styles.cancelBtn} onPress={() => { setActiveSection(null); setSetupData(null); }}>
-                            <Text style={styles.cancelBtnText}>Cancel</Text>
-                        </Pressable>
-                        <Pressable
-                            style={[styles.primarySmallBtn, otpCode.length !== 6 && { opacity: 0.5 }]}
-                            onPress={handle2FAVerify}
-                            disabled={verifyLoading || otpCode.length !== 6}
-                        >
-                            <Text style={styles.primarySmallBtnText}>{verifyLoading ? '...' : 'Verify'}</Text>
-                        </Pressable>
-                    </View>
-                </View>
-            )}
-
-            {/* 2FA Disable */}
-            {activeSection === '2fa-disable' && (
-                <View style={styles.inlinePanel}>
-                    <Text style={styles.panelTitle}>Disable 2FA</Text>
-                    <TextInput
-                        style={styles.textInput}
-                        placeholder="Your password"
-                        placeholderTextColor={colors.textMuted}
-                        value={disablePw}
-                        onChangeText={setDisablePw}
-                        secureTextEntry
-                    />
-                    <View style={styles.panelActions}>
-                        <Pressable style={styles.cancelBtn} onPress={() => setActiveSection(null)}>
-                            <Text style={styles.cancelBtnText}>Cancel</Text>
-                        </Pressable>
-                        <Pressable style={styles.dangerSmallBtn} onPress={handle2FADisable} disabled={disableLoading}>
-                            <Text style={styles.dangerSmallBtnText}>{disableLoading ? '...' : 'Disable'}</Text>
-                        </Pressable>
-                    </View>
-                </View>
-            )}
 
             {/* ─── Change Password ─── */}
             <View style={styles.section}>

@@ -76,6 +76,24 @@ const plans: Plan[] = [
             { text: 'Dolby Atmos audio', included: true },
         ],
     },
+    {
+        name: 'Family',
+        price: '₦12,000',
+        period: '/month',
+        color: '#10b981',
+        icon: 'people' as const,
+        features: [
+            { text: '4K Ultra HD + HDR', included: true },
+            { text: 'Up to 5 member accounts', included: true },
+            { text: 'Individual profiles & watchlists', included: true },
+            { text: 'Unlimited downloads', included: true },
+            { text: 'Zero ads', included: true },
+            { text: 'Parental controls per profile', included: true },
+            { text: 'Invite members via email', included: true },
+            { text: 'Family dashboard', included: true },
+            { text: 'Priority support', included: true },
+        ],
+    },
 ];
 
 function PlanCard({ plan }: { plan: Plan }) {

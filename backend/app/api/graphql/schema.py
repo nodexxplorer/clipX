@@ -5,11 +5,22 @@ from typing import List, Optional, Any
 from app.services.movie_service import movie_service
 from app.services.notification_service import notification_service
 from app.core.auth import verify_password, get_password_hash, create_access_token, decode_access_token
-from app.models.database import User as DbUser, Watchlist as DbWatchlist, History as DbHistory, Notification as DbNotification, Report as DbReport, Review as DbReview, RecentlyViewed as DbRecentlyViewed
+from app.models.database import (
+    User as DbUser, Watchlist as DbWatchlist, History as DbHistory,
+    Notification as DbNotification, Report as DbReport, Review as DbReview,
+    RecentlyViewed as DbRecentlyViewed,
+    ReviewLike as DbReviewLike, ReviewReport as DbReviewReport,
+    WatchPartyRoom as DbWatchPartyRoom, WatchPartyParticipant as DbWatchPartyParticipant,
+    FamilyPlan as DbFamilyPlan, FamilyMember as DbFamilyMember, FamilyInvite as DbFamilyInvite,
+    UserLayoutPreference as DbUserLayoutPreference, PushSubscription as DbPushSubscription,
+    YearlyStats as DbYearlyStats,
+)
 from sqlalchemy.future import select
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import calendar
+import secrets
+import string
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
@@ -42,6 +53,9 @@ class User:
     avatar: Optional[str] = None
     bio: Optional[str] = None
     role: str = "user"
+    subscriptionTier: str = "free"
+    emailVerified: bool = False
+    referralCount: int = 0
     preferences: UserPreferences = strawberry.field(default_factory=UserPreferences)
     stats: UserStats = strawberry.field(default_factory=UserStats)
 
@@ -197,6 +211,8 @@ class BrowseSeriesResponse:
 class RegisterInput:
     email: str
     password: str
+    name: Optional[str] = None
+    referralCode: Optional[str] = None
 
 @strawberry.input
 class UpdateProfileInput:
@@ -224,6 +240,9 @@ def create_user_response(user_db: DbUser) -> User:
         avatar=user_db.avatar,
         bio=user_db.bio,
         role=user_db.role,
+        subscriptionTier=getattr(user_db, 'subscription_tier', 'free') or 'free',
+        emailVerified=getattr(user_db, 'email_verified', False) or False,
+        referralCount=getattr(user_db, 'referral_count', 0) or 0,
         preferences=get_user_preferences(user_db)
     )
 
@@ -372,18 +391,6 @@ class LoginActivityEntry:
     success: bool = True
     createdAt: str = ""
 
-@strawberry.type
-class TwoFactorSetupResponse:
-    secret: str
-    qrUri: str
-    backupCodes: List[str]
-
-@strawberry.type
-class TwoFactorLoginResponse:
-    requires2FA: bool = False
-    tempToken: Optional[str] = None
-    token: Optional[str] = None
-    user: Optional[User] = None
 
 @strawberry.type
 class PromoCodeResult:
@@ -1481,13 +1488,6 @@ class Query:
             print(f"Premium stats error: {e}")
             return PremiumSignupStats()
 
-    @strawberry.field
-    async def my2FAStatus(self, info: strawberry.Info) -> bool:
-        """Check if the current user has 2FA enabled."""
-        user = await info.context.user
-        if not user:
-            return False
-        return getattr(user, 'totp_enabled', False) or False
 
 # ───────────────────────────────────────
 # Login Activity Helper (module-level to avoid Strawberry `self=None` edge case)
@@ -1598,31 +1598,6 @@ class Mutation:
                 await _log_activity(db, str(user.id), "login_failed", info, success=False)
                 raise Exception("Invalid email or password")
 
-            # Check if 2FA is enabled
-            if getattr(user, 'totp_enabled', False) and user.totp_enabled:
-                if not totpCode:
-                    # Return a temporary token that requires 2FA completion
-                    temp_token = create_access_token(
-                        {"sub": user.email, "type": "2fa_pending", "awaiting_2fa": True},
-                    )
-                    return {
-                        "requires2FA": True,
-                        "tempToken": temp_token,
-                        "token": None,
-                        "user": None,
-                    }
-                # Verify TOTP code
-                from app.core.totp import verify_totp_code
-                if not verify_totp_code(user.totp_secret, totpCode):
-                    # Check backup codes
-                    backup_codes = user.backup_codes or []
-                    if totpCode.upper() in [c.upper() for c in backup_codes]:
-                        # Use and remove the backup code
-                        user.backup_codes = [c for c in backup_codes if c.upper() != totpCode.upper()]
-                        await db.commit()
-                    else:
-                        await _log_activity(db, str(user.id), "2fa_failed", info, success=False)
-                        raise Exception("Invalid 2FA code")
 
             token = create_access_token({"sub": user.email})
 
@@ -1682,6 +1657,7 @@ class Mutation:
             new_user = DbUser(
                 email=input.email,
                 password=hashed_password,
+                name=input.name,
                 role="user",
                 preferences={},
                 email_verified=False,
@@ -1699,7 +1675,7 @@ class Mutation:
 
             # Handle referral
             try:
-                referral_code = input.referralCode if hasattr(input, 'referralCode') else None
+                referral_code = input.referralCode
                 if referral_code:
                     all_users = await db.execute(select(DbUser))
                     for u in all_users.scalars().all():
@@ -1744,7 +1720,9 @@ class Mutation:
             )
             session.mount('https://', HTTPAdapter(max_retries=retries))
             
-            client_id = os.getenv("NEXT_PUBLIC_GOOGLE_CLIENT_ID", "923142375396-2ervt54j93hat9deg7t4k621cmbvi3tt.apps.googleusercontent.com")
+            client_id = os.getenv("NEXT_PUBLIC_GOOGLE_CLIENT_ID")
+            if not client_id:
+                raise Exception("Google Client ID not configured. Set NEXT_PUBLIC_GOOGLE_CLIENT_ID env var.")
             
             # Use the custom session wrapped in google transport request
             transport_request = google_requests.Request(session=session)
@@ -2596,76 +2574,6 @@ class Mutation:
     # 2FA (TOTP)
     # ───────────────────────────────────────
 
-    @strawberry.mutation
-    async def setup2FA(self, info: strawberry.Info) -> TwoFactorSetupResponse:
-        """Generate a new TOTP secret for 2FA setup. User must verify before it's enabled."""
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        if getattr(user, 'totp_enabled', False):
-            raise Exception("2FA is already enabled")
-
-        from app.core.totp import generate_totp_secret, get_totp_uri, generate_backup_codes
-        secret = generate_totp_secret()
-        qr_uri = get_totp_uri(secret, user.email)
-        backup_codes = generate_backup_codes(8)
-
-        # Store secret temporarily (not enabled yet)
-        db = await info.context.get_db()
-        user.totp_secret = secret
-        user.backup_codes = backup_codes
-        await db.commit()
-
-        return TwoFactorSetupResponse(
-            secret=secret,
-            qrUri=qr_uri,
-            backupCodes=backup_codes
-        )
-
-    @strawberry.mutation
-    async def verify2FA(self, info: strawberry.Info, code: str) -> SuccessResponse:
-        """Verify a TOTP code to enable 2FA."""
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        if not user.totp_secret:
-            raise Exception("Please run setup2FA first")
-
-        from app.core.totp import verify_totp_code
-        if not verify_totp_code(user.totp_secret, code):
-            raise Exception("Invalid code. Please try again.")
-
-        db = await info.context.get_db()
-        user.totp_enabled = True
-        await db.commit()
-
-        await _log_activity(db, str(user.id), "2fa_enabled", info)
-        return SuccessResponse(success=True, message="2FA enabled successfully!")
-
-    @strawberry.mutation
-    async def disable2FA(self, info: strawberry.Info, password: Optional[str] = None) -> SuccessResponse:
-        """Disable 2FA for the current user."""
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        if not getattr(user, 'totp_enabled', False):
-            return SuccessResponse(success=True, message="2FA is not enabled")
-
-        # Verify password if the user has one
-        if user.password:
-            if not password:
-                raise Exception("Password required to disable 2FA")
-            if not verify_password(password, user.password):
-                raise Exception("Incorrect password")
-
-        db = await info.context.get_db()
-        user.totp_enabled = False
-        user.totp_secret = None
-        user.backup_codes = []
-        await db.commit()
-
-        await _log_activity(db, str(user.id), "2fa_disabled", info)
-        return SuccessResponse(success=True, message="2FA disabled")
 
     # ───────────────────────────────────────
     # Promo / Coupon Codes
@@ -2734,5 +2642,478 @@ class Mutation:
     # ───────────────────────────────────────
     # (Login Activity helper moved to module level — see _log_activity above)
     # ───────────────────────────────────────
+
+    # ═══════════════════════════════════════════════════════════
+    # V2 — Review Interactions (Like / Dislike / Report)
+    # ═══════════════════════════════════════════════════════════
+
+    @strawberry.mutation
+    async def likeReview(self, info: strawberry.Info, reviewId: str, likeType: str) -> SuccessResponse:
+        """Toggle like/dislike on a review. likeType must be 'like' or 'dislike'."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        if likeType not in ('like', 'dislike'):
+            raise Exception("likeType must be 'like' or 'dislike'")
+
+        db = await info.context.get_db()
+        from sqlalchemy import text
+
+        # Check for existing like
+        existing = await db.execute(
+            select(DbReviewLike).where(
+                DbReviewLike.user_id == user.id,
+                DbReviewLike.review_id == reviewId
+            )
+        )
+        existing_like = existing.scalars().first()
+
+        if existing_like:
+            if existing_like.like_type == likeType:
+                # Toggle off — remove the like
+                await db.delete(existing_like)
+                await db.commit()
+                return SuccessResponse(success=True, message=f"{likeType.capitalize()} removed")
+            else:
+                # Switch from like->dislike or vice versa
+                existing_like.like_type = likeType
+                await db.commit()
+                return SuccessResponse(success=True, message=f"Changed to {likeType}")
+        else:
+            new_like = DbReviewLike(
+                user_id=user.id,
+                review_id=reviewId,
+                like_type=likeType
+            )
+            db.add(new_like)
+            await db.commit()
+            return SuccessResponse(success=True, message=f"Review {likeType}d")
+
+    @strawberry.mutation
+    async def reportReview(self, info: strawberry.Info, reviewId: str, reason: str, description: Optional[str] = None) -> SuccessResponse:
+        """Report a review for moderation."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        if reason not in ('spam', 'harassment', 'spoiler', 'inappropriate', 'other'):
+            raise Exception("Invalid reason")
+
+        db = await info.context.get_db()
+
+        # Check if already reported
+        existing = await db.execute(
+            select(DbReviewReport).where(
+                DbReviewReport.user_id == user.id,
+                DbReviewReport.review_id == reviewId
+            )
+        )
+        if existing.scalars().first():
+            return SuccessResponse(success=False, message="You've already reported this review")
+
+        report = DbReviewReport(
+            user_id=user.id,
+            review_id=reviewId,
+            reason=reason,
+            description=(description or "")[:500]
+        )
+        db.add(report)
+        await db.commit()
+
+        # Send notification to admins
+        try:
+            admin_query = await db.execute(select(DbUser).where(DbUser.role == "admin"))
+            for admin in admin_query.scalars().all():
+                await notification_service.create(
+                    db, str(admin.id),
+                    title="⚠️ Review Reported",
+                    message=f"A review was reported for: {reason}",
+                    notif_type="report",
+                    action_url=f"/admin/reviews?report={reviewId}"
+                )
+        except Exception:
+            pass
+
+        return SuccessResponse(success=True, message="Review reported. We'll review it shortly.")
+
+    # ═══════════════════════════════════════════════════════════
+    # V2 — Watch Party
+    # ═══════════════════════════════════════════════════════════
+
+    @strawberry.mutation
+    async def createWatchParty(self, info: strawberry.Info, movieboxId: str, contentType: str = "movie") -> strawberry.scalars.JSON:
+        """Create a new watch party room. Returns room code + details."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+
+        db = await info.context.get_db()
+        room_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))
+
+        room = DbWatchPartyRoom(
+            host_id=user.id,
+            moviebox_id=movieboxId,
+            content_type=contentType,
+            room_code=room_code
+        )
+        db.add(room)
+
+        # Add host as first participant
+        participant = DbWatchPartyParticipant(
+            room_id=room.id,
+            user_id=user.id
+        )
+        db.add(participant)
+        await db.commit()
+
+        import json
+        return json.dumps({
+            "roomId": str(room.id),
+            "roomCode": room_code,
+            "movieboxId": movieboxId,
+            "contentType": contentType,
+            "hostName": user.name,
+            "shareLink": f"/watch-party/{room_code}"
+        })
+
+    @strawberry.mutation
+    async def joinWatchParty(self, info: strawberry.Info, roomCode: str) -> strawberry.scalars.JSON:
+        """Join an existing watch party by room code."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+
+        db = await info.context.get_db()
+        room_query = await db.execute(
+            select(DbWatchPartyRoom).where(
+                DbWatchPartyRoom.room_code == roomCode,
+                DbWatchPartyRoom.status == "active"
+            )
+        )
+        room = room_query.scalars().first()
+        if not room:
+            raise Exception("Room not found or has ended")
+
+        # Check participant count
+        participants_q = await db.execute(
+            select(DbWatchPartyParticipant).where(DbWatchPartyParticipant.room_id == room.id)
+        )
+        participants = participants_q.scalars().all()
+        if len(participants) >= room.max_participants:
+            raise Exception("Room is full")
+
+        # Check if already in room
+        already_in = any(p.user_id == user.id for p in participants)
+        if not already_in:
+            db.add(DbWatchPartyParticipant(room_id=room.id, user_id=user.id))
+            await db.commit()
+
+        # Notify host
+        try:
+            await notification_service.create(
+                db, str(room.host_id),
+                title="🎉 New Viewer Joined!",
+                message=f"{user.name} joined your watch party",
+                notif_type="social",
+                action_url=f"/watch-party/{roomCode}"
+            )
+        except Exception:
+            pass
+
+        import json
+        return json.dumps({
+            "roomId": str(room.id),
+            "roomCode": room.room_code,
+            "movieboxId": room.moviebox_id,
+            "contentType": room.content_type,
+            "currentTime": room.current_time,
+            "isPlaying": room.is_playing,
+            "participantCount": len(participants) + (0 if already_in else 1)
+        })
+
+    @strawberry.mutation
+    async def endWatchParty(self, info: strawberry.Info, roomCode: str) -> SuccessResponse:
+        """End a watch party (host only)."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+
+        db = await info.context.get_db()
+        room_query = await db.execute(
+            select(DbWatchPartyRoom).where(
+                DbWatchPartyRoom.room_code == roomCode,
+                DbWatchPartyRoom.host_id == user.id
+            )
+        )
+        room = room_query.scalars().first()
+        if not room:
+            raise Exception("Room not found or you're not the host")
+
+        room.status = "ended"
+        room.ended_at = datetime.utcnow()
+        await db.commit()
+        return SuccessResponse(success=True, message="Watch party ended")
+
+    # ═══════════════════════════════════════════════════════════
+    # V2 — Family Plan (RBAC)
+    # ═══════════════════════════════════════════════════════════
+
+    @strawberry.mutation
+    async def createFamilyPlan(self, info: strawberry.Info) -> strawberry.scalars.JSON:
+        """Create a family plan (requires 'family' subscription tier)."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+
+        if getattr(user, 'subscription_tier', 'free') != 'family':
+            raise Exception("Family plan requires the Family subscription tier")
+
+        db = await info.context.get_db()
+
+        # Check if already has a plan
+        existing = await db.execute(
+            select(DbFamilyPlan).where(DbFamilyPlan.parent_id == user.id)
+        )
+        if existing.scalars().first():
+            raise Exception("You already have a family plan")
+
+        invite_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+
+        plan = DbFamilyPlan(
+            parent_id=user.id,
+            invite_code=invite_code
+        )
+        db.add(plan)
+
+        # Add owner as first member
+        owner_member = DbFamilyMember(
+            family_plan_id=plan.id,
+            user_id=user.id,
+            role="owner"
+        )
+        db.add(owner_member)
+        await db.commit()
+
+        import json
+        return json.dumps({
+            "planId": str(plan.id),
+            "inviteCode": invite_code,
+            "memberSlots": plan.member_slots,
+            "membersUsed": 1
+        })
+
+    @strawberry.mutation
+    async def inviteFamilyMember(self, info: strawberry.Info, email: str) -> SuccessResponse:
+        """Send a family plan invite to an email address."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+
+        db = await info.context.get_db()
+        plan_q = await db.execute(select(DbFamilyPlan).where(DbFamilyPlan.parent_id == user.id))
+        plan = plan_q.scalars().first()
+        if not plan:
+            raise Exception("You don't have a family plan")
+
+        # Check member count
+        members_q = await db.execute(
+            select(DbFamilyMember).where(DbFamilyMember.family_plan_id == plan.id)
+        )
+        members = members_q.scalars().all()
+        if len(members) >= plan.member_slots:
+            raise Exception(f"Family plan is full ({plan.member_slots} members max)")
+
+        # Check existing invite
+        existing_invite = await db.execute(
+            select(DbFamilyInvite).where(
+                DbFamilyInvite.family_plan_id == plan.id,
+                DbFamilyInvite.email == email,
+                DbFamilyInvite.status == "pending"
+            )
+        )
+        if existing_invite.scalars().first():
+            return SuccessResponse(success=False, message="An invite is already pending for this email")
+
+        token = secrets.token_urlsafe(32)
+        invite = DbFamilyInvite(
+            family_plan_id=plan.id,
+            email=email,
+            token=token,
+            expires_at=datetime.utcnow() + timedelta(days=7)
+        )
+        db.add(invite)
+        await db.commit()
+
+        return SuccessResponse(success=True, message=f"Invite sent to {email}")
+
+    @strawberry.mutation
+    async def acceptFamilyInvite(self, info: strawberry.Info, token: str) -> SuccessResponse:
+        """Accept a family plan invite using the invite token."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+
+        db = await info.context.get_db()
+        invite_q = await db.execute(
+            select(DbFamilyInvite).where(
+                DbFamilyInvite.token == token,
+                DbFamilyInvite.status == "pending"
+            )
+        )
+        invite = invite_q.scalars().first()
+        if not invite:
+            raise Exception("Invalid or expired invite")
+
+        if invite.expires_at and invite.expires_at < datetime.utcnow():
+            invite.status = "expired"
+            await db.commit()
+            raise Exception("This invite has expired")
+
+        # Check if user is already in a family
+        existing_member = await db.execute(
+            select(DbFamilyMember).where(DbFamilyMember.user_id == user.id)
+        )
+        if existing_member.scalars().first():
+            raise Exception("You're already part of a family plan")
+
+        # Check member count
+        plan_q = await db.execute(select(DbFamilyPlan).where(DbFamilyPlan.id == invite.family_plan_id))
+        plan = plan_q.scalars().first()
+        members_q = await db.execute(
+            select(DbFamilyMember).where(DbFamilyMember.family_plan_id == plan.id)
+        )
+        if len(members_q.scalars().all()) >= plan.member_slots:
+            raise Exception("Family plan is full")
+
+        # Add member
+        member = DbFamilyMember(
+            family_plan_id=plan.id,
+            user_id=user.id,
+            role="member"
+        )
+        db.add(member)
+        invite.status = "accepted"
+
+        # Upgrade the user's tier to family
+        user.subscription_tier = "family"
+        await db.commit()
+
+        return SuccessResponse(success=True, message="Welcome to the family plan!")
+
+    @strawberry.mutation
+    async def removeFamilyMember(self, info: strawberry.Info, memberId: str) -> SuccessResponse:
+        """Remove a member from family plan (owner only)."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+
+        db = await info.context.get_db()
+        plan_q = await db.execute(select(DbFamilyPlan).where(DbFamilyPlan.parent_id == user.id))
+        plan = plan_q.scalars().first()
+        if not plan:
+            raise Exception("You don't have a family plan")
+
+        member_q = await db.execute(
+            select(DbFamilyMember).where(
+                DbFamilyMember.id == memberId,
+                DbFamilyMember.family_plan_id == plan.id
+            )
+        )
+        member = member_q.scalars().first()
+        if not member:
+            raise Exception("Member not found")
+        if member.role == "owner":
+            raise Exception("Cannot remove the plan owner")
+
+        # Downgrade the removed user
+        removed_user_q = await db.execute(select(DbUser).where(DbUser.id == member.user_id))
+        removed_user = removed_user_q.scalars().first()
+        if removed_user:
+            removed_user.subscription_tier = "free"
+
+        await db.delete(member)
+        await db.commit()
+        return SuccessResponse(success=True, message="Member removed from family plan")
+
+    # ═══════════════════════════════════════════════════════════
+    # V2 — Layout Preferences & Push Notifications
+    # ═══════════════════════════════════════════════════════════
+
+    @strawberry.mutation
+    async def saveLayoutPreference(self, info: strawberry.Info, layoutOrder: List[str]) -> SuccessResponse:
+        """Save user's custom home row ordering."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+
+        db = await info.context.get_db()
+        existing_q = await db.execute(
+            select(DbUserLayoutPreference).where(DbUserLayoutPreference.user_id == user.id)
+        )
+        existing = existing_q.scalars().first()
+
+        if existing:
+            existing.layout_order = layoutOrder
+            existing.updated_at = datetime.utcnow()
+        else:
+            pref = DbUserLayoutPreference(
+                user_id=user.id,
+                layout_order=layoutOrder
+            )
+            db.add(pref)
+
+        await db.commit()
+        return SuccessResponse(success=True, message="Layout saved")
+
+    @strawberry.mutation
+    async def registerPushToken(self, info: strawberry.Info, fcmToken: str, deviceType: str = "web") -> SuccessResponse:
+        """Register an FCM push token for the current user."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+
+        db = await info.context.get_db()
+
+        # Check for existing token
+        existing_q = await db.execute(
+            select(DbPushSubscription).where(
+                DbPushSubscription.user_id == user.id,
+                DbPushSubscription.fcm_token == fcmToken
+            )
+        )
+        existing = existing_q.scalars().first()
+
+        if existing:
+            existing.is_active = True
+        else:
+            sub = DbPushSubscription(
+                user_id=user.id,
+                fcm_token=fcmToken,
+                device_type=deviceType
+            )
+            db.add(sub)
+
+        await db.commit()
+        return SuccessResponse(success=True, message="Push token registered")
+
+    @strawberry.mutation
+    async def unregisterPushToken(self, info: strawberry.Info, fcmToken: str) -> SuccessResponse:
+        """Deactivate an FCM push token."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+
+        db = await info.context.get_db()
+        existing_q = await db.execute(
+            select(DbPushSubscription).where(
+                DbPushSubscription.user_id == user.id,
+                DbPushSubscription.fcm_token == fcmToken
+            )
+        )
+        existing = existing_q.scalars().first()
+        if existing:
+            existing.is_active = False
+            await db.commit()
+
+        return SuccessResponse(success=True, message="Push token removed")
 
 schema = strawberry.Schema(query=Query, mutation=Mutation)

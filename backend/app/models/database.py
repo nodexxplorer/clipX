@@ -141,6 +141,8 @@ class Review(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     user = relationship("User", back_populates="reviews")
+    likes = relationship("ReviewLike", back_populates="review", cascade="all, delete-orphan")
+    reports = relationship("ReviewReport", back_populates="review", cascade="all, delete-orphan")
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
@@ -152,3 +154,157 @@ class ChatMessage(Base):
     
     user = relationship("User", back_populates="chat_messages")
 
+# ═══════════════════════════════════════════════════════════════
+# V2 Models — Social, Family Plan, Watch Party, Notifications
+# ═══════════════════════════════════════════════════════════════
+
+class ReviewLike(Base):
+    """Like/dislike toggle for user reviews."""
+    __tablename__ = "review_likes"
+    __table_args__ = (
+        Index("ix_review_likes_user_review", "user_id", "review_id", unique=True),
+    )
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    review_id = Column(UUID(as_uuid=True), ForeignKey("reviews.id", ondelete="CASCADE"), nullable=False)
+    like_type = Column(String(10), nullable=False)  # 'like' or 'dislike'
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+    review = relationship("Review", back_populates="likes")
+
+class ReviewReport(Base):
+    """Report a review for moderation."""
+    __tablename__ = "review_reports"
+    __table_args__ = (
+        Index("ix_review_reports_user_review", "user_id", "review_id", unique=True),
+    )
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    review_id = Column(UUID(as_uuid=True), ForeignKey("reviews.id", ondelete="CASCADE"), nullable=False)
+    reason = Column(String(255), nullable=False)  # spam, harassment, spoiler, other
+    description = Column(Text)
+    status = Column(String(50), default="pending")  # pending, reviewed, dismissed
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+    review = relationship("Review", back_populates="reports")
+
+class WatchPartyRoom(Base):
+    """Synchronized playback room."""
+    __tablename__ = "watch_party_rooms"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    host_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    moviebox_id = Column(String(255), nullable=False)
+    content_type = Column(String(50), default="movie")
+    room_code = Column(String(20), unique=True, nullable=False, index=True)
+    status = Column(String(20), default="active")  # active, ended
+    max_participants = Column(Integer, default=10)
+    current_time = Column(Integer, default=0)  # playback position in seconds
+    is_playing = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    ended_at = Column(DateTime, nullable=True)
+
+    host = relationship("User")
+    participants = relationship("WatchPartyParticipant", back_populates="room", cascade="all, delete-orphan")
+
+class WatchPartyParticipant(Base):
+    """Participant in a watch party room."""
+    __tablename__ = "watch_party_participants"
+    __table_args__ = (
+        Index("ix_wp_participant_room_user", "room_id", "user_id", unique=True),
+    )
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    room_id = Column(UUID(as_uuid=True), ForeignKey("watch_party_rooms.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    joined_at = Column(DateTime, default=datetime.utcnow)
+
+    room = relationship("WatchPartyRoom", back_populates="participants")
+    user = relationship("User")
+
+class FamilyPlan(Base):
+    """Family subscription plan with RBAC. Max 5 sub-accounts."""
+    __tablename__ = "family_plans"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    parent_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    member_slots = Column(Integer, default=5)  # hard-cap at 5
+    invite_code = Column(String(20), unique=True, nullable=False, index=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    parent = relationship("User", foreign_keys=[parent_id])
+    members = relationship("FamilyMember", back_populates="family_plan", cascade="all, delete-orphan")
+    invites = relationship("FamilyInvite", back_populates="family_plan", cascade="all, delete-orphan")
+
+class FamilyMember(Base):
+    """A member of a family plan."""
+    __tablename__ = "family_members"
+    __table_args__ = (
+        Index("ix_family_member_plan_user", "family_plan_id", "user_id", unique=True),
+    )
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    family_plan_id = Column(UUID(as_uuid=True), ForeignKey("family_plans.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    role = Column(String(20), default="member")  # 'owner' or 'member'
+    joined_at = Column(DateTime, default=datetime.utcnow)
+
+    family_plan = relationship("FamilyPlan", back_populates="members")
+    user = relationship("User")
+
+class FamilyInvite(Base):
+    """Email invite to join a family plan."""
+    __tablename__ = "family_invites"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    family_plan_id = Column(UUID(as_uuid=True), ForeignKey("family_plans.id", ondelete="CASCADE"), nullable=False)
+    email = Column(String(255), nullable=False)
+    token = Column(String(64), unique=True, nullable=False, index=True)
+    status = Column(String(20), default="pending")  # pending, accepted, expired
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+
+    family_plan = relationship("FamilyPlan", back_populates="invites")
+
+class UserLayoutPreference(Base):
+    """User's custom UI row ordering (drag-and-drop)."""
+    __tablename__ = "user_layout_preferences"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    layout_order = Column(JSON, default=list)  # e.g. ["my_list", "continue_watching", "trending", ...]
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User")
+
+class PushSubscription(Base):
+    """FCM push notification token per device."""
+    __tablename__ = "push_subscriptions"
+    __table_args__ = (
+        Index("ix_push_sub_user_token", "user_id", "fcm_token", unique=True),
+    )
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    fcm_token = Column(String(500), nullable=False)
+    device_type = Column(String(20), default="web")  # web, ios, android
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+class YearlyStats(Base):
+    """Wrapped-style yearly viewing statistics."""
+    __tablename__ = "yearly_stats"
+    __table_args__ = (
+        Index("ix_yearly_stats_user_year", "user_id", "year", unique=True),
+    )
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    year = Column(Integer, nullable=False)
+    total_minutes = Column(Integer, default=0)
+    total_titles = Column(Integer, default=0)
+    top_genres = Column(JSON, default=list)       # [{"genre":"Action","count":42}, ...]
+    top_actors = Column(JSON, default=list)        # [{"name":"Actor","count":15}, ...]
+    favorite_movies = Column(JSON, default=list)   # [{"moviebox_id":"...","title":"...","poster":"..."}, ...]
+    longest_binge = Column(Integer, default=0)     # minutes in longest session
+    data = Column(JSON, default=dict)              # extensible extra stats
+    generated_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")

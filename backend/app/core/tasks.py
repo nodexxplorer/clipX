@@ -72,6 +72,7 @@ async def send_renewal_reminders():
         plan_prices = {
             "standard": "₦3,000",
             "pro": "₦8,000",
+            "family": "₦12,000",
         }
 
         for user in users:
@@ -106,6 +107,124 @@ async def cleanup_expired_sessions():
         print(f"✅ Cleaned up expired refresh tokens")
 
 
+# ═══════════════════════════════════════════════════════════
+# V2 — Yearly Stats (Wrapped-style analytics)
+# ═══════════════════════════════════════════════════════════
+
+async def compute_yearly_stats():
+    """
+    Compute yearly viewing statistics for all users.
+    Generates Wrapped-style analytics: top genres, favorite actors,
+    total watch time, binge sessions, etc.
+    Should run weekly or monthly.
+    """
+    async with AsyncSessionLocal() as db:
+        from app.models.database import User as DbUser, YearlyStats
+        from sqlalchemy import text
+        import json
+
+        current_year = datetime.utcnow().year
+
+        # Get all premium users
+        result = await db.execute(
+            select(DbUser).where(DbUser.subscription_tier != "free")
+        )
+        users = result.scalars().all()
+
+        for user in users:
+            try:
+                # Aggregate watch history for the current year
+                watch_data = await db.execute(text("""
+                    SELECT
+                        COUNT(*) as total_movies,
+                        COALESCE(SUM(duration), 0) as total_watch_time,
+                        MAX(duration) as longest_movie
+                    FROM watch_history
+                    WHERE user_id = :uid
+                      AND EXTRACT(YEAR FROM watched_at) = :year
+                """), {"uid": str(user.id), "year": current_year})
+                row = watch_data.fetchone()
+
+                if not row or row.total_movies == 0:
+                    continue
+
+                # Get top genres
+                genre_data = await db.execute(text("""
+                    SELECT g.name, COUNT(*) as cnt
+                    FROM watch_history wh
+                    JOIN movie_genres mg ON wh.movie_id = mg.movie_id
+                    JOIN genres g ON mg.genre_id = g.id
+                    WHERE wh.user_id = :uid
+                      AND EXTRACT(YEAR FROM wh.watched_at) = :year
+                    GROUP BY g.name
+                    ORDER BY cnt DESC
+                    LIMIT 5
+                """), {"uid": str(user.id), "year": current_year})
+                top_genres = [{"name": r.name, "count": r.cnt} for r in genre_data.fetchall()]
+
+                stats_data = {
+                    "year": current_year,
+                    "total_movies_watched": row.total_movies,
+                    "total_watch_time_minutes": row.total_watch_time,
+                    "top_genres": top_genres,
+                    "longest_session_minutes": row.longest_movie or 0,
+                }
+
+                # Upsert yearly stats
+                existing = await db.execute(
+                    select(YearlyStats).where(
+                        YearlyStats.user_id == user.id,
+                        YearlyStats.year == current_year
+                    )
+                )
+                stats = existing.scalars().first()
+
+                if stats:
+                    stats.data = stats_data
+                else:
+                    new_stats = YearlyStats(
+                        user_id=user.id,
+                        year=current_year,
+                        data=stats_data
+                    )
+                    db.add(new_stats)
+
+                print(f"  📊 Stats computed for {user.email}: {row.total_movies} movies, {row.total_watch_time}min")
+
+            except Exception as e:
+                print(f"  ⚠️  Stats computation failed for {user.email}: {e}")
+
+        await db.commit()
+        print(f"✅ Yearly stats: computed for {len(users)} user(s)")
+
+
+async def cleanup_expired_invites():
+    """
+    Clean up expired family invites and watch party rooms.
+    Should run daily.
+    """
+    async with AsyncSessionLocal() as db:
+        from sqlalchemy import text
+
+        # Expire old family invites
+        await db.execute(text("""
+            UPDATE family_invites
+            SET status = 'expired'
+            WHERE status = 'pending' AND expires_at < NOW()
+        """))
+
+        # End stale watch party rooms (older than 12 hours)
+        await db.execute(text("""
+            UPDATE watch_party_rooms
+            SET status = 'ended'
+            WHERE status = 'active'
+              AND created_at < NOW() - INTERVAL '12 hours'
+        """))
+
+        await db.commit()
+        print(f"✅ Cleaned up expired invites and stale watch party rooms")
+
+
 async def run_all_tasks():
     """Run all scheduled tasks."""
     print(f"\n{'='*50}")
@@ -120,8 +239,19 @@ async def run_all_tasks():
     except Exception as e:
         print(f"⚠️  Session cleanup skipped: {e}")
 
+    try:
+        await cleanup_expired_invites()
+    except Exception as e:
+        print(f"⚠️  Invite cleanup skipped: {e}")
+
+    try:
+        await compute_yearly_stats()
+    except Exception as e:
+        print(f"⚠️  Yearly stats skipped: {e}")
+
     print(f"{'='*50}\n")
 
 
 if __name__ == "__main__":
     asyncio.run(run_all_tasks())
+
