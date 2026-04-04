@@ -9,6 +9,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { GET_DASHBOARD } from '@/lib/graphql';
 import { colors, spacing, radius, fontSize, fontWeight } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getPosterUri, getBackdropUri } from '@/lib/utils';
 import type { Movie, ContinueWatchingItem } from '@/types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -19,7 +21,7 @@ function ContinueCard({ item, onPress }: { item: ContinueWatchingItem; onPress: 
     return (
         <Pressable onPress={onPress} style={styles.cwCard}>
             <Image
-                source={{ uri: item.movie.backdropUrl || item.movie.posterUrl }}
+                source={{ uri: getBackdropUri(item.movie) }}
                 style={styles.cwImage}
                 contentFit="cover"
             />
@@ -47,6 +49,7 @@ function StatCard({ icon, label, value }: { icon: string; label: string; value: 
 }
 
 export default function DashboardScreen() {
+    const insets = useSafeAreaInsets();
     const { isAuthenticated } = useAuth();
     const router = useRouter();
     const { data, loading } = useQuery<any>(GET_DASHBOARD, { skip: !isAuthenticated });
@@ -74,7 +77,7 @@ export default function DashboardScreen() {
     const recentlyViewed: Movie[] = dash?.recentlyViewed || [];
 
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+        <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, { paddingTop: insets.top + spacing.xl }]}>
             <Text style={styles.pageTitle}>Dashboard</Text>
 
             {/* Stats */}
@@ -115,7 +118,7 @@ export default function DashboardScreen() {
                         renderItem={({ item }) => (
                             <Pressable onPress={() => router.push(`/movie/${item.id}`)} style={styles.recentCard}>
                                 <Image
-                                    source={{ uri: item.posterUrl || (item.posterPath ? `https://image.tmdb.org/t/p/w342${item.posterPath}` : undefined) }}
+                                    source={{ uri: getPosterUri(item) }}
                                     style={styles.recentPoster}
                                     contentFit="cover"
                                 />
@@ -136,7 +139,7 @@ const styles = StyleSheet.create({
     centerSub: { color: colors.textMuted, fontSize: fontSize.md, marginTop: spacing.sm },
     authBtn: { marginTop: spacing.xl, paddingHorizontal: 40, paddingVertical: spacing.md, backgroundColor: colors.primary, borderRadius: radius.md },
     authBtnText: { color: '#fff', fontWeight: fontWeight.bold },
-    pageTitle: { color: colors.text, fontSize: fontSize.title, fontWeight: fontWeight.black, paddingHorizontal: spacing.xl, paddingTop: 60 },
+    pageTitle: { color: colors.text, fontSize: fontSize.title, fontWeight: fontWeight.black, paddingHorizontal: spacing.xl },
 
     statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, paddingHorizontal: spacing.xl, marginTop: spacing.xxl },
     statCard: { width: (SCREEN_W - spacing.xl * 2 - spacing.md) / 2, backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, alignItems: 'center', gap: 4 },

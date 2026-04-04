@@ -7,11 +7,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { GET_DASHBOARD } from '@/lib/graphql';
 import { colors, spacing, radius, fontSize, fontWeight } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
+import { getPosterUri } from '@/lib/utils';
 import type { Movie } from '@/types';
 
-function getPoster(m: Movie) {
-    return m.posterUrl || (m.posterPath ? `https://image.tmdb.org/t/p/w342${m.posterPath}` : undefined);
-}
+// Helper removed — using shared getPosterUri from @/lib/utils
 
 export default function HistoryScreen() {
     const { isAuthenticated } = useAuth();
@@ -55,7 +54,7 @@ export default function HistoryScreen() {
                     showsVerticalScrollIndicator={false}
                     renderItem={({ item }) => (
                         <Pressable onPress={() => router.push(`/movie/${item.id}`)} style={styles.histItem}>
-                            <Image source={{ uri: getPoster(item) }} style={styles.poster} contentFit="cover" />
+                            <Image source={{ uri: getPosterUri(item) }} style={styles.poster} contentFit="cover" />
                             <View style={styles.histInfo}>
                                 <Text style={styles.histTitle} numberOfLines={1}>{item.title}</Text>
                                 {item.rating ? (

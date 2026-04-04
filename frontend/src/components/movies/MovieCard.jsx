@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/router';
 import { FiPlay, FiHeart, FiStar, FiFilm, FiDownload, FiCheck } from 'react-icons/fi';
@@ -40,6 +40,13 @@ const MovieCard = ({ movie, size = 'md', showWatchlistButton = false, isSeries =
       window.removeEventListener('storage', handleUpdate);
     };
   }, [movie.id]);
+
+  // Prefetch the movie detail + watch page on hover for instant navigation
+  const handlePrefetch = useCallback(() => {
+    storeSlugMapping(slug, movie.id);
+    router.prefetch(`/movies/${slug}`);
+    router.prefetch(`/watch/${slug}?s=1&e=1`);
+  }, [slug, movie.id, router]);
 
   const handleCardClick = () => {
     storeSlugMapping(slug, movie.id);
@@ -101,6 +108,7 @@ const MovieCard = ({ movie, size = 'md', showWatchlistButton = false, isSeries =
     <motion.div
       className="relative group cursor-pointer h-full"
       onClick={handleCardClick}
+      onMouseEnter={handlePrefetch}
       whileHover={{ scale: 1.05 }}
       transition={{ type: 'spring', stiffness: 300, damping: 20 }}
     >

@@ -9,6 +9,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import OnboardingTour from '@/components/common/OnboardingTour';
 import WhatsNewPopup from '@/components/common/WhatsNewPopup';
+import CookieConsent from '@/components/common/CookieConsent';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import '@/styles/globals.css';
 
@@ -40,6 +41,7 @@ function MyApp({ Component, pageProps }) {
             {getLayout(<Component {...pageProps} />)}
             {!isAdminRoute && <OnboardingTour />}
             {!isAdminRoute && <WhatsNewPopup />}
+            <CookieConsent />
           </ErrorBoundary>
         </ApolloProvider>
       </ThemeProvider>

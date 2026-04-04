@@ -1,15 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator, Dimensions, FlatList,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery, useMutation } from '@apollo/client/react';
+import { useQuery, useMutation, useApolloClient } from '@apollo/client/react';
 import Gradient from '@/components/Gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { GET_MOVIE, TOGGLE_WATCHLIST } from '@/lib/graphql';
-import { colors, spacing, radius, fontSize, fontWeight, POSTER_ASPECT } from '@/constants/theme';
+import { GET_MOVIE, ADD_TO_WATCHLIST, REMOVE_FROM_WATCHLIST, GET_STREAMING_URL, GET_WATCHLIST } from '@/lib/graphql';
+import { colors, spacing, radius, fontSize, fontWeight, POSTER_ASPECT, API_URL } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
+import { getPosterUri, getBackdropUri } from '@/lib/utils';
 import type { Movie, CastMember, Season } from '@/types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
@@ -18,12 +19,15 @@ const POSTER_H = POSTER_W / POSTER_ASPECT;
 const REC_W = (SCREEN_W - spacing.xl * 2 - spacing.md * 2) / 3;
 const REC_H = REC_W / POSTER_ASPECT;
 
-function getPoster(m: Movie) {
-    return m.posterUrl || (m.posterPath ? `https://image.tmdb.org/t/p/w342${m.posterPath}` : undefined);
+// Resolve relative proxy paths returned by GraphQL to absolute URLs
+function resolveStreamUrl(url: string | null | undefined): string | null {
+    if (!url) return null;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    const base = API_URL.replace(/\/+$/, '');
+    return `${base}${url}`;
 }
-function getBackdrop(m: Movie) {
-    return m.backdropUrl || (m.backdropPath ? `https://image.tmdb.org/t/p/w780${m.backdropPath}` : undefined);
-}
+
+// Helpers removed — using shared getPosterUri & getBackdropUri from @/lib/utils
 
 function CastCard({ member }: { member: CastMember }) {
     return (
@@ -73,8 +77,6 @@ function EpisodeList({ seasons }: { seasons: Season[] }) {
     );
 }
 
-import { useApolloClient } from '@apollo/client/react';
-import { GET_STREAMING_URL } from '@/lib/graphql';
 import { startDownload } from '@/lib/downloads';
 import { Alert } from 'react-native';
 
@@ -84,17 +86,27 @@ export default function MovieDetailScreen() {
     const { isAuthenticated } = useAuth();
     const client = useApolloClient();
     const { data, loading, error } = useQuery<any>(GET_MOVIE, { variables: { id } });
-    const [toggleWatchlist] = useMutation<any>(TOGGLE_WATCHLIST);
+    const [addToWatchlist] = useMutation<any>(ADD_TO_WATCHLIST, { refetchQueries: [{ query: GET_WATCHLIST }] });
+    const [removeFromWatchlist] = useMutation<any>(REMOVE_FROM_WATCHLIST, { refetchQueries: [{ query: GET_WATCHLIST }] });
     const [inWatchlist, setInWatchlist] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
 
     const movie: Movie | undefined = data?.movie;
 
+    useEffect(() => {
+        if (movie) setInWatchlist(movie.inWatchlist || false);
+    }, [movie]);
+
     const handleWatchlistToggle = async () => {
         if (!isAuthenticated) { router.push('/auth/login'); return; }
         try {
-            const { data: res } = await toggleWatchlist({ variables: { movieId: id } });
-            setInWatchlist(res?.toggleWatchlist?.added ?? false);
+            if (inWatchlist) {
+                await removeFromWatchlist({ variables: { movieId: id } });
+                setInWatchlist(false);
+            } else {
+                await addToWatchlist({ variables: { movieId: id } });
+                setInWatchlist(true);
+            }
         } catch { }
     };
 
@@ -111,7 +123,8 @@ export default function MovieDetailScreen() {
                 fetchPolicy: 'network-only' // ensure fresh link for download
             });
             
-            if (!streamData?.streamingUrl) {
+            const resolvedUrl = resolveStreamUrl(streamData?.streamingUrl);
+            if (!resolvedUrl) {
                 Alert.alert('Error', 'Stream is currently unavailable for download.');
                 setIsDownloading(false);
                 return;
@@ -121,8 +134,8 @@ export default function MovieDetailScreen() {
             await startDownload(
                 movie.id,
                 movie.title,
-                streamData.streamingUrl,
-                getPoster(movie) || ''
+                resolvedUrl,
+                getPosterUri(movie) || ''
             );
         } catch (e: any) {
             Alert.alert('Error', 'Failed to start download. ' + (e.message || ''));
@@ -156,7 +169,7 @@ export default function MovieDetailScreen() {
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
             {/* Backdrop */}
             <View style={styles.backdrop}>
-                <Image source={{ uri: getBackdrop(movie) }} style={styles.backdropImg} contentFit="cover" transition={300} />
+                <Image source={{ uri: getBackdropUri(movie) }} style={styles.backdropImg} contentFit="cover" transition={300} />
                 <Gradient colors={['transparent', colors.background]} style={styles.backdropGradient} />
                 <Pressable style={styles.closeBtn} onPress={() => router.back()}>
                     <Ionicons name="arrow-back" size={22} color="#fff" />
@@ -166,7 +179,7 @@ export default function MovieDetailScreen() {
             {/* Info Section */}
             <View style={styles.infoSection}>
                 <View style={styles.infoRow}>
-                    <Image source={{ uri: getPoster(movie) }} style={styles.infoPoster} contentFit="cover" />
+                    <Image source={{ uri: getPosterUri(movie) }} style={styles.infoPoster} contentFit="cover" />
                     <View style={styles.infoText}>
                         <Text style={styles.title}>{movie.title}</Text>
                         <View style={styles.metaRow}>
@@ -242,7 +255,7 @@ export default function MovieDetailScreen() {
                             contentContainerStyle={styles.recList}
                             renderItem={({ item }) => (
                                 <Pressable onPress={() => router.push(`/movie/${item.id}`)} style={styles.recCard}>
-                                    <Image source={{ uri: getPoster(item) }} style={styles.recPoster} contentFit="cover" />
+                                    <Image source={{ uri: getPosterUri(item) }} style={styles.recPoster} contentFit="cover" />
                                 </Pressable>
                             )}
                         />

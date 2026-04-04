@@ -4,6 +4,7 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, radius, fontSize, fontWeight } from '@/constants/theme';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
@@ -24,6 +25,7 @@ const tierConfig = {
 };
 
 export default function ProfileScreen() {
+    const insets = useSafeAreaInsets();
     const { user, isAuthenticated, logout } = useAuth();
     const router = useRouter();
 
@@ -97,7 +99,7 @@ export default function ProfileScreen() {
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
             {/* Profile Header */}
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: insets.top + spacing.xl }]}>
                 <View style={styles.avatarContainer}>
                     {user.avatar ? (
                         <Image source={{ uri: user.avatar }} style={styles.avatar} />
@@ -174,7 +176,7 @@ const styles = StyleSheet.create({
     registerLink: { color: colors.textMuted, marginTop: spacing.xl, fontSize: fontSize.md },
     registerBold: { color: colors.primary, fontWeight: fontWeight.bold },
 
-    header: { alignItems: 'center', paddingTop: 72, paddingBottom: spacing.xxl },
+    header: { alignItems: 'center', paddingTop: 32, paddingBottom: spacing.xxl },
     avatarContainer: { position: 'relative' },
     avatar: { width: 80, height: 80, borderRadius: 40 },
     avatarPlaceholder: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.surfaceLight, justifyContent: 'center', alignItems: 'center' },

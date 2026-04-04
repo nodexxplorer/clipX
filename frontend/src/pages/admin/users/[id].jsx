@@ -8,7 +8,7 @@ import { ADMIN_UPDATE_USER_ROLE, ADMIN_DELETE_USER, ADMIN_BAN_USER, ADMIN_UNBAN_
 import {
     FiArrowLeft, FiShield, FiTrash2, FiSlash, FiCheck, FiMail,
     FiCalendar, FiBookmark, FiDownload, FiKey, FiLogOut, FiFlag,
-    FiCreditCard, FiStar, FiCrown, FiMonitor, FiClock
+    FiCreditCard, FiStar, FiFrown, FiMonitor, FiClock
 } from 'react-icons/fi';
 import toast from 'react-hot-toast';
 
@@ -118,7 +118,7 @@ export default function AdminUserDetail() {
                                     </span>
                                 )}
                                 <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase ${tierColors[subTier]}`}>
-                                    {subTier === 'pro' ? <FiCrown size={10} /> : subTier === 'standard' ? <FiStar size={10} /> : <FiMonitor size={10} />}
+                                    {subTier === 'pro' ? <FiFrown size={10} /> : subTier === 'standard' ? <FiStar size={10} /> : <FiMonitor size={10} />}
                                     {subTier}
                                 </span>
                                 {user.emailVerified && (

@@ -9,19 +9,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { GET_WATCHLIST } from '@/lib/graphql';
 import { colors, spacing, radius, fontSize, fontWeight } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getPosterUri } from '@/lib/utils';
 import type { Movie } from '@/types';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-function getPoster(m: Movie) {
-    return m.posterUrl || (m.posterPath ? `https://image.tmdb.org/t/p/w342${m.posterPath}` : undefined);
-}
+// Helper removed — using shared getPosterUri from @/lib/utils
 
 function WatchlistItem({ movie }: { movie: Movie }) {
     const router = useRouter();
     return (
         <Pressable onPress={() => router.push(`/movie/${movie.id}`)} style={styles.item}>
-            <Image source={{ uri: getPoster(movie) }} style={styles.poster} contentFit="cover" transition={200} />
+            <Image source={{ uri: getPosterUri(movie) }} style={styles.poster} contentFit="cover" transition={200} />
             <View style={styles.itemInfo}>
                 <Text style={styles.itemTitle} numberOfLines={1}>{movie.title}</Text>
                 {movie.year ? <Text style={styles.itemYear}>{movie.year}</Text> : null}
@@ -45,6 +45,7 @@ function WatchlistItem({ movie }: { movie: Movie }) {
 }
 
 export default function WatchlistScreen() {
+    const insets = useSafeAreaInsets();
     const { isAuthenticated } = useAuth();
     const router = useRouter();
     const { data, loading, refetch } = useQuery<any>(GET_WATCHLIST, { skip: !isAuthenticated });
@@ -74,7 +75,7 @@ export default function WatchlistScreen() {
 
     return (
         <View style={styles.container}>
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: insets.top + spacing.lg }]}>
                 <Text style={styles.headerTitle}>My Watchlist</Text>
                 <Text style={styles.headerCount}>{movies.length} {movies.length === 1 ? 'title' : 'titles'}</Text>
             </View>
@@ -110,7 +111,7 @@ const styles = StyleSheet.create({
     authBtn: { marginTop: spacing.xl, paddingHorizontal: 40, paddingVertical: spacing.md, backgroundColor: colors.primary, borderRadius: radius.md },
     authBtnText: { color: '#fff', fontWeight: fontWeight.bold, fontSize: fontSize.md },
 
-    header: { paddingTop: 60, paddingHorizontal: spacing.xl, paddingBottom: spacing.lg },
+    header: { paddingHorizontal: spacing.xl, paddingBottom: spacing.lg },
     headerTitle: { color: colors.text, fontSize: fontSize.xxxl, fontWeight: fontWeight.black },
     headerCount: { color: colors.textMuted, fontSize: fontSize.sm, marginTop: 4 },
 

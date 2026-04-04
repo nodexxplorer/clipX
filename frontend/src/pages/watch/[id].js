@@ -413,6 +413,7 @@ export default function WatchPage() {
     if (!video) return;
     const err = video.error;
     const code = err?.code || 0;
+    console.error('[VideoPlayer] Media error:', { code, message: err?.message, src: video.src?.substring(0, 80) });
 
     const RETRYABLE = new Set([2, 4]); // MEDIA_ERR_NETWORK, MEDIA_ERR_SRC_NOT_SUPPORTED
     const isExpired = code === 4 || code === 2;

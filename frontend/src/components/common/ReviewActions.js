@@ -72,11 +72,10 @@ export default function ReviewActions({ reviewId, initialLikes = 0, initialDisli
                 {/* Like button */}
                 <button
                     onClick={() => handleLike('like')}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                        currentStatus === 'like'
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${currentStatus === 'like'
                             ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                             : 'bg-white/5 text-gray-500 border border-white/5 hover:bg-white/10 hover:text-gray-300'
-                    }`}
+                        }`}
                     aria-label="Like review"
                     id={`like-review-${reviewId}`}
                 >
@@ -87,11 +86,10 @@ export default function ReviewActions({ reviewId, initialLikes = 0, initialDisli
                 {/* Dislike button */}
                 <button
                     onClick={() => handleLike('dislike')}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                        currentStatus === 'dislike'
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${currentStatus === 'dislike'
                             ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                             : 'bg-white/5 text-gray-500 border border-white/5 hover:bg-white/10 hover:text-gray-300'
-                    }`}
+                        }`}
                     aria-label="Dislike review"
                     id={`dislike-review-${reviewId}`}
                 >

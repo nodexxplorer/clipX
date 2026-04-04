@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { GET_DASHBOARD, CANCEL_SUBSCRIPTION } from '@/lib/graphql';
 import { colors, spacing, radius, fontSize, fontWeight } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const tierConfig: Record<string, { label: string; color: string; icon: string }> = {
   free: { label: 'Free', color: colors.free, icon: 'film-outline' },
@@ -14,6 +15,7 @@ const tierConfig: Record<string, { label: string; color: string; icon: string }>
 };
 
 export default function SubscriptionScreen() {
+  const insets = useSafeAreaInsets();
   const { user, isAuthenticated } = useAuth();
   const router = useRouter();
   const [showCancel, setShowCancel] = useState(false);
@@ -58,7 +60,7 @@ export default function SubscriptionScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <ScrollView style={styles.container} contentContainerStyle={[styles.scroll, { paddingTop: insets.top + spacing.lg }]}>
       <Pressable style={styles.backBtn} onPress={() => router.back()}>
         <Ionicons name="arrow-back" size={22} color={colors.text} />
       </Pressable>
@@ -166,7 +168,7 @@ function getFeatures(tier: string): string[] {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  scroll: { paddingHorizontal: spacing.xl, paddingBottom: 100, paddingTop: 56 },
+  scroll: { paddingHorizontal: spacing.xl, paddingBottom: 100 },
   center: { flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', padding: spacing.xxxl },
   centerTitle: { color: colors.text, fontSize: fontSize.xxl, fontWeight: fontWeight.bold, marginTop: spacing.lg },
   centerSub: { color: colors.textMuted, fontSize: fontSize.md, marginTop: spacing.sm },

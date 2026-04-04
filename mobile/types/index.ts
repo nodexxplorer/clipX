@@ -71,6 +71,7 @@ export interface Movie {
     seasons?: Season[];
     recommendations?: Movie[];
     durationMinutes?: number;
+    inWatchlist?: boolean;
 }
 
 export interface Genre {

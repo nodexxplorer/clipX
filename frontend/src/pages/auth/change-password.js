@@ -144,8 +144,8 @@ export default function ChangePasswordPage() {
                                 initial={{ opacity: 0, y: -10 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 className={`mb-6 p-4 rounded-xl flex items-center gap-3 text-sm ${message.type === 'success'
-                                        ? 'bg-green-500/10 border border-green-500/20 text-green-400'
-                                        : 'bg-red-500/10 border border-red-500/20 text-red-400'
+                                    ? 'bg-green-500/10 border border-green-500/20 text-green-400'
+                                    : 'bg-red-500/10 border border-red-500/20 text-red-400'
                                     }`}
                             >
                                 {message.type === 'success' ? <FiCheck className="w-5 h-5 flex-shrink-0" /> : <FiLock className="w-5 h-5 flex-shrink-0" />}
@@ -232,10 +232,10 @@ export default function ChangePasswordPage() {
                                         onChange={(e) => setConfirmPassword(e.target.value)}
                                         placeholder="Confirm new password"
                                         className={`w-full pl-12 pr-12 py-3.5 bg-white/5 border rounded-xl text-white placeholder-gray-500 outline-none focus:ring-1 transition-all ${confirmPassword && confirmPassword !== newPassword
-                                                ? 'border-red-500/50 focus:border-red-500/50 focus:ring-red-500/20'
-                                                : confirmPassword && confirmPassword === newPassword
-                                                    ? 'border-green-500/50 focus:border-green-500/50 focus:ring-green-500/20'
-                                                    : 'border-white/10 focus:border-primary-500/50 focus:ring-primary-500/20'
+                                            ? 'border-red-500/50 focus:border-red-500/50 focus:ring-red-500/20'
+                                            : confirmPassword && confirmPassword === newPassword
+                                                ? 'border-green-500/50 focus:border-green-500/50 focus:ring-green-500/20'
+                                                : 'border-white/10 focus:border-primary-500/50 focus:ring-primary-500/20'
                                             }`}
                                     />
                                     <button

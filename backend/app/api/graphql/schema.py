@@ -24,6 +24,11 @@ import string
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
+
+# ═══════════════════════════════════════════════════════════
+# Types
+# ═══════════════════════════════════════════════════════════
+
 @strawberry.type
 class UserPreferences:
     favorite_genres: List[str] = strawberry.field(default_factory=list)
@@ -158,7 +163,7 @@ class Movie:
     @strawberry.field
     def description(self) -> Optional[str]:
         return self.overview
-    
+
     @strawberry.field
     def year(self) -> Optional[int]:
         if not self.releaseDate:
@@ -166,12 +171,9 @@ class Movie:
         s_date = str(self.releaseDate).strip()
         if not s_date:
             return None
-            
         try:
-            # Handle "YYYY-MM-DD"
             if '-' in s_date:
                 return int(s_date.split('-')[0])
-            # Handle just "YYYY"
             return int(s_date[:4])
         except (ValueError, IndexError):
             return None
@@ -222,30 +224,6 @@ class UpdateProfileInput:
     bio: Optional[str] = None
     preferences: Optional[UserPreferencesInput] = None
 
-def get_user_preferences(user_db: DbUser) -> UserPreferences:
-    prefs_data = user_db.preferences or {}
-    return UserPreferences(
-        favorite_genres=prefs_data.get("favoriteGenres", []),
-        theme=prefs_data.get("theme", "dark"),
-        email_notifications=prefs_data.get("emailNotifications", True),
-        auto_play_trailers=prefs_data.get("autoPlayTrailers", True)
-    )
-    # seasonNumber: int = strawberry.field(name="seasonNumber")
-
-def create_user_response(user_db: DbUser) -> User:
-    return User(
-        id=str(user_db.id),
-        email=user_db.email,
-        name=user_db.name,
-        avatar=user_db.avatar,
-        bio=user_db.bio,
-        role=user_db.role,
-        subscriptionTier=getattr(user_db, 'subscription_tier', 'free') or 'free',
-        emailVerified=getattr(user_db, 'email_verified', False) or False,
-        referralCount=getattr(user_db, 'referral_count', 0) or 0,
-        preferences=get_user_preferences(user_db)
-    )
-
 @strawberry.type
 class ContinueWatching:
     id: strawberry.ID
@@ -275,8 +253,8 @@ class WatchHistoryItem:
 @strawberry.type
 class UserDashboardStats:
     moviesWatched: int = 0
-    totalWatchTime: int = 0 # Minutes
-    monthlyWatchTime: int = 0 # Minutes this month
+    totalWatchTime: int = 0
+    monthlyWatchTime: int = 0
     watchlistCount: int = 0
     reviewsWritten: int = 0
 
@@ -391,7 +369,6 @@ class LoginActivityEntry:
     success: bool = True
     createdAt: str = ""
 
-
 @strawberry.type
 class PromoCodeResult:
     success: bool
@@ -417,7 +394,66 @@ class ChatMessageType:
     createdAt: str = ""
 
 @strawberry.type
+class ToggleWatchlistResponse:
+    added: bool
+    message: str
+
+
+# ═══════════════════════════════════════════════════════════
+# Helpers
+# ═══════════════════════════════════════════════════════════
+
+def get_user_preferences(user_db: DbUser) -> UserPreferences:
+    prefs_data = user_db.preferences or {}
+    return UserPreferences(
+        favorite_genres=prefs_data.get("favoriteGenres", []),
+        theme=prefs_data.get("theme", "dark"),
+        email_notifications=prefs_data.get("emailNotifications", True),
+        auto_play_trailers=prefs_data.get("autoPlayTrailers", True)
+    )
+
+def create_user_response(user_db: DbUser) -> User:
+    return User(
+        id=str(user_db.id),
+        email=user_db.email,
+        name=user_db.name,
+        avatar=user_db.avatar,
+        bio=user_db.bio,
+        role=user_db.role,
+        subscriptionTier=getattr(user_db, 'subscription_tier', 'free') or 'free',
+        emailVerified=getattr(user_db, 'email_verified', False) or False,
+        referralCount=getattr(user_db, 'referral_count', 0) or 0,
+        preferences=get_user_preferences(user_db)
+    )
+
+async def _log_activity(db, user_id, action: str, info=None, success: bool = True):
+    """Log a login/security event."""
+    from sqlalchemy import text
+    try:
+        ip = "unknown"
+        ua = ""
+        if info and hasattr(info.context, 'request'):
+            request = info.context.request
+            ip = request.client.host if request.client else "unknown"
+            ua = request.headers.get("user-agent", "")[:1000]
+        if not user_id:
+            return
+        await db.execute(text("""
+            INSERT INTO login_activity (user_id, action, ip_address, user_agent, success)
+            VALUES (:uid, :action, :ip, :ua, :success)
+        """), {"uid": user_id, "action": action, "ip": ip, "ua": ua, "success": success})
+        await db.commit()
+    except Exception as e:
+        print(f"Log activity error: {e}")
+
+
+# ═══════════════════════════════════════════════════════════
+# Query
+# ═══════════════════════════════════════════════════════════
+
+@strawberry.type
 class Query:
+
     @strawberry.field
     async def me(self, info: strawberry.Info) -> Optional[User]:
         user = await info.context.user
@@ -435,13 +471,7 @@ class Query:
         offset: int = 0,
     ) -> strawberry.scalars.JSON:
         """Browse movies with optional filtering by type, genre, year, country."""
-        from app.services.movie_service import movie_service
-
-        f_type = None
-        f_genre = None
-        f_year = None
-        f_country = None
-
+        f_type = f_genre = f_year = f_country = None
         if filter:
             f_type = filter.get("type")
             f_genre = filter.get("genre")
@@ -449,15 +479,12 @@ class Query:
             f_country = filter.get("country")
 
         page = (offset // max(limit, 1)) + 1
-
         try:
-            # Route to the right service method based on type filter
             if f_type and f_type.lower() == "series":
                 data = await movie_service.get_series(page=page)
             elif f_type and f_type.lower() == "anime":
                 data = await movie_service.get_anime(page=page)
             elif f_genre and f_genre.lower() not in ("all", ""):
-                # Use genre as search keyword
                 data = await movie_service.search_content(f_genre, page=page)
             elif sort and sort.lower() == "latest":
                 data = await movie_service.search_content("new", page=page)
@@ -469,22 +496,17 @@ class Query:
 
         results = data.results if hasattr(data, "results") else []
 
-        # Apply client-side year filter
         if f_year and str(f_year).lower() not in ("all", ""):
             yr_str = str(f_year)
-            if yr_str.endswith("s"):  # decade like "2010s"
+            if yr_str.endswith("s"):
                 decade = int(yr_str[:4])
                 results = [r for r in results if r.year and decade <= int(r.year) < decade + 10]
             else:
                 results = [r for r in results if r.year and str(r.year) == yr_str]
 
-        # Apply client-side country filter (if content has country info)
-        # (external API rarely returns country metadata, so this is best-effort)
-
-        # Map to dict for JSON response
-        movies_out = []
-        for r in results[offset:offset + limit] if offset > 0 else results[:limit]:
-            movies_out.append({
+        paged = results[offset:offset + limit] if offset > 0 else results[:limit]
+        movies_out = [
+            {
                 "id": r.id,
                 "title": r.title,
                 "type": getattr(r, "type", "movie"),
@@ -492,18 +514,17 @@ class Query:
                 "year": r.year,
                 "rating": r.rating,
                 "posterUrl": r.poster_url,
-                "genres": [{"id": g, "name": g, "slug": g.lower().replace(" ", "-")} for g in (getattr(r, "genres", None) or [])],
-            })
-
-        return {
-            "movies": movies_out,
-            "total": len(results),
-            "hasMore": getattr(data, "has_more", False),
-        }
+                "genres": [
+                    {"id": g, "name": g, "slug": g.lower().replace(" ", "-")}
+                    for g in (getattr(r, "genres", None) or [])
+                ],
+            }
+            for r in paged
+        ]
+        return {"movies": movies_out, "total": len(results), "hasMore": getattr(data, "has_more", False)}
 
     @strawberry.field
     async def myReferralCode(self, info: strawberry.Info) -> Optional[str]:
-        """Get the current user's referral code (derived from user ID)."""
         user = await info.context.user
         if not user:
             return None
@@ -511,18 +532,20 @@ class Query:
 
     @strawberry.field
     async def validateReferral(self, info: strawberry.Info, code: str) -> bool:
-        """Check if a referral code is valid (belongs to a real user)."""
         db = await info.context.get_db()
-        result = await db.execute(select(DbUser))
-        users = result.scalars().all()
-        for u in users:
-            if str(u.id).replace("-", "")[:8].upper() == code.upper():
-                return True
-        return False
+        from sqlalchemy import func, cast, String
+        safe_code = code.upper().strip()[:8]
+        result = await db.execute(
+            select(DbUser).where(
+                func.upper(
+                    func.substr(func.replace(cast(DbUser.id, String), "-", ""), 1, 8)
+                ) == safe_code
+            )
+        )
+        return result.scalars().first() is not None
 
     @strawberry.field
     async def movieReviews(self, info: strawberry.Info, movieId: str) -> List[Review]:
-        """Get all reviews for a specific movie."""
         db = await info.context.get_db()
         from sqlalchemy import desc
         result = await db.execute(
@@ -532,17 +555,12 @@ class Query:
         reviews = result.scalars().all()
         out = []
         for r in reviews:
-            # Load user info
             user_result = await db.execute(select(DbUser).where(DbUser.id == r.user_id))
             u = user_result.scalars().first()
             out.append(Review(
-                id=str(r.id),
-                content=r.content,
-                rating=r.rating,
-                userName=u.name if u else "User",
-                userAvatar=u.avatar if u else None,
-                isFeatured=r.is_featured,
-                createdAt=str(r.created_at)
+                id=str(r.id), content=r.content, rating=r.rating,
+                userName=u.name if u else "User", userAvatar=u.avatar if u else None,
+                isFeatured=r.is_featured, createdAt=str(r.created_at)
             ))
         return out
 
@@ -552,74 +570,49 @@ class Query:
         if not user:
             raise Exception("Not authenticated")
         db = await info.context.get_db()
-        from app.models.database import History as DbHistoryModel, RecentlyViewed as DbRecentlyViewed, Movie as DbMovie, Series as DbSeries
-        from sqlalchemy import func, desc
-
-        # Get history items with movie details
+        from app.models.database import History as DbHistoryModel, Movie as DbMovie, Series as DbSeries
+        from sqlalchemy import desc
         items = []
         try:
-            # Fetch from History table (watching progress)
             history_result = await db.execute(
                 select(DbHistoryModel)
                 .where(DbHistoryModel.user_id == user.id)
                 .order_by(desc(DbHistoryModel.updated_at))
-                .offset(offset)
-                .limit(limit)
+                .offset(offset).limit(limit)
             )
-            history_rows = history_result.scalars().all()
-
-            for h in history_rows:
-                # Look up movie/series title
-                title = "Unknown"
-                poster = None
+            for h in history_result.scalars().all():
+                title, poster = "Unknown", None
                 mid = str(h.moviebox_id)
-
                 movie_res = await db.execute(select(DbMovie).where(DbMovie.moviebox_id == mid))
                 movie_db = movie_res.scalars().first()
                 if movie_db:
-                    title = movie_db.title or "Unknown"
-                    poster = movie_db.poster_url
+                    title, poster = movie_db.title or "Unknown", movie_db.poster_url
                 else:
                     series_res = await db.execute(select(DbSeries).where(DbSeries.moviebox_id == mid))
                     series_db = series_res.scalars().first()
                     if series_db:
-                        title = series_db.title or "Unknown"
-                        poster = series_db.poster_url
-
+                        title, poster = series_db.title or "Unknown", series_db.poster_url
                 progress = (h.current_time / h.duration * 100) if h.duration and h.duration > 0 else 0
                 items.append(WatchHistoryItem(
-                    id=str(h.id),
-                    movieboxId=mid,
-                    title=title,
-                    posterUrl=poster,
+                    id=str(h.id), movieboxId=mid, title=title, posterUrl=poster,
                     contentType=h.content_type or "movie",
-                    currentTime=h.current_time or 0,
-                    duration=h.duration or 0,
+                    currentTime=h.current_time or 0, duration=h.duration or 0,
                     progress=round(progress, 1),
                     watchedAt=str(h.updated_at) if h.updated_at else ""
                 ))
         except Exception as e:
             print(f"Watch history error: {e}")
-
         return items
 
     @strawberry.field
     async def dashboardStats(self, info: strawberry.Info, dateRange: Optional[DateRangeInput] = None) -> AdminDashboardStats:
-        from app.models.database import (
-            User as DbUser, Movie as DbMovie, Series as DbSeries,
-            Watchlist as DbWatchlist, History as DbHistory,
-            Notification as DbNotification, Report as DbReport
-        )
-        from datetime import timedelta
         from sqlalchemy import func, text
-
         try:
             db = await info.context.get_db()
             now = datetime.utcnow()
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             week_start = today_start - timedelta(days=7)
 
-            # Single combined query for all counts — 1 round-trip instead of 8
             counts_sql = text("""
                 SELECT
                     (SELECT count(*) FROM users) AS total_users,
@@ -634,18 +627,10 @@ class Query:
             result = await db.execute(counts_sql, {"today": today_start, "week": week_start})
             row = result.one()
 
-            total_users = row.total_users or 0
-            total_movies = (row.total_movies or 0) + (row.total_series or 0)
-            new_today = row.new_today or 0
-            new_this_week = row.new_week or 0
-            active_users = row.active_users or 0
-            total_watchlist = row.total_watchlist or 0
             avg_secs = int(row.avg_duration or 0)
-            avg_h = avg_secs // 3600
-            avg_m = (avg_secs % 3600) // 60
+            avg_h, avg_m = avg_secs // 3600, (avg_secs % 3600) // 60
             avg_session_str = f"{avg_h}h {avg_m}m" if avg_h > 0 else f"{avg_m}m"
 
-            # User growth — 1 more query
             thirty_days_ago = today_start - timedelta(days=30)
             growth_rows = (await db.execute(
                 select(func.date(DbUser.created_at).label("day"), func.count(DbUser.id).label("cnt"))
@@ -653,18 +638,31 @@ class Query:
                 .group_by(func.date(DbUser.created_at))
                 .order_by(func.date(DbUser.created_at))
             )).all()
-            user_growth = [GrowthPoint(date=str(r.day), count=r.cnt) for r in growth_rows]
 
-            # Recent activity — 1 more query (notifications only, skip reports for speed)
             recent_notifs = (await db.execute(
                 select(DbNotification).order_by(DbNotification.created_at.desc()).limit(20)
             )).scalars().all()
-            activities = [
-                ActivityLog(id=str(n.id), type=n.type or "system",
-                           description=f"{n.title}: {n.message[:80]}", timestamp=str(n.created_at))
-                for n in recent_notifs
-            ]
 
+            return AdminDashboardStats(
+                totalUsers=row.total_users or 0,
+                totalMovies=(row.total_movies or 0) + (row.total_series or 0),
+                totalGenres=14,
+                activeUsers=row.active_users or 0,
+                newUsersToday=row.new_today or 0,
+                newUsersThisWeek=row.new_week or 0,
+                totalDownloads=0,
+                totalWatchlistItems=row.total_watchlist or 0,
+                avgSessionDuration=avg_session_str,
+                userGrowth=[GrowthPoint(date=str(r.day), count=r.cnt) for r in growth_rows],
+                genreDistribution=[],
+                topMovies=[],
+                recentActivity=[
+                    ActivityLog(id=str(n.id), type=n.type or "system",
+                                description=f"{n.title}: {n.message[:80]}",
+                                timestamp=str(n.created_at))
+                    for n in recent_notifs
+                ]
+            )
         except Exception as e:
             print(f"[dashboardStats] Error: {e}")
             return AdminDashboardStats(
@@ -674,123 +672,76 @@ class Query:
                 userGrowth=[], genreDistribution=[], topMovies=[], recentActivity=[]
             )
 
-        return AdminDashboardStats(
-            totalUsers=total_users,
-            totalMovies=total_movies,
-            totalGenres=14,
-            activeUsers=active_users,
-            newUsersToday=new_today,
-            newUsersThisWeek=new_this_week,
-            totalDownloads=0,
-            totalWatchlistItems=total_watchlist,
-            avgSessionDuration=avg_session_str,
-            userGrowth=user_growth,
-            genreDistribution=[],
-            topMovies=[],
-            recentActivity=activities
-        )
-
     @strawberry.field
     async def dashboardData(self, info: strawberry.Info) -> Optional[DashboardData]:
         user = await info.context.user
         if not user:
             return None
-        
         db = await info.context.get_db()
-        
-        # 1. Fetch Watchlist
-        # We need to fetch actual movie details for each watchlist item
+
         watchlist_query = await db.execute(select(DbWatchlist).where(DbWatchlist.user_id == user.id))
         watchlist_items = watchlist_query.scalars().all()
-        
         watchlist_movies = []
         if watchlist_items:
-             # Extract Moviebox IDs
-            movie_ids = [item.moviebox_id for item in watchlist_items][:10] # Limit to 10 for dashboard
-            
-            # Fetch details concurrently
-            tasks = [movie_service.get_details(mid, db=db) for mid in movie_ids]
-            details_list = await asyncio.gather(*tasks)
-            
+            movie_ids = [item.moviebox_id for item in watchlist_items][:10]
+            details_list = await asyncio.gather(*[movie_service.get_details(mid, db=db) for mid in movie_ids])
             for details in details_list:
-                if not details: continue
+                if not details:
+                    continue
                 watchlist_movies.append(Movie(
-                     id=details.id,
-                    title=details.title,
-                    overview=details.description,
-                    posterPath=details.poster_url,
-                    backdropPath=details.poster_url,
+                    id=details.id, title=details.title, overview=details.description,
+                    posterPath=details.poster_url, backdropPath=details.poster_url,
                     releaseDate=str(details.year) if details.year else None,
                     voteAverage=details.rating or 0.0,
                     genres=[Genre(id=str(i), name=g, slug=g.lower()) for i, g in enumerate(details.genres or [])],
                     runtime=details.duration or 0
                 ))
-        
-        # Real queries for History and RecentlyViewed
-        history_query = await db.execute(select(DbHistory).where(DbHistory.user_id == user.id).order_by(DbHistory.updated_at.desc()))
+
+        history_query = await db.execute(
+            select(DbHistory).where(DbHistory.user_id == user.id).order_by(DbHistory.updated_at.desc())
+        )
         history_items = history_query.scalars().all()
+        all_reviews = (await db.execute(select(DbReview).where(DbReview.user_id == user.id))).scalars().all()
 
-        reviews_query = await db.execute(select(DbReview).where(DbReview.user_id == user.id))
-        all_reviews = reviews_query.scalars().all()
-
-        recent = []
-        continue_watching = []
-        movies_watched = len(history_items)
-        total_time_seconds = 0
-        monthly_time_seconds = 0
-        current_month = datetime.utcnow().month
-        current_year = datetime.utcnow().year
+        recent, continue_watching = [], []
+        total_time_seconds = monthly_time_seconds = 0
+        current_month, current_year = datetime.utcnow().month, datetime.utcnow().year
 
         for item in history_items:
-            # We assume duration is in seconds. Convert to minutes downstream.
             total_time_seconds += (item.current_time or 0)
             if item.updated_at and item.updated_at.month == current_month and item.updated_at.year == current_year:
                 monthly_time_seconds += (item.current_time or 0)
-
-            # Resolve Movie detail. This is slow if there are many, so limit to 5 recent and 5 continue
             if len(recent) < 5 or len(continue_watching) < 5:
-                # Basic fetch (Mock for perfectly mapped details)
                 m_details = await movie_service.get_details(item.moviebox_id, db=db)
                 if m_details:
                     mapped_movie = Movie(
-                        id=m_details.id,
-                        title=m_details.title,
-                        overview=m_details.description,
-                        posterPath=m_details.poster_url,
-                        backdropPath=m_details.poster_url,
+                        id=m_details.id, title=m_details.title, overview=m_details.description,
+                        posterPath=m_details.poster_url, backdropPath=m_details.poster_url,
                         releaseDate=str(m_details.year) if m_details.year else None,
                         voteAverage=m_details.rating or 0.0
                     )
-                    
                     if len(recent) < 5:
                         recent.append(RecentlyViewed(
-                            id=str(item.id),
-                            title=m_details.title,
-                            posterUrl=m_details.poster_url,
-                            rating=m_details.rating or 0.0
+                            id=str(item.id), title=m_details.title,
+                            posterUrl=m_details.poster_url, rating=m_details.rating or 0.0
                         ))
                     if len(continue_watching) < 5 and item.current_time and item.duration and item.current_time < item.duration:
                         continue_watching.append(ContinueWatching(
-                            id=str(item.id),
-                            movie=mapped_movie,
-                            currentTime=item.current_time,
-                            duration=item.duration
+                            id=str(item.id), movie=mapped_movie,
+                            currentTime=item.current_time, duration=item.duration
                         ))
-        
-        # 4. Stats
-        stats = UserDashboardStats(
-            watchlistCount=len(watchlist_items),
-            moviesWatched=movies_watched,
-            totalWatchTime=total_time_seconds // 60,
-            monthlyWatchTime=monthly_time_seconds // 60,
-            reviewsWritten=len(all_reviews)
-        )
-        
+
         return DashboardData(
             watchlist=watchlist_movies,
             recentlyViewed=recent,
             continueWatching=continue_watching,
-            stats=stats
+            stats=UserDashboardStats(
+                watchlistCount=len(watchlist_items),
+                moviesWatched=len(history_items),
+                totalWatchTime=total_time_seconds // 60,
+                monthlyWatchTime=monthly_time_seconds // 60,
+                reviewsWritten=len(all_reviews)
+            )
         )
 
     @strawberry.field
@@ -800,23 +751,19 @@ class Query:
         cached = await cache.get(cache_key)
         if cached:
             return [Movie(**c) for c in cached]
-
         resp = await movie_service.get_trending()
-        results = []
-        for i, item in enumerate(resp.results[:limit]):
-            results.append(Movie(
-                id=item.id,
-                title=item.title,
+        results = [
+            Movie(
+                id=item.id, title=item.title,
                 overview=item.description if hasattr(item, 'description') else "AI-powered pick for you.",
-                posterPath=item.poster_url,
-                backdropPath=item.poster_url,
-                releaseDate=item.year,
-                voteAverage=item.rating,
+                posterPath=item.poster_url, backdropPath=item.poster_url,
+                releaseDate=item.year, voteAverage=item.rating,
                 reason="Top Choice" if i < 3 else "Trending Item",
                 score=0.99 - (i * 0.01)
-            ))
-
-        await cache.set(cache_key, [vars(m) for m in results], expire=600)  # 10 min
+            )
+            for i, item in enumerate(resp.results[:limit])
+        ]
+        await cache.set(cache_key, [vars(m) for m in results], expire=600)
         return results
 
     @strawberry.field
@@ -826,23 +773,18 @@ class Query:
         cached = await cache.get(cache_key)
         if cached:
             return [Movie(**c) for c in cached]
-
         db = await info.context.get_db()
         resp = await movie_service.get_trending(db=db)
         results = [
             Movie(
-                id=item.id,
-                title=item.title,
+                id=item.id, title=item.title,
                 overview=item.description if hasattr(item, 'description') else None,
-                posterPath=item.poster_url,
-                backdropPath=item.poster_url,
-                releaseDate=item.year,
-                voteAverage=item.rating,
-                voteCount=100,
-                popularity=0.0
-            ) for item in resp.results[:limit]
+                posterPath=item.poster_url, backdropPath=item.poster_url,
+                releaseDate=item.year, voteAverage=item.rating, voteCount=100, popularity=0.0
+            )
+            for item in resp.results[:limit]
         ]
-        await cache.set(cache_key, [vars(m) for m in results], expire=300)  # 5 min
+        await cache.set(cache_key, [vars(m) for m in results], expire=300)
         return results
 
     @strawberry.field
@@ -852,22 +794,16 @@ class Query:
         cached = await cache.get(cache_key)
         if cached:
             return [Movie(**c) for c in cached]
-
-        # Reuse trending logic directly
         db = await info.context.get_db()
         resp = await movie_service.get_trending(db=db)
         results = [
             Movie(
-                id=item.id,
-                title=item.title,
+                id=item.id, title=item.title,
                 overview=item.description if hasattr(item, 'description') else None,
-                posterPath=item.poster_url,
-                backdropPath=item.poster_url,
-                releaseDate=item.year,
-                voteAverage=item.rating,
-                voteCount=100,
-                popularity=0.0
-            ) for item in resp.results[:limit]
+                posterPath=item.poster_url, backdropPath=item.poster_url,
+                releaseDate=item.year, voteAverage=item.rating, voteCount=100, popularity=0.0
+            )
+            for item in resp.results[:limit]
         ]
         await cache.set(cache_key, [vars(m) for m in results], expire=300)
         return results
@@ -879,19 +815,16 @@ class Query:
         cached = await cache.get(cache_key)
         if cached:
             return [Movie(**c) for c in cached]
-
         db = await info.context.get_db()
         resp = await movie_service.get_series(db=db)
         results = [
             Movie(
-                id=item.id,
-                title=item.title,
+                id=item.id, title=item.title,
                 overview=item.description if hasattr(item, 'description') else None,
-                posterPath=item.poster_url,
-                backdropPath=item.poster_url,
-                releaseDate=item.year,
-                voteAverage=item.rating
-            ) for item in resp.results[:limit]
+                posterPath=item.poster_url, backdropPath=item.poster_url,
+                releaseDate=item.year, voteAverage=item.rating
+            )
+            for item in resp.results[:limit]
         ]
         await cache.set(cache_key, [vars(m) for m in results], expire=300)
         return results
@@ -902,15 +835,12 @@ class Query:
         resp = await movie_service.get_trending(db=db)
         return [
             Movie(
-                id=item.id,
-                title=item.title,
+                id=item.id, title=item.title,
                 overview="Featured premium content on clipX.",
-                posterPath=item.poster_url,
-                backdropPath=item.poster_url,
-                releaseDate=item.year,
-                voteAverage=item.rating,
-                tagline="Staff Pick"
-            ) for item in resp.results[:limit]
+                posterPath=item.poster_url, backdropPath=item.poster_url,
+                releaseDate=item.year, voteAverage=item.rating, tagline="Staff Pick"
+            )
+            for item in resp.results[:limit]
         ]
 
     @strawberry.field
@@ -918,31 +848,26 @@ class Query:
         resp = await movie_service.get_trending()
         return [
             Movie(
-                id=item.id,
-                title=item.title,
-                posterPath=item.poster_url,
-                backdropPath=item.poster_url,
-                releaseDate=item.year,
-                voteAverage=item.rating,
+                id=item.id, title=item.title,
+                posterPath=item.poster_url, backdropPath=item.poster_url,
+                releaseDate=item.year, voteAverage=item.rating,
                 editorNote="A must-watch masterpiece chosen by our experts."
-            ) for item in resp.results[:limit]
+            )
+            for item in resp.results[:limit]
         ]
 
     @strawberry.field
     async def awardWinning(self, limit: Optional[int] = 10) -> List[Movie]:
         resp = await movie_service.get_trending()
-        # Mocking some award results by skipping some
-        items = resp.results[5:5+limit] if len(resp.results) > 5 else resp.results[:limit]
+        items = resp.results[5:5 + limit] if len(resp.results) > 5 else resp.results[:limit]
         return [
             Movie(
-                id=item.id,
-                title=item.title,
-                posterPath=item.poster_url,
-                backdropPath=item.poster_url,
-                releaseDate=item.year,
-                voteAverage=item.rating,
+                id=item.id, title=item.title,
+                posterPath=item.poster_url, backdropPath=item.poster_url,
+                releaseDate=item.year, voteAverage=item.rating,
                 awards="Best Picture, Best Director"
-            ) for item in items
+            )
+            for item in items
         ]
 
     @strawberry.field
@@ -952,33 +877,24 @@ class Query:
         if not details:
             return None
         return Movie(
-            id=details.id,
-            title=details.title,
-            overview=details.description,
-            posterPath=details.poster_url,
-            backdropPath=details.poster_url,
-            releaseDate=details.year,
-            voteAverage=details.rating,
-            voteCount=100,
-            runtime=details.duration,
-            trailerUrl=details.trailer_url,
+            id=details.id, title=details.title, overview=details.description,
+            posterPath=details.poster_url, backdropPath=details.poster_url,
+            releaseDate=details.year, voteAverage=details.rating, voteCount=100,
+            runtime=details.duration, trailerUrl=details.trailer_url,
             genres=[Genre(id=str(i), name=g, slug=g.lower()) for i, g in enumerate(details.genres or [])],
             seasons=[
                 Season(
-                    id=s.id,
-                    seasonNumber=s.season_number,
+                    id=s.id, seasonNumber=s.season_number,
                     episodes=[
                         Episode(
-                            id=e.id,
-                            title=e.title,
-                            episodeNumber=e.episode_number,
-                            seasonNumber=e.season_number,
-                            releaseDate=e.release_date,
-                            posterUrl=e.poster_url,
-                            description=e.description
-                        ) for e in s.episodes
+                            id=e.id, title=e.title,
+                            episodeNumber=e.episode_number, seasonNumber=e.season_number,
+                            releaseDate=e.release_date, posterUrl=e.poster_url, description=e.description
+                        )
+                        for e in s.episodes
                     ]
-                ) for s in details.seasons
+                )
+                for s in details.seasons
             ] if details.seasons else None
         )
 
@@ -988,79 +904,58 @@ class Query:
         resp = await movie_service.search_content(query, page, db=db)
         items = [
             Movie(
-                id=item.id,
-                title=item.title,
-                overview=item.description,
-                posterPath=item.poster_url,
-                backdropPath=item.poster_url,
-                releaseDate=item.year,
-                voteAverage=item.rating,
-                voteCount=50,
+                id=item.id, title=item.title, overview=item.description,
+                posterPath=item.poster_url, backdropPath=item.poster_url,
+                releaseDate=item.year, voteAverage=item.rating, voteCount=50,
                 genres=[Genre(id=str(i), name=g, slug=g.lower().replace(' ', '-')) for i, g in enumerate(item.genres or [])] if item.genres else None
-            ) for item in resp.results
+            )
+            for item in resp.results
         ]
         return MoviePagination(
             items=items,
             totalCount=len(items) + (50 if resp.has_more else 0),
-            hasMore=resp.has_more,
-            currentPage=resp.page
+            hasMore=resp.has_more, currentPage=resp.page
         )
 
     @strawberry.field
     async def searchSuggestions(self, info: strawberry.Info, limit: Optional[int] = 8) -> List[Movie]:
-        """Return trending items as search suggestions when search bar is focused."""
         db = await info.context.get_db()
         resp = await movie_service.get_trending(db=db)
         return [
             Movie(
-                id=item.id,
-                title=item.title,
-                posterPath=item.poster_url,
-                backdropPath=item.poster_url,
-                releaseDate=item.year,
-                voteAverage=item.rating,
-            ) for item in resp.results[:limit]
+                id=item.id, title=item.title,
+                posterPath=item.poster_url, backdropPath=item.poster_url,
+                releaseDate=item.year, voteAverage=item.rating
+            )
+            for item in resp.results[:limit]
         ]
 
     @strawberry.field
     async def similarMovies(self, info: strawberry.Info, movieId: strawberry.ID, limit: Optional[int] = 12) -> List[Movie]:
-        """Return movies similar to the given movie by searching with its title as seed."""
         db = await info.context.get_db()
-        # First fetch the source movie to get its title and genres
         details = await movie_service.get_details(str(movieId), db=db)
         if not details:
             return []
-        # Search using the title as seed to get related content
         try:
             resp = await movie_service.search_content(details.title, 1, db=db)
-            results = [
+            return [
                 Movie(
-                    id=item.id,
-                    title=item.title,
-                    overview=item.description,
-                    posterPath=item.poster_url,
-                    backdropPath=item.poster_url,
-                    releaseDate=item.year,
-                    voteAverage=item.rating,
-                    voteCount=50,
+                    id=item.id, title=item.title, overview=item.description,
+                    posterPath=item.poster_url, backdropPath=item.poster_url,
+                    releaseDate=item.year, voteAverage=item.rating, voteCount=50
                 )
                 for item in resp.results
-                if str(item.id) != str(movieId)  # exclude the source movie
-            ]
-            return results[:limit]
+                if str(item.id) != str(movieId)
+            ][:limit]
         except Exception as e:
             print(f"similarMovies error: {e}")
-            # Fallback: return trending
             try:
                 fallback = await movie_service.get_trending(db=db)
                 return [
                     Movie(
-                        id=item.id,
-                        title=item.title,
-                        posterPath=item.poster_url,
-                        backdropPath=item.poster_url,
-                        releaseDate=item.year,
-                        voteAverage=item.rating,
+                        id=item.id, title=item.title,
+                        posterPath=item.poster_url, backdropPath=item.poster_url,
+                        releaseDate=item.year, voteAverage=item.rating
                     )
                     for item in fallback.results
                     if str(item.id) != str(movieId)
@@ -1069,72 +964,27 @@ class Query:
                 return []
 
     @strawberry.field
-    async def movies(self, info: strawberry.Info, filter: Optional[MovieFilter] = None, sort: Optional[str] = "popular", limit: Optional[int] = 20, offset: Optional[int] = 0) -> BrowseMoviesResponse:
-        db = await info.context.get_db()
-        resp = await movie_service.get_movies(db=db)
-        items = resp.results
-        
-        if filter:
-            if filter.year:
-                items = [i for i in items if i.year and str(filter.year) in i.year]
-            if filter.minRating:
-                items = [i for i in items if (i.rating or 0) >= filter.minRating]
-                
-        movies_list = [
-            Movie(
-                id=item.id,
-                title=item.title,
-                overview=item.description if hasattr(item, 'description') else None,
-                posterPath=item.poster_url,
-                backdropPath=item.poster_url,
-                releaseDate=item.year,
-                voteAverage=item.rating
-            ) for item in items
-        ]
-        
-        start = offset or 0
-        end = start + (limit or 20)
-        paged_movies = movies_list[start:end]
-        
-        return BrowseMoviesResponse(
-            movies=paged_movies,
-            total=len(movies_list),
-            hasMore=len(movies_list) > end
-        )
-
-    @strawberry.field
     async def allSeries(self, info: strawberry.Info, filter: Optional[SeriesFilter] = None, sort: Optional[str] = "popular", limit: Optional[int] = 20, offset: Optional[int] = 0) -> BrowseSeriesResponse:
         db = await info.context.get_db()
         resp = await movie_service.get_series(db=db)
         items = resp.results
-        
         if filter:
             if filter.year:
                 items = [i for i in items if i.year and str(filter.year) in i.year]
             if filter.minRating:
                 items = [i for i in items if (i.rating or 0) >= filter.minRating]
-                
         series_list = [
             Movie(
-                id=item.id,
-                title=item.title,
+                id=item.id, title=item.title,
                 overview=item.description if hasattr(item, 'description') else None,
-                posterPath=item.poster_url,
-                backdropPath=item.poster_url,
-                releaseDate=item.year,
-                voteAverage=item.rating
-            ) for item in items
+                posterPath=item.poster_url, backdropPath=item.poster_url,
+                releaseDate=item.year, voteAverage=item.rating
+            )
+            for item in items
         ]
-        
         start = offset or 0
         end = start + (limit or 20)
-        paged_series = series_list[start:end]
-        
-        return BrowseSeriesResponse(
-            series=paged_series,
-            total=len(series_list),
-            hasMore=len(series_list) > end
-        )
+        return BrowseSeriesResponse(series=series_list[start:end], total=len(series_list), hasMore=len(series_list) > end)
 
     @strawberry.field
     async def anime(self, info: strawberry.Info, page: Optional[int] = 1, limit: Optional[int] = 20) -> MoviePagination:
@@ -1142,87 +992,85 @@ class Query:
         resp = await movie_service.get_anime(page=page, db=db)
         items = [
             Movie(
-                id=item.id,
-                title=item.title,
-                overview=item.description,
-                posterPath=item.poster_url,
-                backdropPath=item.poster_url,
-                releaseDate=item.year,
-                voteAverage=item.rating
-            ) for item in resp.results
+                id=item.id, title=item.title, overview=item.description,
+                posterPath=item.poster_url, backdropPath=item.poster_url,
+                releaseDate=item.year, voteAverage=item.rating
+            )
+            for item in resp.results
         ]
         return MoviePagination(
             items=items,
             totalCount=100 if resp.has_more else len(items),
-            hasMore=resp.has_more,
-            currentPage=resp.page
+            hasMore=resp.has_more, currentPage=resp.page
         )
 
     @strawberry.field
     async def moviesByGenre(self, info: strawberry.Info, genreId: Optional[strawberry.ID] = None, genreSlug: Optional[str] = None, page: Optional[int] = 1, limit: Optional[int] = 20) -> MoviePagination:
         db = await info.context.get_db()
-        # Use genre name as search query for discovery
         target = genreSlug or (str(genreId) if genreId else None)
         if not target:
-             resp = await movie_service.get_trending(db=db)
+            resp = await movie_service.get_trending(db=db)
         else:
-             resp = await movie_service.search_content(target.replace('-', ' '), page=page, db=db)
-             
+            resp = await movie_service.search_content(target.replace('-', ' '), page=page, db=db)
         movies_list = [
             Movie(
-                id=item.id,
-                title=item.title,
+                id=item.id, title=item.title,
                 overview=item.description if hasattr(item, 'description') else None,
-                posterPath=item.poster_url,
-                backdropPath=item.poster_url,
-                releaseDate=item.year,
-                voteAverage=item.rating
-            ) for item in resp.results
+                posterPath=item.poster_url, backdropPath=item.poster_url,
+                releaseDate=item.year, voteAverage=item.rating
+            )
+            for item in resp.results
         ]
-        
         return MoviePagination(
             items=movies_list,
             totalCount=100 if resp.has_more else len(movies_list),
-            hasMore=resp.has_more,
-            currentPage=page or 1
+            hasMore=resp.has_more, currentPage=page or 1
         )
 
     @strawberry.field
     async def moviesByIds(self, ids: List[strawberry.ID]) -> List[Movie]:
-        tasks = [movie_service.get_details(str(mid)) for mid in ids]
-        details_list = await asyncio.gather(*tasks)
-        results = []
-        for details in details_list:
-            if not details: continue
-            results.append(Movie(
-                id=details.id,
-                title=details.title,
-                overview=details.description,
-                posterPath=details.poster_url,
-                backdropPath=details.poster_url,
-                releaseDate=details.year,
-                voteAverage=details.rating,
+        details_list = await asyncio.gather(*[movie_service.get_details(str(mid)) for mid in ids])
+        return [
+            Movie(
+                id=details.id, title=details.title, overview=details.description,
+                posterPath=details.poster_url, backdropPath=details.poster_url,
+                releaseDate=details.year, voteAverage=details.rating,
                 genres=[Genre(id=str(i), name=g, slug=g.lower()) for i, g in enumerate(details.genres or [])]
-            ))
-        return results
+            )
+            for details in details_list if details
+        ]
 
     @strawberry.field
-    async def streamingUrl(self, movieId: strawberry.ID, season: Optional[int] = 0, episode: Optional[int] = 1) -> Optional[str]:
+    async def streamingUrl(self, info: strawberry.Info, movieId: strawberry.ID, season: Optional[int] = 0, episode: Optional[int] = 1) -> Optional[str]:
         try:
-            links = await movie_service.get_stream_links(str(movieId), season=season or 0, episode=episode or 1)
+            db = await info.context.get_db()
+            links = await movie_service.get_stream_links(str(movieId), season=season or 0, episode=episode or 1, db=db)
             if links and links.links:
-                # Prioritize higher quality, or just return first for now
-                return links.links[0].url
+                raw_url = links.links[0].url
+                # The service returns absolute proxy URLs like
+                #   http://localhost:8000/api/proxy/stream?url=<encoded_cdn_url>
+                # Mobile clients can't reach localhost, so extract the real CDN
+                # URL, wrap it in a signed token, and return a relative path
+                # that works with any base URL the client is configured to use.
+                import urllib.parse
+                if raw_url and '?url=' in raw_url:
+                    parsed = urllib.parse.urlparse(raw_url)
+                    qs = urllib.parse.parse_qs(parsed.query)
+                    cdn_url = qs.get('url', [None])[0]
+                    if cdn_url:
+                        from app.core.stream_token import create_stream_token
+                        token = create_stream_token(cdn_url)
+                        return f"/api/proxy/stream?token={token}"
+                return raw_url
             return None
         except Exception as e:
             print(f"Error fetching streaming URL: {e}")
             return None
 
+
     @strawberry.field
     async def genres(self) -> List[Genre]:
-        genre_list = [
-            "Action", "Adventure", "Animation", "Comedy", "Crime", "Drama", "Sci-Fi"
-        ]
+        genre_list = ["Action", "Adventure", "Animation", "Comedy", "Crime", "Drama", "Sci-Fi"]
         return [Genre(id=str(i), name=g, slug=g.lower(), movieCount=100) for i, g in enumerate(genre_list)]
 
     @strawberry.field
@@ -1231,18 +1079,19 @@ class Query:
         if not user:
             return []
         db = await info.context.get_db()
-        q = await db.execute(select(DbNotification).where(DbNotification.user_id == user.id).order_by(DbNotification.created_at.desc()).limit(50))
-        db_items = q.scalars().all()
+        q = await db.execute(
+            select(DbNotification)
+            .where(DbNotification.user_id == user.id)
+            .order_by(DbNotification.created_at.desc())
+            .limit(50)
+        )
         return [
             Notification(
-                id=str(n.id),
-                title=n.title,
-                message=n.message,
-                type=n.type or "system",
-                actionUrl=n.action_url,
-                isRead=n.is_read,
-                createdAt=str(n.created_at)
-            ) for n in db_items
+                id=str(n.id), title=n.title, message=n.message,
+                type=n.type or "system", actionUrl=n.action_url,
+                isRead=n.is_read, createdAt=str(n.created_at)
+            )
+            for n in q.scalars().all()
         ]
 
     @strawberry.field
@@ -1265,22 +1114,17 @@ class Query:
         db = await info.context.get_db()
         from sqlalchemy.orm import selectinload
         q = await db.execute(
-            select(DbReview)
-            .options(selectinload(DbReview.user))
-            .order_by(DbReview.created_at.desc())
-            .limit(12)
+            select(DbReview).options(selectinload(DbReview.user))
+            .order_by(DbReview.created_at.desc()).limit(12)
         )
-        db_items = q.scalars().all()
         return [
             Review(
-                id=str(r.id),
-                content=r.content,
-                rating=r.rating,
+                id=str(r.id), content=r.content, rating=r.rating,
                 userName=r.user.name if r.user else "Anonymous",
                 userAvatar=r.user.avatar if r.user else None,
-                isFeatured=r.is_featured,
-                createdAt=str(r.created_at)
-            ) for r in db_items
+                isFeatured=r.is_featured, createdAt=str(r.created_at)
+            )
+            for r in q.scalars().all()
         ]
 
     @strawberry.field
@@ -1288,98 +1132,61 @@ class Query:
         user = await info.context.user
         if not user or user.role != "admin":
             return []
-        
         db = await info.context.get_db()
         q = await db.execute(select(DbReport).order_by(DbReport.created_at.desc()))
-        db_items = q.scalars().all()
         return [
-            Report(
-                id=str(r.id),
-                reason=r.reason,
-                description=r.description,
-                status=r.status,
-                createdAt=str(r.created_at)
-            ) for r in db_items
+            Report(id=str(r.id), reason=r.reason, description=r.description,
+                   status=r.status, createdAt=str(r.created_at))
+            for r in q.scalars().all()
         ]
 
     @strawberry.field
     async def adminUsers(self, info: strawberry.Info, limit: Optional[int] = 20, offset: Optional[int] = 0, search: Optional[str] = None, status: Optional[str] = None) -> AdminUsersResponse:
-        """Admin endpoint: list all users with search, filter, pagination."""
-        from app.models.database import User as DbUser, Watchlist as DbWatchlist, History as DbHistory
         from sqlalchemy import func
         db = await info.context.get_db()
-
         query = select(DbUser)
         count_query = select(func.count(DbUser.id))
-
-        # Search filter
         if search:
             search_term = f"%{search}%"
-            query = query.where(
-                (DbUser.email.ilike(search_term)) |
-                (DbUser.name.ilike(search_term))
-            )
-            count_query = count_query.where(
-                (DbUser.email.ilike(search_term)) |
-                (DbUser.name.ilike(search_term))
-            )
-
+            cond = (DbUser.email.ilike(search_term)) | (DbUser.name.ilike(search_term))
+            query = query.where(cond)
+            count_query = count_query.where(cond)
         total_count = (await db.execute(count_query)).scalar() or 0
-
         query = query.order_by(DbUser.created_at.desc()).offset(offset or 0).limit(limit or 20)
-        result = await db.execute(query)
-        db_users = result.scalars().all()
-
+        db_users = (await db.execute(query)).scalars().all()
         users = []
         for u in db_users:
-            # Count watchlist items
-            wl_count = (await db.execute(
-                select(func.count(DbWatchlist.id)).where(DbWatchlist.user_id == u.id)
-            )).scalar() or 0
-
-            # Get last activity from history
+            wl_count = (await db.execute(select(func.count(DbWatchlist.id)).where(DbWatchlist.user_id == u.id))).scalar() or 0
             last_hist = (await db.execute(
-                select(DbHistory.updated_at)
-                .where(DbHistory.user_id == u.id)
-                .order_by(DbHistory.updated_at.desc())
-                .limit(1)
+                select(DbHistory.updated_at).where(DbHistory.user_id == u.id)
+                .order_by(DbHistory.updated_at.desc()).limit(1)
             )).scalar()
-
             name_parts = (u.name or "").split(" ", 1)
             users.append(AdminUser(
-                id=str(u.id),
-                email=u.email,
-                username=u.email.split("@")[0],
+                id=str(u.id), email=u.email, username=u.email.split("@")[0],
                 firstName=name_parts[0] if name_parts else "",
                 lastName=name_parts[1] if len(name_parts) > 1 else "",
-                avatar=u.avatar,
-                isActive=True,
-                isBanned=False,
+                avatar=u.avatar, isActive=True, isBanned=False,
                 lastActive=str(last_hist) if last_hist else None,
                 createdAt=str(u.created_at) if u.created_at else None,
-                watchlistCount=wl_count,
-                downloadCount=0
+                watchlistCount=wl_count, downloadCount=0
             ))
-
         return AdminUsersResponse(users=users, totalCount=total_count)
 
     @strawberry.field
     async def adminUserDetail(self, info: strawberry.Info, id: strawberry.ID) -> AdminUser:
-        """Get full details of a single user for admin viewing."""
         user = await info.context.user
         if not user or user.role != "admin":
             raise ValueError("Admin access required")
-        from app.models.database import User as DbUser, Watchlist as DbWatchlist
         from sqlalchemy import func
         db = await info.context.get_db()
-        result = await db.execute(select(DbUser).where(DbUser.id == id))
-        u = result.scalars().first()
+        u = (await db.execute(select(DbUser).where(DbUser.id == id))).scalars().first()
         if not u:
             raise ValueError("User not found")
         wl_count = (await db.execute(select(func.count()).where(DbWatchlist.user_id == u.id))).scalar() or 0
         return AdminUser(
-            id=str(u.id), email=u.email,
-            username=u.name, firstName=u.name.split(' ')[0] if u.name else '',
+            id=str(u.id), email=u.email, username=u.name,
+            firstName=u.name.split(' ')[0] if u.name else '',
             lastName=' '.join(u.name.split(' ')[1:]) if u.name and ' ' in u.name else '',
             avatar=u.avatar, isActive=True, isBanned=False,
             lastActive=str(u.created_at), createdAt=str(u.created_at),
@@ -1388,32 +1195,26 @@ class Query:
 
     @strawberry.field
     async def adminNotifications(self, info: strawberry.Info, limit: Optional[int] = 50) -> List[Notification]:
-        """Get all notifications sent by admin (for the notifications management page)."""
         user = await info.context.user
         if not user or user.role != "admin":
             raise ValueError("Admin access required")
         db = await info.context.get_db()
-        result = await db.execute(
-            select(DbNotification)
-            .order_by(DbNotification.created_at.desc())
-            .limit(limit or 50)
-        )
-        notifs = result.scalars().all()
+        notifs = (await db.execute(
+            select(DbNotification).order_by(DbNotification.created_at.desc()).limit(limit or 50)
+        )).scalars().all()
         return [
             Notification(
                 id=str(n.id), title=n.title, message=n.message,
-                type=n.type or "system",
-                actionUrl=n.action_url, isRead=n.is_read,
-                createdAt=str(n.created_at)
-            ) for n in notifs
+                type=n.type or "system", actionUrl=n.action_url,
+                isRead=n.is_read, createdAt=str(n.created_at)
+            )
+            for n in notifs
         ]
 
     @strawberry.field
     async def chatMessages(self, info: strawberry.Info, room: Optional[str] = "global", limit: Optional[int] = 50, before: Optional[str] = None) -> List[ChatMessageType]:
-        """Fetch recent chat messages for a room."""
-        from app.models.database import ChatMessage as DbChatMessage, User as DbUser
+        from app.models.database import ChatMessage as DbChatMessage
         db = await info.context.get_db()
-
         query = (
             select(DbChatMessage, DbUser.name, DbUser.avatar)
             .join(DbUser, DbChatMessage.user_id == DbUser.id)
@@ -1423,23 +1224,18 @@ class Query:
         )
         if before:
             query = query.where(DbChatMessage.created_at < before)
-
         rows = (await db.execute(query)).all()
         return [
             ChatMessageType(
-                id=str(row[0].id),
-                userId=str(row[0].user_id),
-                userName=row[1] or "User",
-                userAvatar=row[2],
-                room=row[0].room,
-                content=row[0].content,
-                createdAt=str(row[0].created_at)
-            ) for row in reversed(rows)  # Reverse so oldest first
+                id=str(row[0].id), userId=str(row[0].user_id),
+                userName=row[1] or "User", userAvatar=row[2],
+                room=row[0].room, content=row[0].content, createdAt=str(row[0].created_at)
+            )
+            for row in reversed(rows)
         ]
 
     @strawberry.field
     async def loginActivity(self, info: strawberry.Info, limit: Optional[int] = 20) -> List[LoginActivityEntry]:
-        """Get the current user's login activity (security logs)."""
         user = await info.context.user
         if not user:
             return []
@@ -1447,20 +1243,18 @@ class Query:
         from sqlalchemy import text
         try:
             result = await db.execute(text(
-                "SELECT id, action, COALESCE(device_info, user_agent) as device_info, ip_address, location, success, created_at "
+                "SELECT id, action, COALESCE(device_info, user_agent) as device_info, "
+                "ip_address, location, success, created_at "
                 "FROM login_activity WHERE user_id = :uid ORDER BY created_at DESC LIMIT :lim"
             ), {"uid": str(user.id), "lim": limit or 20})
-            rows = result.fetchall()
             return [
                 LoginActivityEntry(
-                    id=str(r[0]),
-                    action=r[1] or "login",
-                    deviceInfo=r[2],
-                    ipAddress=r[3],
-                    location=r[4],
+                    id=str(r[0]), action=r[1] or "login", deviceInfo=r[2],
+                    ipAddress=r[3], location=r[4],
                     success=r[5] if r[5] is not None else True,
                     createdAt=str(r[6]) if r[6] else ""
-                ) for r in rows
+                )
+                for r in result.fetchall()
             ]
         except Exception as e:
             print(f"Login activity query error: {e}")
@@ -1468,116 +1262,35 @@ class Query:
 
     @strawberry.field
     async def premiumSignupStats(self) -> PremiumSignupStats:
-        """Get first-50 premium signup statistics."""
         from app.core.database import AsyncSessionLocal
         from sqlalchemy import text
         try:
             async with AsyncSessionLocal() as db:
-                result = await db.execute(text(
-                    "SELECT count(*) FROM users WHERE subscription_tier != 'free'"
-                ))
-                total_premium = result.scalar() or 0
+                total_premium = (await db.execute(
+                    text("SELECT count(*) FROM users WHERE subscription_tier != 'free'")
+                )).scalar() or 0
                 remaining = max(0, 50 - total_premium)
                 return PremiumSignupStats(
-                    totalPremiumUsers=total_premium,
-                    remainingSlots=remaining,
-                    isEligible=remaining > 0,
-                    isActive=remaining > 0
+                    totalPremiumUsers=total_premium, remainingSlots=remaining,
+                    isEligible=remaining > 0, isActive=remaining > 0
                 )
         except Exception as e:
             print(f"Premium stats error: {e}")
             return PremiumSignupStats()
 
 
-# ───────────────────────────────────────
-# Login Activity Helper (module-level to avoid Strawberry `self=None` edge case)
-# ───────────────────────────────────────
-async def _log_activity(
-    db, user_id, action: str,
-    info=None, success: bool = True
-):
-    """Log a login/security event."""
-    from sqlalchemy import text
-    try:
-        ip = "unknown"
-        ua = ""
-        if info and hasattr(info.context, 'request'):
-            request = info.context.request
-            ip = request.client.host if request.client else "unknown"
-            ua = request.headers.get("user-agent", "")[:1000]
-
-        if not user_id:
-            return  # Can't log without user
-
-        await db.execute(text("""
-            INSERT INTO login_activity (user_id, action, ip_address, user_agent, success)
-            VALUES (:uid, :action, :ip, :ua, :success)
-        """), {
-            "uid": user_id,
-            "action": action,
-            "ip": ip,
-            "ua": ua,
-            "success": success,
-        })
-        await db.commit()
-    except Exception as e:
-        print(f"Log activity error: {e}")
+# ═══════════════════════════════════════════════════════════
+# Mutation
+# ═══════════════════════════════════════════════════════════
 
 @strawberry.type
 class Mutation:
-    @strawberry.mutation
-    async def updateWatchProgress(
-        self, info: strawberry.Info, movieId: str, contentType: str, currentTime: int, duration: int
-    ) -> SuccessResponse:
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-            
-        db = await info.context.get_db()
-        
-        # Upsert History
-        history_query = await db.execute(select(DbHistory).where(DbHistory.user_id == user.id, DbHistory.moviebox_id == movieId))
-        history_item = history_query.scalars().first()
-        
-        if history_item:
-            # Only update duration if positive and valid
-            history_item.current_time = currentTime
-            if duration > 0:
-                history_item.duration = max(history_item.duration or 0, duration)
-            history_item.updated_at = datetime.utcnow()
-        else:
-            new_history = DbHistory(
-                user_id=user.id,
-                moviebox_id=movieId,
-                content_type=contentType,
-                current_time=currentTime,
-                duration=duration
-            )
-            db.add(new_history)
-            
-        # Update Recently Viewed
-        recent_query = await db.execute(select(DbRecentlyViewed).where(DbRecentlyViewed.user_id == user.id, DbRecentlyViewed.moviebox_id == movieId))
-        recent_item = recent_query.scalars().first()
-        
-        if recent_item:
-            recent_item.viewed_at = datetime.utcnow()
-        else:
-            new_recent = DbRecentlyViewed(
-                user_id=user.id,
-                moviebox_id=movieId,
-                content_type=contentType
-            )
-            db.add(new_recent)
-            
-        await db.commit()
-        return SuccessResponse(success=True, message="Progress saved")
 
     @strawberry.mutation
-    async def login(self, info: strawberry.Info, email: str, password: str, totpCode: Optional[str] = None) -> strawberry.scalars.JSON:
+    async def login(self, info: strawberry.Info, email: str, password: str) -> AuthResponse:
         from app.core.database import AsyncSessionLocal
         from app.core.auth import verify_password, create_access_token
-
-        # Use a dedicated session to avoid pgBouncer prepared-statement conflicts
+        import os
         async with AsyncSessionLocal() as db:
             try:
                 result = await db.execute(select(DbUser).where(DbUser.email == email))
@@ -1587,201 +1300,200 @@ class Mutation:
                 raise Exception("Login service temporarily unavailable. Please try again.")
 
             if not user:
-                # Log failed attempt
                 await _log_activity(db, None, "login_failed", info, success=False)
                 raise Exception("Invalid email or password")
-
             if not user.password:
                 raise Exception("This account uses Google sign-in. Please log in with Google.")
-
             if not verify_password(password, user.password):
                 await _log_activity(db, str(user.id), "login_failed", info, success=False)
                 raise Exception("Invalid email or password")
 
+            access_token = create_access_token({"sub": str(user.id)})
 
-            token = create_access_token({"sub": user.email})
+            from app.core.auth import create_refresh_token, store_refresh_token
+            raw_refresh, refresh_hash, family_id = create_refresh_token(str(user.id))
+            try:
+                device_info = (info.context.request.headers.get("user-agent") or "")[:255]
+                ip_address = (info.context.request.client.host if info.context.request.client else None)
+                await store_refresh_token(db, str(user.id), refresh_hash, family_id, device_info, ip_address)
+            except Exception as e:
+                print(f"[LOGIN] Could not store refresh token: {e}")
 
-            # Log successful login
+            is_production = os.getenv("ENV", "development") == "production"
+            info.context.response.set_cookie(
+                key="auth_token", value=access_token, httponly=True,
+                secure=is_production, samesite="lax", max_age=60 * 15, path="/"
+            )
+            info.context.response.set_cookie(
+                key="refresh_token", value=raw_refresh, httponly=True,
+                secure=is_production, samesite="lax",
+                max_age=60 * 60 * 24 * 30, path="/api/auth/refresh"
+            )
+
             await _log_activity(db, str(user.id), "login", info, success=True)
-
-            # Send login notification (non-critical)
             try:
                 await notification_service.create(
-                    db, str(user.id),
-                    title="Welcome back! 👋",
-                    message=f"You just signed in to clipX. Enjoy your session!",
-                    notif_type="system",
-                    action_url="/dashboard"
+                    db, str(user.id), title="Welcome back! 👋",
+                    message="You just signed in to clipX. Enjoy your session!",
+                    notif_type="system", action_url="/dashboard"
                 )
             except Exception as e:
                 print(f"Login notification error: {e}")
 
-            user_resp = create_user_response(user)
-            return {
-                "requires2FA": False,
-                "tempToken": None,
-                "token": token,
-                "user": {
-                    "id": str(user.id),
-                    "email": user.email,
-                    "name": user.name,
-                    "avatar": user.avatar,
-                    "bio": user.bio,
-                    "role": user.role,
-                },
-            }
+            return AuthResponse(
+                token=access_token,
+                user=create_user_response(user)
+            )
 
     @strawberry.mutation
     async def register(self, info: strawberry.Info, input: RegisterInput) -> AuthResponse:
         from app.core.database import AsyncSessionLocal
         from app.core.auth import get_password_hash, create_access_token
+        import re, os
+
+        if len(input.password) < 8:
+            raise Exception("Password must be at least 8 characters long")
+        if not re.search(r"[A-Za-z]", input.password):
+            raise Exception("Password must contain at least one letter")
+        if not re.search(r"\d", input.password):
+            raise Exception("Password must contain at least one number")
 
         async with AsyncSessionLocal() as db:
-            result = await db.execute(select(DbUser).where(DbUser.email == input.email))
-            existing_user = result.scalars().first()
+            existing_user = (await db.execute(select(DbUser).where(DbUser.email == input.email))).scalars().first()
             if existing_user:
-                # If user exists but has no password (Google Auth), allow linking
                 if not existing_user.password:
-                     hashed_password = get_password_hash(input.password)
-                     existing_user.password = hashed_password
-                     await db.commit()
-                     await db.refresh(existing_user)
-                     token = create_access_token({"sub": existing_user.email})
-                     return AuthResponse(
-                        token=token,
-                        user=create_user_response(existing_user)
-                     )
-                raise Exception("User already exists")
+                    existing_user.password = get_password_hash(input.password)
+                    await db.commit()
+                    await db.refresh(existing_user)
+                    token = create_access_token({"sub": str(existing_user.id)})
+                    is_production = os.getenv("ENV", "development") == "production"
+                    info.context.response.set_cookie(
+                        key="auth_token", value=token, httponly=True,
+                        secure=is_production, samesite="lax", max_age=60 * 15, path="/"
+                    )
+                    return AuthResponse(token="", user=create_user_response(existing_user))
+                raise Exception("An account with this email already exists")
 
-            hashed_password = get_password_hash(input.password)
             new_user = DbUser(
-                email=input.email,
-                password=hashed_password,
-                name=input.name,
-                role="user",
-                preferences={},
-                email_verified=False,
+                email=input.email, password=get_password_hash(input.password),
+                name=input.name, role="user", preferences={}, email_verified=False
             )
             db.add(new_user)
             await db.commit()
             await db.refresh(new_user)
 
-            # Send verification email
             try:
                 from app.core.email_service import send_verification_email
                 send_verification_email(str(new_user.id), new_user.email, new_user.name or "")
             except Exception as e:
                 print(f"Verification email error: {e}")
 
-            # Handle referral
             try:
-                referral_code = input.referralCode
-                if referral_code:
-                    all_users = await db.execute(select(DbUser))
-                    for u in all_users.scalars().all():
-                        if str(u.id).replace("-", "")[:8].upper() == referral_code.upper():
-                            u.referral_count = (u.referral_count or 0) + 1
-                            if u.referral_count >= 5 and u.subscription_tier == "free":
-                                u.subscription_tier = "standard"
-                                from datetime import timedelta
-                                u.subscription_expires_at = datetime.utcnow() + timedelta(days=90)
-                            await db.commit()
-                            break
+                if input.referralCode:
+                    from sqlalchemy import func, cast, String
+                    code = input.referralCode.upper().strip()[:8]
+                    referrer = (await db.execute(
+                        select(DbUser).where(
+                            func.upper(func.substr(func.replace(cast(DbUser.id, String), "-", ""), 1, 8)) == code
+                        )
+                    )).scalars().first()
+                    if referrer:
+                        referrer.referral_count = (referrer.referral_count or 0) + 1
+                        if referrer.referral_count >= 5 and referrer.subscription_tier == "free":
+                            referrer.subscription_tier = "standard"
+                            referrer.subscription_expires_at = datetime.utcnow() + timedelta(days=90)
+                        await db.commit()
             except Exception as e:
                 print(f"Referral tracking error: {e}")
 
-            token = create_access_token({"sub": new_user.email})
-            return AuthResponse(
-                token=token,
-                user=create_user_response(new_user)
+            token = create_access_token({"sub": str(new_user.id)})
+            is_production = os.getenv("ENV", "development") == "production"
+            info.context.response.set_cookie(
+                key="auth_token", value=token, httponly=True,
+                secure=is_production, samesite="lax", max_age=60 * 15, path="/"
             )
+            return AuthResponse(token="", user=create_user_response(new_user))
 
     @strawberry.mutation
     async def googleAuth(self, info: strawberry.Info, idToken: str) -> GoogleAuthResponse:
         try:
-            import requests
-            import certifi
+            import requests, certifi
             from requests.adapters import HTTPAdapter
             from urllib3.util.retry import Retry
-            
-            # Robust session configuration
             session = requests.Session()
-            # Explicitly use certifi's CA bundle and disable trust_env to avoid
-            # interference from local proxies/VPNs which often cause SSL EOF errors.
             session.verify = certifi.where()
             session.trust_env = False
-            
-            # Retry strategy
-            retries = Retry(
-                total=5,
-                backoff_factor=1,
-                status_forcelist=[500, 502, 503, 504],
-                allowed_methods=["GET", "POST"]
-            )
+            retries = Retry(total=5, backoff_factor=1, status_forcelist=[500, 502, 503, 504], allowed_methods=["GET", "POST"])
             session.mount('https://', HTTPAdapter(max_retries=retries))
-            
+
             client_id = os.getenv("NEXT_PUBLIC_GOOGLE_CLIENT_ID")
             if not client_id:
-                raise Exception("Google Client ID not configured. Set NEXT_PUBLIC_GOOGLE_CLIENT_ID env var.")
-            
-            # Use the custom session wrapped in google transport request
-            transport_request = google_requests.Request(session=session)
-            idinfo = id_token.verify_oauth2_token(idToken, transport_request, client_id)
-            
-            email = idinfo['email']
-            name = idinfo.get('name')
-            avatar = idinfo.get('picture')
-            
+                raise Exception("Google Client ID not configured.")
+
+            idinfo = id_token.verify_oauth2_token(idToken, google_requests.Request(session=session), client_id)
+            email, name, avatar = idinfo['email'], idinfo.get('name'), idinfo.get('picture')
+
             db = await info.context.get_db()
-            result = await db.execute(select(DbUser).where(DbUser.email == email))
-            user = result.scalars().first()
-            
+            user = (await db.execute(select(DbUser).where(DbUser.email == email))).scalars().first()
             is_new_user = False
             if not user:
-                user = DbUser(
-                    email=email,
-                    name=name,
-                    avatar=avatar,
-                    role="user",
-                    preferences={}
-                )
+                user = DbUser(email=email, name=name, avatar=avatar, role="user", preferences={})
                 db.add(user)
                 await db.commit()
                 await db.refresh(user)
                 is_new_user = True
-            
-            token = create_access_token({"sub": user.email})
-            
-            # Send login/welcome notification
+
+            token = create_access_token({"sub": str(user.id)})
+            is_production = os.getenv("ENV", "development") == "production"
+            info.context.response.set_cookie(
+                key="auth_token", value=token, httponly=True,
+                secure=is_production, samesite="lax", max_age=60 * 15, path="/"
+            )
             try:
                 if is_new_user:
                     await notification_service.notify_welcome(db, str(user.id), name=name)
                 else:
                     await notification_service.create(
-                        db, str(user.id),
-                        title="Welcome back! 👋",
+                        db, str(user.id), title="Welcome back! 👋",
                         message="You just signed in to clipX. Enjoy your session!",
-                        notif_type="system",
-                        action_url="/dashboard"
+                        notif_type="system", action_url="/dashboard"
                     )
             except Exception as e:
                 print(f"Login notification error: {e}")
 
-            return GoogleAuthResponse(
-                token=token,
-                user=create_user_response(user),
-                isNewUser=is_new_user
-            )
+            return GoogleAuthResponse(token="", user=create_user_response(user), isNewUser=is_new_user)
         except Exception as e:
             print(f"Google auth error: {e}")
             raise Exception(f"Google authentication failed: {str(e)}")
 
     @strawberry.mutation
+    async def logout(self, info: strawberry.Info) -> SuccessResponse:
+        info.context.response.delete_cookie(key="auth_token", path="/")
+        return SuccessResponse(success=True)
+
+    @strawberry.mutation
+    async def refreshToken(self, info: strawberry.Info) -> AuthResponse:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        import uuid as uuid_mod
+        token = create_access_token(data={
+            "sub": str(user.id),
+            "jti": str(uuid_mod.uuid4()),
+            "rotated": True,
+        }, expires_delta=timedelta(days=7))
+        try:
+            db = await info.context.get_db()
+            user.last_active = datetime.utcnow()
+            await db.commit()
+        except Exception:
+            pass
+        return AuthResponse(token=token, user=create_user_response(user))
+
+    @strawberry.mutation
     async def forgotPassword(self, info: strawberry.Info, email: str) -> SuccessResponse:
         db = await info.context.get_db()
-        result = await db.execute(select(DbUser).where(DbUser.email == email))
-        user = result.scalars().first()
-        
+        user = (await db.execute(select(DbUser).where(DbUser.email == email))).scalars().first()
         if user:
             try:
                 from app.core.email_service import send_password_reset_email
@@ -1789,178 +1501,29 @@ class Mutation:
                     send_password_reset_email(str(user.id), user.email, user.name or "User")
             except Exception as e:
                 print(f"Failed to send reset email: {e}")
-                
-        # Always return true to prevent email enumeration
         return SuccessResponse(success=True, message="If an account exists, a reset link was sent")
-        
+
     @strawberry.mutation
     async def resetPassword(self, info: strawberry.Info, token: str, newPassword: str) -> SuccessResponse:
         from app.core.auth import decode_access_token, get_password_hash
-        
         payload = decode_access_token(token)
         if not payload or payload.get("type") != "reset":
             raise Exception("Invalid or expired reset token")
-            
         user_id = payload.get("sub")
-        
         db = await info.context.get_db()
-        result = await db.execute(select(DbUser).where(DbUser.id == user_id))
-        user = result.scalars().first()
-        
+        user = (await db.execute(select(DbUser).where(DbUser.id == user_id))).scalars().first()
         if not user:
             raise Exception("User not found")
-            
         user.password = get_password_hash(newPassword)
         await db.commit()
-        
         try:
-            from app.services.notification_service import notification_service
             await notification_service.create(
-                db, str(user.id),
-                title="Password Updated 🔒",
-                message="Your password was successfully changed.",
-                notif_type="system"
+                db, str(user.id), title="Password Updated 🔒",
+                message="Your password was successfully changed.", notif_type="system"
             )
         except Exception:
             pass
-            
         return SuccessResponse(success=True, message="Password reset successfully")
-
-    @strawberry.mutation
-    async def updateProfile(self, info: strawberry.Info, input: UpdateProfileInput) -> User:
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-            
-        db = await info.context.get_db()
-        if input.name:
-            user.name = input.name
-        if input.avatar:
-            user.avatar = input.avatar
-        if input.bio:
-            user.bio = input.bio
-        
-        # Determine existing preferences
-        current_prefs = dict(user.preferences) if user.preferences else {}
-        
-        if input.favoriteGenres is not None:
-            current_prefs["favoriteGenres"] = input.favoriteGenres
-            
-        if input.preferences:
-            if input.preferences.theme is not None:
-                current_prefs["theme"] = input.preferences.theme
-            if input.preferences.email_notifications is not None:
-                current_prefs["emailNotifications"] = input.preferences.email_notifications
-            if input.preferences.auto_play_trailers is not None:
-                current_prefs["autoPlayTrailers"] = input.preferences.auto_play_trailers
-        
-        # Important: re-assign to trigger SQLalchemy update
-        user.preferences = current_prefs
-            
-        await db.commit()
-        await db.refresh(user)
-        
-        return create_user_response(user)
-
-    @strawberry.mutation
-    async def submitReport(self, info: strawberry.Info, reason: str, description: str, movieId: Optional[str] = None) -> SuccessResponse:
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-            
-        db = await info.context.get_db()
-        
-        new_report = DbReport(
-            user_id=user.id,
-            reason=reason,
-            description=description,
-            moviebox_id=movieId
-        )
-        db.add(new_report)
-        await db.commit()
-        
-        return SuccessResponse(success=True, message="Report submitted successfully")
-
-    @strawberry.mutation
-    async def recordWatchProgress(self, info: strawberry.Info, movieId: strawberry.ID, currentTime: int, duration: int) -> SuccessResponse:
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        
-        db = await info.context.get_db()
-        
-        # Check if history already exists for this movie/user
-        result = await db.execute(select(DbHistory).where(
-            DbHistory.user_id == user.id,
-            DbHistory.moviebox_id == str(movieId)
-        ))
-        history_item = result.scalars().first()
-        is_new_watch = history_item is None
-        
-        if history_item:
-            history_item.current_time = currentTime
-            history_item.duration = duration
-            history_item.updated_at = datetime.utcnow()
-        else:
-            history_item = DbHistory(
-                user_id=user.id,
-                moviebox_id=str(movieId),
-                current_time=currentTime,
-                duration=duration,
-                content_type="movie"
-            )
-            db.add(history_item)
-            
-        await db.commit()
-
-        # Check for watch milestones on new watches
-        if is_new_watch:
-            try:
-                from sqlalchemy import func
-                count_q = await db.execute(
-                    select(func.count(DbHistory.id)).where(DbHistory.user_id == user.id)
-                )
-                total_watched = count_q.scalar() or 0
-                if total_watched in [5, 10, 25, 50, 100]:
-                    await notification_service.notify_watch_milestone(db, str(user.id), total_watched)
-            except Exception as e:
-                print(f"Milestone check error: {e}")
-
-        return SuccessResponse(success=True)
-
-    @strawberry.mutation
-    async def addToWatchlist(self, info: strawberry.Info, movieId: strawberry.ID) -> SuccessResponse:
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        db = await info.context.get_db()
-        watchlist_item = DbWatchlist(user_id=user.id, moviebox_id=str(movieId))
-        db.add(watchlist_item)
-        await db.commit()
-        # Notify user
-        try:
-            details = await movie_service.get_details(str(movieId), db=db)
-            title = details.title if details else "Content"
-            await notification_service.notify_watchlist_add(db, str(user.id), title, str(movieId))
-        except Exception as e:
-            print(f"Notification error (watchlist): {e}")
-        return SuccessResponse(success=True)
-
-    @strawberry.mutation
-    async def removeFromWatchlist(self, info: strawberry.Info, movieId: strawberry.ID) -> SuccessResponse:
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        db = await info.context.get_db()
-        result = await db.execute(select(DbWatchlist).where(
-            DbWatchlist.user_id == user.id,
-            DbWatchlist.moviebox_id == str(movieId)
-        ))
-        item = result.scalars().first()
-        if item:
-            await db.delete(item)
-            await db.commit()
-        return SuccessResponse(success=True, message="Removed from watchlist")
 
     @strawberry.mutation
     async def changePassword(self, info: strawberry.Info, currentPassword: str, newPassword: str) -> SuccessResponse:
@@ -1979,86 +1542,37 @@ class Mutation:
         return SuccessResponse(success=True, message="Password changed successfully")
 
     @strawberry.mutation
-    async def logout(self) -> SuccessResponse:
-        return SuccessResponse(success=True)
-
-    @strawberry.mutation
-    async def forgotPassword(self, info: strawberry.Info, email: str) -> SuccessResponse:
-        """Generate a password reset token. In production, email it. For now, return it."""
-        db = await info.context.get_db()
-        result = await db.execute(select(DbUser).where(DbUser.email == email))
-        user = result.scalars().first()
-        if not user:
-            # Don't reveal if email exists — always return success
-            return SuccessResponse(success=True, message="If the email exists, a reset link has been sent.")
-        # Generate a reset token (1 hour expiry)
-        from datetime import timedelta
-        reset_token = create_access_token(
-            data={"sub": str(user.id), "type": "reset"},
-            expires_delta=timedelta(hours=1)
-        )
-        # In production this would be emailed. For dev, return it.
-        return SuccessResponse(success=True, message=reset_token)
-
-    @strawberry.mutation
-    async def resetPassword(self, info: strawberry.Info, token: str, newPassword: str) -> SuccessResponse:
-        """Reset password using a valid reset token."""
-        from app.core.auth import decode_access_token
-        payload = decode_access_token(token)
-        if not payload or payload.get("type") != "reset":
-            raise Exception("Invalid or expired reset token")
-        user_id = payload.get("sub")
-        if not user_id:
-            raise Exception("Invalid token")
-        db = await info.context.get_db()
-        from app.models.database import User as DbUserModel
-        from sqlalchemy.dialects.postgresql import UUID as PGUUID
-        import uuid
-        result = await db.execute(select(DbUserModel).where(DbUserModel.id == uuid.UUID(user_id)))
-        user = result.scalars().first()
-        if not user:
-            raise Exception("User not found")
-        user.password = get_password_hash(newPassword)
-        await db.commit()
-        return SuccessResponse(success=True, message="Password reset successfully")
-
-    @strawberry.mutation
-    async def refreshToken(self, info: strawberry.Info) -> AuthResponse:
-        """Issue a new access token with rotation (unique jti per refresh)."""
+    async def updateProfile(self, info: strawberry.Info, input: UpdateProfileInput) -> User:
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-        from datetime import timedelta
-        import uuid as uuid_mod
-        # Token rotation: include a unique jti (JWT ID) so each refresh produces a unique token
-        token = create_access_token(
-            data={
-                "sub": str(user.id),
-                "jti": str(uuid_mod.uuid4()),  # unique per refresh
-                "rotated": True,
-            },
-            expires_delta=timedelta(days=7)
-        )
-        # Update last_active timestamp
-        try:
-            db = await info.context.get_db()
-            from datetime import datetime
-            user.last_active = datetime.utcnow()
-            await db.commit()
-        except Exception:
-            pass
-        return AuthResponse(
-            token=token,
-            user=create_user_response(user)
-        )
-
+        db = await info.context.get_db()
+        if input.name:
+            user.name = input.name
+        if input.avatar:
+            user.avatar = input.avatar
+        if input.bio:
+            user.bio = input.bio
+        current_prefs = dict(user.preferences) if user.preferences else {}
+        if input.favoriteGenres is not None:
+            current_prefs["favoriteGenres"] = input.favoriteGenres
+        if input.preferences:
+            if input.preferences.theme is not None:
+                current_prefs["theme"] = input.preferences.theme
+            if input.preferences.email_notifications is not None:
+                current_prefs["emailNotifications"] = input.preferences.email_notifications
+            if input.preferences.auto_play_trailers is not None:
+                current_prefs["autoPlayTrailers"] = input.preferences.auto_play_trailers
+        user.preferences = current_prefs
+        await db.commit()
+        await db.refresh(user)
+        return create_user_response(user)
 
     @strawberry.mutation
     async def deleteAccount(self, info: strawberry.Info, password: Optional[str] = None) -> SuccessResponse:
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-        # Verify password for email/password accounts
         if user.password and password:
             if not verify_password(password, user.password):
                 raise Exception("Incorrect password")
@@ -2070,312 +1584,7 @@ class Mutation:
         return SuccessResponse(success=True, message="Account deleted successfully")
 
     @strawberry.mutation
-    async def clearWatchHistory(self, info: strawberry.Info) -> SuccessResponse:
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        db = await info.context.get_db()
-        from app.models.database import History as DbHistoryModel, RecentlyViewed as DbRecentlyViewed
-        from sqlalchemy import delete
-        await db.execute(delete(DbHistoryModel).where(DbHistoryModel.user_id == user.id))
-        await db.execute(delete(DbRecentlyViewed).where(DbRecentlyViewed.user_id == user.id))
-        await db.commit()
-        return SuccessResponse(success=True, message="Watch history cleared")
-
-    @strawberry.mutation
-    async def submitReport(self, info: strawberry.Info, reason: str, description: str, movieboxId: Optional[str] = None) -> SuccessResponse:
-        user = await info.context.user
-        if not user:
-            raise ValueError("You must be logged in to submit a report")
-        db = await info.context.get_db()
-        r = DbReport(
-            user_id=user.id,
-            reason=reason,
-            description=description,
-            moviebox_id=movieboxId
-        )
-        db.add(r)
-        
-        # Auto-create notification for admins or the user if they're logged in 
-        if user:
-            n = DbNotification(
-                user_id=user.id,
-                title="Report Submitted",
-                message="Thank you for your report. Our team will review it shortly."
-            )
-            db.add(n)
-            
-        await db.commit()
-        return SuccessResponse(success=True, message="Report submitted successfully")
-
-    @strawberry.mutation
-    async def markNotificationRead(self, info: strawberry.Info, id: strawberry.ID) -> SuccessResponse:
-        user = await info.context.user
-        if not user: return SuccessResponse(success=False, message="Unauthorized")
-        db = await info.context.get_db()
-        q = await db.execute(select(DbNotification).where(DbNotification.id == id, DbNotification.user_id == user.id))
-        n = q.scalars().first()
-        if n:
-            n.is_read = True
-            await db.commit()
-        return SuccessResponse(success=True)
-
-    @strawberry.mutation
-    async def addReview(self, info: strawberry.Info, content: str, rating: float, isFeatured: Optional[bool] = False, movieboxId: Optional[str] = None) -> SuccessResponse:
-        user = await info.context.user
-        if not user: return SuccessResponse(success=False, message="Unauthorized")
-        db = await info.context.get_db()
-        r = DbReview(
-            user_id=user.id,
-            content=content,
-            rating=rating,
-            is_featured=isFeatured
-        )
-        db.add(r)
-        await db.commit()
-        # Notify review posted
-        try:
-            await notification_service.notify_review_posted(db, str(user.id))
-        except Exception as e:
-            print(f"Notification error (review): {e}")
-        return SuccessResponse(success=True, message="Review added successfully")
-
-    @strawberry.mutation
-    async def updateReportStatus(self, info: strawberry.Info, id: strawberry.ID, status: str) -> SuccessResponse:
-        user = await info.context.user
-        if not user or user.role != "admin":
-             return SuccessResponse(success=False, message="Unauthorized")
-        db = await info.context.get_db()
-        q = await db.execute(select(DbReport).where(DbReport.id == id))
-        report = q.scalars().first()
-        if report:
-            report.status = status
-            await db.commit()
-            # Notify the report author
-            if report.user_id:
-                try:
-                    await notification_service.notify_report_status(db, str(report.user_id), status)
-                except Exception as e:
-                    print(f"Notification error (report): {e}")
-            return SuccessResponse(success=True, message="Status updated")
-        return SuccessResponse(success=False, message="Report not found")
-
-    @strawberry.mutation
-    async def markAllNotificationsRead(self, info: strawberry.Info) -> SuccessResponse:
-        user = await info.context.user
-        if not user:
-            return SuccessResponse(success=False, message="Unauthorized")
-        db = await info.context.get_db()
-        from sqlalchemy import update
-        await db.execute(
-            update(DbNotification).where(
-                DbNotification.user_id == user.id,
-                DbNotification.is_read == False
-            ).values(is_read=True)
-        )
-        await db.commit()
-        return SuccessResponse(success=True)
-
-    @strawberry.mutation
-    async def deleteNotification(self, info: strawberry.Info, id: strawberry.ID) -> SuccessResponse:
-        user = await info.context.user
-        if not user:
-            return SuccessResponse(success=False, message="Unauthorized")
-        db = await info.context.get_db()
-        q = await db.execute(select(DbNotification).where(DbNotification.id == id, DbNotification.user_id == user.id))
-        n = q.scalars().first()
-        if n:
-            await db.delete(n)
-            await db.commit()
-        return SuccessResponse(success=True)
-
-    @strawberry.mutation
-    async def sendChatMessage(self, info: strawberry.Info, content: str, room: Optional[str] = "global") -> ChatMessageType:
-        """Send a chat message (persisted to DB)."""
-        from app.models.database import ChatMessage as DbChatMessage
-        user = await info.context.user
-        if not user:
-            raise ValueError("Must be logged in to send messages")
-        db = await info.context.get_db()
-        msg = DbChatMessage(
-            user_id=user.id,
-            room=room or "global",
-            content=content[:2000],  # Limit length
-        )
-        db.add(msg)
-        await db.commit()
-        await db.refresh(msg)
-        return ChatMessageType(
-            id=str(msg.id),
-            userId=str(user.id),
-            userName=user.name or "User",
-            userAvatar=user.avatar,
-            room=msg.room,
-            content=msg.content,
-            createdAt=str(msg.created_at)
-        )
-
-    @strawberry.mutation
-    async def submitReview(self, info: strawberry.Info, content: str, rating: float) -> Review:
-        """Submit a site review (shown on landing page)."""
-        user = await info.context.user
-        if not user:
-            raise ValueError("Must be logged in to submit a review")
-        if not content.strip() or len(content.strip()) < 10:
-            raise ValueError("Review must be at least 10 characters")
-        if rating < 1 or rating > 5:
-            raise ValueError("Rating must be between 1 and 5")
-        
-        db = await info.context.get_db()
-        review = DbReview(
-            user_id=user.id,
-            content=content.strip()[:500],
-            rating=rating,
-            is_featured=False,
-        )
-        db.add(review)
-        await db.commit()
-        await db.refresh(review)
-        return Review(
-            id=str(review.id),
-            content=review.content,
-            rating=review.rating,
-            userName=user.name or "User",
-            userAvatar=user.avatar,
-            isFeatured=False,
-            createdAt=str(review.created_at)
-        )
-
-    @strawberry.mutation
-    async def submitMovieReview(
-        self, info: strawberry.Info, movieId: str, content: str, rating: float
-    ) -> Review:
-        """Submit a review for a specific movie."""
-        user = await info.context.user
-        if not user:
-            raise ValueError("Must be logged in to review")
-        if not content.strip() or len(content.strip()) < 10:
-            raise ValueError("Review must be at least 10 characters")
-        if rating < 1 or rating > 5:
-            raise ValueError("Rating must be between 1 and 5")
-
-        db = await info.context.get_db()
-        # Check for existing review by this user on this movie
-        from sqlalchemy import and_
-        existing = await db.execute(
-            select(DbReview).where(
-                and_(DbReview.user_id == user.id, DbReview.moviebox_id == movieId)
-            )
-        )
-        old_review = existing.scalars().first()
-        if old_review:
-            # Update existing review
-            old_review.content = content.strip()[:500]
-            old_review.rating = rating
-            await db.commit()
-            return Review(
-                id=str(old_review.id),
-                content=old_review.content,
-                rating=old_review.rating,
-                userName=user.name or "User",
-                userAvatar=user.avatar,
-                isFeatured=False,
-                createdAt=str(old_review.created_at)
-            )
-
-        review = DbReview(
-            user_id=user.id,
-            moviebox_id=movieId,
-            content=content.strip()[:500],
-            rating=rating,
-            is_featured=False,
-        )
-        db.add(review)
-        await db.commit()
-        await db.refresh(review)
-        return Review(
-            id=str(review.id),
-            content=review.content,
-            rating=review.rating,
-            userName=user.name or "User",
-            userAvatar=user.avatar,
-            isFeatured=False,
-            createdAt=str(review.created_at)
-        )
-
-    @strawberry.mutation
-    async def adminSendNotification(
-        self, info: strawberry.Info, title: str, message: str,
-        userId: Optional[strawberry.ID] = None, notifType: Optional[str] = "system"
-    ) -> SuccessResponse:
-        """Send a notification to a specific user (by userId) or broadcast to all users (userId=None)."""
-        user = await info.context.user
-        if not user or user.role != "admin":
-            raise ValueError("Admin access required")
-        db = await info.context.get_db()
-        if userId:
-            # Send to single user
-            notif = DbNotification(
-                user_id=userId, title=title, message=message,
-                type=notifType or "system"
-            )
-            db.add(notif)
-            await db.commit()
-            return SuccessResponse(success=True, message="Notification sent")
-        else:
-            # Broadcast to all users
-            result = await db.execute(select(DbUser.id))
-            user_ids = [str(row[0]) for row in result.all()]
-            for uid in user_ids:
-                notif = DbNotification(
-                    user_id=uid, title=title, message=message,
-                    type=notifType or "system"
-                )
-                db.add(notif)
-            await db.commit()
-            return SuccessResponse(success=True, message=f"Notification sent to {len(user_ids)} users")
-
-    @strawberry.mutation
-    async def adminUpdateUserRole(self, info: strawberry.Info, id: strawberry.ID, role: str) -> SuccessResponse:
-        """Change a user's role (admin/user)."""
-        user = await info.context.user
-        if not user or user.role != "admin":
-            raise ValueError("Admin access required")
-        if role not in ("admin", "user"):
-            raise ValueError("Invalid role. Must be 'admin' or 'user'")
-        db = await info.context.get_db()
-        result = await db.execute(select(DbUser).where(DbUser.id == id))
-        target = result.scalars().first()
-        if not target:
-            raise ValueError("User not found")
-        target.role = role
-        await db.commit()
-        return SuccessResponse(success=True, message=f"User role updated to {role}")
-
-    @strawberry.mutation
-    async def adminDeleteUser(self, info: strawberry.Info, id: strawberry.ID) -> SuccessResponse:
-        """Permanently delete a user and all their data."""
-        user = await info.context.user
-        if not user or user.role != "admin":
-            raise ValueError("Admin access required")
-        if str(user.id) == str(id):
-            raise ValueError("Cannot delete yourself")
-        db = await info.context.get_db()
-        result = await db.execute(select(DbUser).where(DbUser.id == id))
-        target = result.scalars().first()
-        if not target:
-            raise ValueError("User not found")
-        await db.delete(target)
-        await db.commit()
-        return SuccessResponse(success=True, message="User deleted")
-
-    # ───────────────────────────────────────
-    # Email Verification
-    # ───────────────────────────────────────
-
-    @strawberry.mutation
     async def verifyEmail(self, info: strawberry.Info, token: str) -> SuccessResponse:
-        """Verify a user's email address using the token sent to their email."""
         from app.core.auth import decode_access_token
         payload = decode_access_token(token)
         if not payload or payload.get("type") != "email_verify":
@@ -2385,7 +1594,6 @@ class Mutation:
             raise Exception("Invalid token")
         db = await info.context.get_db()
         import uuid
-        # Try matching by ID first, then by email
         try:
             result = await db.execute(select(DbUser).where(DbUser.id == uuid.UUID(user_id)))
         except ValueError:
@@ -2399,7 +1607,6 @@ class Mutation:
 
     @strawberry.mutation
     async def resendVerification(self, info: strawberry.Info) -> SuccessResponse:
-        """Resend the verification email to the current user."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
@@ -2412,93 +1619,424 @@ class Mutation:
         except Exception as e:
             raise Exception(f"Failed to send email: {e}")
 
-    # ───────────────────────────────────────
-    # Paystack Subscription
-    # ───────────────────────────────────────
-
     @strawberry.mutation
-    async def initializeSubscription(
-        self, info: strawberry.Info, plan: str, billing: str = "monthly"
-    ) -> strawberry.scalars.JSON:
-        """Initialize a Paystack payment for subscription."""
+    async def toggleWatchlist(self, info: strawberry.Info, movieId: strawberry.ID) -> ToggleWatchlistResponse:
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
+        db = await info.context.get_db()
+        result = await db.execute(select(DbWatchlist).where(
+            DbWatchlist.user_id == user.id, DbWatchlist.moviebox_id == str(movieId)
+        ))
+        existing = result.scalars().first()
+        if existing:
+            await db.delete(existing)
+            await db.commit()
+            return ToggleWatchlistResponse(added=False, message="Removed from watchlist")
+        else:
+            db.add(DbWatchlist(user_id=user.id, moviebox_id=str(movieId)))
+            await db.commit()
+            try:
+                details = await movie_service.get_details(str(movieId), db=db)
+                title = details.title if details else "Content"
+                await notification_service.notify_watchlist_add(db, str(user.id), title, str(movieId))
+            except Exception as e:
+                print(f"Notification error (watchlist): {e}")
+            return ToggleWatchlistResponse(added=True, message="Added to watchlist")
 
+    @strawberry.mutation
+    async def addToWatchlist(self, info: strawberry.Info, movieId: strawberry.ID) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        db = await info.context.get_db()
+        db.add(DbWatchlist(user_id=user.id, moviebox_id=str(movieId)))
+        await db.commit()
+        try:
+            details = await movie_service.get_details(str(movieId), db=db)
+            title = details.title if details else "Content"
+            await notification_service.notify_watchlist_add(db, str(user.id), title, str(movieId))
+        except Exception as e:
+            print(f"Notification error (watchlist): {e}")
+        return SuccessResponse(success=True)
+
+    @strawberry.mutation
+    async def removeFromWatchlist(self, info: strawberry.Info, movieId: strawberry.ID) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        db = await info.context.get_db()
+        result = await db.execute(select(DbWatchlist).where(
+            DbWatchlist.user_id == user.id, DbWatchlist.moviebox_id == str(movieId)
+        ))
+        item = result.scalars().first()
+        if item:
+            await db.delete(item)
+            await db.commit()
+        return SuccessResponse(success=True, message="Removed from watchlist")
+
+    @strawberry.mutation
+    async def updateWatchProgress(self, info: strawberry.Info, movieId: str, contentType: str, currentTime: int, duration: int) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        db = await info.context.get_db()
+        history_item = (await db.execute(
+            select(DbHistory).where(DbHistory.user_id == user.id, DbHistory.moviebox_id == movieId)
+        )).scalars().first()
+        if history_item:
+            history_item.current_time = currentTime
+            if duration > 0:
+                history_item.duration = max(history_item.duration or 0, duration)
+            history_item.updated_at = datetime.utcnow()
+        else:
+            db.add(DbHistory(user_id=user.id, moviebox_id=movieId, content_type=contentType, current_time=currentTime, duration=duration))
+        recent_item = (await db.execute(
+            select(DbRecentlyViewed).where(DbRecentlyViewed.user_id == user.id, DbRecentlyViewed.moviebox_id == movieId)
+        )).scalars().first()
+        if recent_item:
+            recent_item.viewed_at = datetime.utcnow()
+        else:
+            db.add(DbRecentlyViewed(user_id=user.id, moviebox_id=movieId, content_type=contentType))
+        await db.commit()
+        return SuccessResponse(success=True, message="Progress saved")
+
+    @strawberry.mutation
+    async def recordWatchProgress(self, info: strawberry.Info, movieId: strawberry.ID, currentTime: int, duration: int) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        db = await info.context.get_db()
+        history_item = (await db.execute(
+            select(DbHistory).where(DbHistory.user_id == user.id, DbHistory.moviebox_id == str(movieId))
+        )).scalars().first()
+        is_new_watch = history_item is None
+        if history_item:
+            history_item.current_time = currentTime
+            history_item.duration = duration
+            history_item.updated_at = datetime.utcnow()
+        else:
+            history_item = DbHistory(user_id=user.id, moviebox_id=str(movieId), current_time=currentTime, duration=duration, content_type="movie")
+            db.add(history_item)
+        await db.commit()
+        if is_new_watch:
+            try:
+                from sqlalchemy import func
+                total_watched = (await db.execute(select(func.count(DbHistory.id)).where(DbHistory.user_id == user.id))).scalar() or 0
+                if total_watched in [5, 10, 25, 50, 100]:
+                    await notification_service.notify_watch_milestone(db, str(user.id), total_watched)
+            except Exception as e:
+                print(f"Milestone check error: {e}")
+        return SuccessResponse(success=True)
+
+    @strawberry.mutation
+    async def clearWatchHistory(self, info: strawberry.Info) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        db = await info.context.get_db()
+        from sqlalchemy import delete
+        await db.execute(delete(DbHistory).where(DbHistory.user_id == user.id))
+        await db.execute(delete(DbRecentlyViewed).where(DbRecentlyViewed.user_id == user.id))
+        await db.commit()
+        return SuccessResponse(success=True, message="Watch history cleared")
+
+    @strawberry.mutation
+    async def addReview(self, info: strawberry.Info, content: str, rating: float, isFeatured: Optional[bool] = False, movieboxId: Optional[str] = None) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            return SuccessResponse(success=False, message="Unauthorized")
+        db = await info.context.get_db()
+        db.add(DbReview(user_id=user.id, content=content, rating=rating, is_featured=isFeatured))
+        await db.commit()
+        try:
+            await notification_service.notify_review_posted(db, str(user.id))
+        except Exception as e:
+            print(f"Notification error (review): {e}")
+        return SuccessResponse(success=True, message="Review added successfully")
+
+    @strawberry.mutation
+    async def submitReview(self, info: strawberry.Info, content: str, rating: float) -> Review:
+        user = await info.context.user
+        if not user:
+            raise ValueError("Must be logged in to submit a review")
+        if not content.strip() or len(content.strip()) < 10:
+            raise ValueError("Review must be at least 10 characters")
+        if rating < 1 or rating > 5:
+            raise ValueError("Rating must be between 1 and 5")
+        db = await info.context.get_db()
+        review = DbReview(user_id=user.id, content=content.strip()[:500], rating=rating, is_featured=False)
+        db.add(review)
+        await db.commit()
+        await db.refresh(review)
+        return Review(id=str(review.id), content=review.content, rating=review.rating,
+                      userName=user.name or "User", userAvatar=user.avatar,
+                      isFeatured=False, createdAt=str(review.created_at))
+
+    @strawberry.mutation
+    async def submitMovieReview(self, info: strawberry.Info, movieId: str, content: str, rating: float) -> Review:
+        user = await info.context.user
+        if not user:
+            raise ValueError("Must be logged in to review")
+        if not content.strip() or len(content.strip()) < 10:
+            raise ValueError("Review must be at least 10 characters")
+        if rating < 1 or rating > 5:
+            raise ValueError("Rating must be between 1 and 5")
+        db = await info.context.get_db()
+        from sqlalchemy import and_
+        old_review = (await db.execute(
+            select(DbReview).where(and_(DbReview.user_id == user.id, DbReview.moviebox_id == movieId))
+        )).scalars().first()
+        if old_review:
+            old_review.content = content.strip()[:500]
+            old_review.rating = rating
+            await db.commit()
+            return Review(id=str(old_review.id), content=old_review.content, rating=old_review.rating,
+                          userName=user.name or "User", userAvatar=user.avatar,
+                          isFeatured=False, createdAt=str(old_review.created_at))
+        review = DbReview(user_id=user.id, moviebox_id=movieId, content=content.strip()[:500], rating=rating, is_featured=False)
+        db.add(review)
+        await db.commit()
+        await db.refresh(review)
+        return Review(id=str(review.id), content=review.content, rating=review.rating,
+                      userName=user.name or "User", userAvatar=user.avatar,
+                      isFeatured=False, createdAt=str(review.created_at))
+
+    @strawberry.mutation
+    async def likeReview(self, info: strawberry.Info, reviewId: str, likeType: str) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        if likeType not in ('like', 'dislike'):
+            raise Exception("likeType must be 'like' or 'dislike'")
+        db = await info.context.get_db()
+        existing_like = (await db.execute(
+            select(DbReviewLike).where(DbReviewLike.user_id == user.id, DbReviewLike.review_id == reviewId)
+        )).scalars().first()
+        if existing_like:
+            if existing_like.like_type == likeType:
+                await db.delete(existing_like)
+                await db.commit()
+                return SuccessResponse(success=True, message=f"{likeType.capitalize()} removed")
+            existing_like.like_type = likeType
+            await db.commit()
+            return SuccessResponse(success=True, message=f"Changed to {likeType}")
+        db.add(DbReviewLike(user_id=user.id, review_id=reviewId, like_type=likeType))
+        await db.commit()
+        return SuccessResponse(success=True, message=f"Review {likeType}d")
+
+    @strawberry.mutation
+    async def reportReview(self, info: strawberry.Info, reviewId: str, reason: str, description: Optional[str] = None) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        if reason not in ('spam', 'harassment', 'spoiler', 'inappropriate', 'other'):
+            raise Exception("Invalid reason")
+        db = await info.context.get_db()
+        if (await db.execute(
+            select(DbReviewReport).where(DbReviewReport.user_id == user.id, DbReviewReport.review_id == reviewId)
+        )).scalars().first():
+            return SuccessResponse(success=False, message="You've already reported this review")
+        db.add(DbReviewReport(user_id=user.id, review_id=reviewId, reason=reason, description=(description or "")[:500]))
+        await db.commit()
+        try:
+            for admin in (await db.execute(select(DbUser).where(DbUser.role == "admin"))).scalars().all():
+                await notification_service.create(
+                    db, str(admin.id), title="⚠️ Review Reported",
+                    message=f"A review was reported for: {reason}",
+                    notif_type="report", action_url=f"/admin/reviews?report={reviewId}"
+                )
+        except Exception:
+            pass
+        return SuccessResponse(success=True, message="Review reported. We'll review it shortly.")
+
+    @strawberry.mutation
+    async def submitReport(self, info: strawberry.Info, reason: str, description: str, movieboxId: Optional[str] = None) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            raise ValueError("You must be logged in to submit a report")
+        db = await info.context.get_db()
+        db.add(DbReport(user_id=user.id, reason=reason, description=description, moviebox_id=movieboxId))
+        db.add(DbNotification(
+            user_id=user.id, title="Report Submitted",
+            message="Thank you for your report. Our team will review it shortly."
+        ))
+        await db.commit()
+        return SuccessResponse(success=True, message="Report submitted successfully")
+
+    @strawberry.mutation
+    async def updateReportStatus(self, info: strawberry.Info, id: strawberry.ID, status: str) -> SuccessResponse:
+        user = await info.context.user
+        if not user or user.role != "admin":
+            return SuccessResponse(success=False, message="Unauthorized")
+        db = await info.context.get_db()
+        report = (await db.execute(select(DbReport).where(DbReport.id == id))).scalars().first()
+        if report:
+            report.status = status
+            await db.commit()
+            if report.user_id:
+                try:
+                    await notification_service.notify_report_status(db, str(report.user_id), status)
+                except Exception as e:
+                    print(f"Notification error (report): {e}")
+            return SuccessResponse(success=True, message="Status updated")
+        return SuccessResponse(success=False, message="Report not found")
+
+    @strawberry.mutation
+    async def markNotificationRead(self, info: strawberry.Info, id: strawberry.ID) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            return SuccessResponse(success=False, message="Unauthorized")
+        db = await info.context.get_db()
+        n = (await db.execute(select(DbNotification).where(DbNotification.id == id, DbNotification.user_id == user.id))).scalars().first()
+        if n:
+            n.is_read = True
+            await db.commit()
+        return SuccessResponse(success=True)
+
+    @strawberry.mutation
+    async def markAllNotificationsRead(self, info: strawberry.Info) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            return SuccessResponse(success=False, message="Unauthorized")
+        db = await info.context.get_db()
+        from sqlalchemy import update
+        await db.execute(
+            update(DbNotification).where(
+                DbNotification.user_id == user.id, DbNotification.is_read == False
+            ).values(is_read=True)
+        )
+        await db.commit()
+        return SuccessResponse(success=True)
+
+    @strawberry.mutation
+    async def deleteNotification(self, info: strawberry.Info, id: strawberry.ID) -> SuccessResponse:
+        user = await info.context.user
+        if not user:
+            return SuccessResponse(success=False, message="Unauthorized")
+        db = await info.context.get_db()
+        n = (await db.execute(select(DbNotification).where(DbNotification.id == id, DbNotification.user_id == user.id))).scalars().first()
+        if n:
+            await db.delete(n)
+            await db.commit()
+        return SuccessResponse(success=True)
+
+    @strawberry.mutation
+    async def sendChatMessage(self, info: strawberry.Info, content: str, room: Optional[str] = "global") -> ChatMessageType:
+        from app.models.database import ChatMessage as DbChatMessage
+        user = await info.context.user
+        if not user:
+            raise ValueError("Must be logged in to send messages")
+        db = await info.context.get_db()
+        msg = DbChatMessage(user_id=user.id, room=room or "global", content=content[:2000])
+        db.add(msg)
+        await db.commit()
+        await db.refresh(msg)
+        return ChatMessageType(
+            id=str(msg.id), userId=str(user.id), userName=user.name or "User",
+            userAvatar=user.avatar, room=msg.room, content=msg.content, createdAt=str(msg.created_at)
+        )
+
+    @strawberry.mutation
+    async def adminSendNotification(self, info: strawberry.Info, title: str, message: str, userId: Optional[strawberry.ID] = None, notifType: Optional[str] = "system") -> SuccessResponse:
+        user = await info.context.user
+        if not user or user.role != "admin":
+            raise ValueError("Admin access required")
+        db = await info.context.get_db()
+        if userId:
+            db.add(DbNotification(user_id=userId, title=title, message=message, type=notifType or "system"))
+            await db.commit()
+            return SuccessResponse(success=True, message="Notification sent")
+        user_ids = [str(row[0]) for row in (await db.execute(select(DbUser.id))).all()]
+        for uid in user_ids:
+            db.add(DbNotification(user_id=uid, title=title, message=message, type=notifType or "system"))
+        await db.commit()
+        return SuccessResponse(success=True, message=f"Notification sent to {len(user_ids)} users")
+
+    @strawberry.mutation
+    async def adminUpdateUserRole(self, info: strawberry.Info, id: strawberry.ID, role: str) -> SuccessResponse:
+        user = await info.context.user
+        if not user or user.role != "admin":
+            raise ValueError("Admin access required")
+        if role not in ("admin", "user"):
+            raise ValueError("Invalid role. Must be 'admin' or 'user'")
+        db = await info.context.get_db()
+        target = (await db.execute(select(DbUser).where(DbUser.id == id))).scalars().first()
+        if not target:
+            raise ValueError("User not found")
+        target.role = role
+        await db.commit()
+        return SuccessResponse(success=True, message=f"User role updated to {role}")
+
+    @strawberry.mutation
+    async def adminDeleteUser(self, info: strawberry.Info, id: strawberry.ID) -> SuccessResponse:
+        user = await info.context.user
+        if not user or user.role != "admin":
+            raise ValueError("Admin access required")
+        if str(user.id) == str(id):
+            raise ValueError("Cannot delete yourself")
+        db = await info.context.get_db()
+        target = (await db.execute(select(DbUser).where(DbUser.id == id))).scalars().first()
+        if not target:
+            raise ValueError("User not found")
+        await db.delete(target)
+        await db.commit()
+        return SuccessResponse(success=True, message="User deleted")
+
+    @strawberry.mutation
+    async def initializeSubscription(self, info: strawberry.Info, plan: str, billing: str = "monthly") -> strawberry.scalars.JSON:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
         from app.core.paystack import initialize_transaction, PLAN_AMOUNTS
         import uuid as uuid_mod
-
         plan_key = f"{plan}_{billing}"
         amount = PLAN_AMOUNTS.get(plan_key)
         if not amount:
             raise Exception(f"Invalid plan: {plan} ({billing})")
-
         reference = f"clipx_{plan}_{str(uuid_mod.uuid4())[:8]}"
         result = await initialize_transaction(
-            email=user.email,
-            amount=amount,
-            plan=plan_key,
-            reference=reference,
+            email=user.email, amount=amount, plan=plan_key, reference=reference,
             metadata={
-                "user_id": str(user.id),
-                "plan": plan,
-                "billing": billing,
+                "user_id": str(user.id), "plan": plan, "billing": billing,
                 "custom_fields": [
                     {"display_name": "Plan", "variable_name": "plan", "value": plan.capitalize()},
                     {"display_name": "Billing", "variable_name": "billing", "value": billing.capitalize()},
                 ]
-            },
+            }
         )
-
         if not result.get("status"):
             raise Exception(result.get("error", "Failed to initialize payment"))
-
-        return {
-            "authorizationUrl": result["authorization_url"],
-            "accessCode": result["access_code"],
-            "reference": result["reference"],
-        }
+        return {"authorizationUrl": result["authorization_url"], "accessCode": result["access_code"], "reference": result["reference"]}
 
     @strawberry.mutation
     async def verifyPayment(self, info: strawberry.Info, reference: str) -> SuccessResponse:
-        """Verify a Paystack payment after redirect."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-
         from app.core.paystack import verify_transaction
         result = await verify_transaction(reference)
-
         if not result.get("status"):
             raise Exception(result.get("error", "Payment verification failed"))
-
-        # Update user subscription
         metadata = result.get("metadata", {})
         plan = metadata.get("plan", "standard")
         billing = metadata.get("billing", "monthly")
-
         db = await info.context.get_db()
-        user_db = await db.execute(select(DbUser).where(DbUser.id == user.id))
-        user_obj = user_db.scalars().first()
+        user_obj = (await db.execute(select(DbUser).where(DbUser.id == user.id))).scalars().first()
         if user_obj:
             user_obj.subscription_tier = plan
-            expires_days = 365 if billing == "yearly" else 30
-            user_obj.subscription_expires_at = datetime.utcnow() + timedelta(days=expires_days)
+            user_obj.subscription_expires_at = datetime.utcnow() + timedelta(days=365 if billing == "yearly" else 30)
             user_obj.paystack_customer_code = result.get("customer_code")
             await db.commit()
-
-            # Send confirmation email
             try:
                 from app.core.email_service import send_subscription_email
                 send_subscription_email(user_obj.email, user_obj.name or "", plan, "activated")
             except Exception:
                 pass
-
         return SuccessResponse(success=True, message=f"Payment successful! You're now on the {plan.capitalize()} plan.")
 
     @strawberry.mutation
     async def cancelSubscription(self, info: strawberry.Info) -> SuccessResponse:
-        """Cancel the current user's subscription."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
@@ -2506,27 +2044,19 @@ class Mutation:
         user_obj = (await db.execute(select(DbUser).where(DbUser.id == user.id))).scalars().first()
         if not user_obj or user_obj.subscription_tier == "free":
             raise Exception("No active subscription to cancel")
-        
         old_plan = user_obj.subscription_tier
         user_obj.subscription_tier = "free"
         user_obj.subscription_expires_at = None
         await db.commit()
-
         try:
             from app.core.email_service import send_subscription_email
             send_subscription_email(user_obj.email, user_obj.name or "", old_plan, "cancelled")
         except Exception:
             pass
-
         return SuccessResponse(success=True, message="Subscription cancelled successfully")
-
-    # ───────────────────────────────────────
-    # Payment History (Query via mutation for auth)
-    # ───────────────────────────────────────
 
     @strawberry.mutation
     async def mySubscription(self, info: strawberry.Info) -> strawberry.scalars.JSON:
-        """Get the current user's subscription details."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
@@ -2539,7 +2069,6 @@ class Mutation:
 
     @strawberry.mutation
     async def myPaymentHistory(self, info: strawberry.Info) -> strawberry.scalars.JSON:
-        """Get the current user's payment history."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
@@ -2550,570 +2079,281 @@ class Mutation:
                 "SELECT id, amount, currency, status, plan, payment_method, paid_at, created_at "
                 "FROM payment_history WHERE user_id = :uid ORDER BY created_at DESC LIMIT 20"
             ), {"uid": str(user.id)})
-            rows = result.fetchall()
             return {
                 "payments": [
-                    {
-                        "id": str(r[0]),
-                        "amount": r[1],
-                        "currency": r[2],
-                        "status": r[3],
-                        "plan": r[4],
-                        "method": r[5],
-                        "paidAt": str(r[6]) if r[6] else None,
-                        "createdAt": str(r[7]) if r[7] else None,
-                    }
-                    for r in rows
+                    {"id": str(r[0]), "amount": r[1], "currency": r[2], "status": r[3],
+                     "plan": r[4], "method": r[5],
+                     "paidAt": str(r[6]) if r[6] else None, "createdAt": str(r[7]) if r[7] else None}
+                    for r in result.fetchall()
                 ]
             }
         except Exception as e:
             print(f"Payment history error: {e}")
             return {"payments": []}
 
-    # ───────────────────────────────────────
-    # 2FA (TOTP)
-    # ───────────────────────────────────────
-
-
-    # ───────────────────────────────────────
-    # Promo / Coupon Codes
-    # ───────────────────────────────────────
-
     @strawberry.mutation
     async def applyPromoCode(self, info: strawberry.Info, code: str) -> PromoCodeResult:
-        """Apply a promo/coupon code."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-
         db = await info.context.get_db()
         from sqlalchemy import text
-
-        # Find the promo code
-        result = await db.execute(text(
+        row = (await db.execute(text(
             "SELECT id, code, discount_percent, discount_months, plan, max_uses, current_uses, "
             "is_active, expires_at FROM promo_codes WHERE UPPER(code) = UPPER(:code)"
-        ), {"code": code.strip()})
-        row = result.fetchone()
-
+        ), {"code": code.strip()})).fetchone()
         if not row:
             return PromoCodeResult(success=False, message="Invalid promo code")
-
         promo_id, _, discount, months, plan, max_uses, current_uses, is_active, expires_at = row
-
         if not is_active:
             return PromoCodeResult(success=False, message="This promo code is no longer active")
         if expires_at and datetime.utcnow() > expires_at:
             return PromoCodeResult(success=False, message="This promo code has expired")
         if max_uses and current_uses >= max_uses:
             return PromoCodeResult(success=False, message="This promo code has reached its usage limit")
-
-        # Check if user already applied this code
-        existing = await db.execute(text(
-            "SELECT 1 FROM applied_promos WHERE user_id = :uid AND promo_code_id = :pid"
-        ), {"uid": str(user.id), "pid": str(promo_id)})
-        if existing.fetchone():
+        if (await db.execute(text("SELECT 1 FROM applied_promos WHERE user_id = :uid AND promo_code_id = :pid"),
+                             {"uid": str(user.id), "pid": str(promo_id)})).fetchone():
             return PromoCodeResult(success=False, message="You've already used this promo code")
-
-        # Apply the promo
-        await db.execute(text(
-            "INSERT INTO applied_promos (user_id, promo_code_id) VALUES (:uid, :pid)"
-        ), {"uid": str(user.id), "pid": str(promo_id)})
-        await db.execute(text(
-            "UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = :pid"
-        ), {"pid": str(promo_id)})
-
-        # If promo gives a plan upgrade
+        await db.execute(text("INSERT INTO applied_promos (user_id, promo_code_id) VALUES (:uid, :pid)"),
+                         {"uid": str(user.id), "pid": str(promo_id)})
+        await db.execute(text("UPDATE promo_codes SET current_uses = current_uses + 1 WHERE id = :pid"),
+                         {"pid": str(promo_id)})
         if plan:
             user.subscription_tier = plan
-            from datetime import timedelta
             user.subscription_expires_at = datetime.utcnow() + timedelta(days=30 * (months or 1))
-
         await db.commit()
-
         return PromoCodeResult(
             success=True,
             message=f"Promo applied! {discount}% off" + (f" on {plan.capitalize()} plan" if plan else ""),
-            discountPercent=discount or 0,
-            plan=plan
+            discountPercent=discount or 0, plan=plan
         )
-
-
-    # ───────────────────────────────────────
-    # (Login Activity helper moved to module level — see _log_activity above)
-    # ───────────────────────────────────────
 
     # ═══════════════════════════════════════════════════════════
-    # V2 — Review Interactions (Like / Dislike / Report)
-    # ═══════════════════════════════════════════════════════════
-
-    @strawberry.mutation
-    async def likeReview(self, info: strawberry.Info, reviewId: str, likeType: str) -> SuccessResponse:
-        """Toggle like/dislike on a review. likeType must be 'like' or 'dislike'."""
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        if likeType not in ('like', 'dislike'):
-            raise Exception("likeType must be 'like' or 'dislike'")
-
-        db = await info.context.get_db()
-        from sqlalchemy import text
-
-        # Check for existing like
-        existing = await db.execute(
-            select(DbReviewLike).where(
-                DbReviewLike.user_id == user.id,
-                DbReviewLike.review_id == reviewId
-            )
-        )
-        existing_like = existing.scalars().first()
-
-        if existing_like:
-            if existing_like.like_type == likeType:
-                # Toggle off — remove the like
-                await db.delete(existing_like)
-                await db.commit()
-                return SuccessResponse(success=True, message=f"{likeType.capitalize()} removed")
-            else:
-                # Switch from like->dislike or vice versa
-                existing_like.like_type = likeType
-                await db.commit()
-                return SuccessResponse(success=True, message=f"Changed to {likeType}")
-        else:
-            new_like = DbReviewLike(
-                user_id=user.id,
-                review_id=reviewId,
-                like_type=likeType
-            )
-            db.add(new_like)
-            await db.commit()
-            return SuccessResponse(success=True, message=f"Review {likeType}d")
-
-    @strawberry.mutation
-    async def reportReview(self, info: strawberry.Info, reviewId: str, reason: str, description: Optional[str] = None) -> SuccessResponse:
-        """Report a review for moderation."""
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        if reason not in ('spam', 'harassment', 'spoiler', 'inappropriate', 'other'):
-            raise Exception("Invalid reason")
-
-        db = await info.context.get_db()
-
-        # Check if already reported
-        existing = await db.execute(
-            select(DbReviewReport).where(
-                DbReviewReport.user_id == user.id,
-                DbReviewReport.review_id == reviewId
-            )
-        )
-        if existing.scalars().first():
-            return SuccessResponse(success=False, message="You've already reported this review")
-
-        report = DbReviewReport(
-            user_id=user.id,
-            review_id=reviewId,
-            reason=reason,
-            description=(description or "")[:500]
-        )
-        db.add(report)
-        await db.commit()
-
-        # Send notification to admins
-        try:
-            admin_query = await db.execute(select(DbUser).where(DbUser.role == "admin"))
-            for admin in admin_query.scalars().all():
-                await notification_service.create(
-                    db, str(admin.id),
-                    title="⚠️ Review Reported",
-                    message=f"A review was reported for: {reason}",
-                    notif_type="report",
-                    action_url=f"/admin/reviews?report={reviewId}"
-                )
-        except Exception:
-            pass
-
-        return SuccessResponse(success=True, message="Review reported. We'll review it shortly.")
-
-    # ═══════════════════════════════════════════════════════════
-    # V2 — Watch Party
+    # Watch Party
     # ═══════════════════════════════════════════════════════════
 
     @strawberry.mutation
     async def createWatchParty(self, info: strawberry.Info, movieboxId: str, contentType: str = "movie") -> strawberry.scalars.JSON:
-        """Create a new watch party room. Returns room code + details."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-
         db = await info.context.get_db()
         room_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6))
-
-        room = DbWatchPartyRoom(
-            host_id=user.id,
-            moviebox_id=movieboxId,
-            content_type=contentType,
-            room_code=room_code
-        )
+        room = DbWatchPartyRoom(host_id=user.id, moviebox_id=movieboxId, content_type=contentType, room_code=room_code)
         db.add(room)
-
-        # Add host as first participant
-        participant = DbWatchPartyParticipant(
-            room_id=room.id,
-            user_id=user.id
-        )
-        db.add(participant)
+        db.add(DbWatchPartyParticipant(room_id=room.id, user_id=user.id))
         await db.commit()
-
         import json
         return json.dumps({
-            "roomId": str(room.id),
-            "roomCode": room_code,
-            "movieboxId": movieboxId,
-            "contentType": contentType,
-            "hostName": user.name,
-            "shareLink": f"/watch-party/{room_code}"
+            "roomId": str(room.id), "roomCode": room_code, "movieboxId": movieboxId,
+            "contentType": contentType, "hostName": user.name, "shareLink": f"/watch-party/{room_code}"
         })
 
     @strawberry.mutation
     async def joinWatchParty(self, info: strawberry.Info, roomCode: str) -> strawberry.scalars.JSON:
-        """Join an existing watch party by room code."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-
         db = await info.context.get_db()
-        room_query = await db.execute(
-            select(DbWatchPartyRoom).where(
-                DbWatchPartyRoom.room_code == roomCode,
-                DbWatchPartyRoom.status == "active"
-            )
-        )
-        room = room_query.scalars().first()
+        room = (await db.execute(
+            select(DbWatchPartyRoom).where(DbWatchPartyRoom.room_code == roomCode, DbWatchPartyRoom.status == "active")
+        )).scalars().first()
         if not room:
             raise Exception("Room not found or has ended")
-
-        # Check participant count
-        participants_q = await db.execute(
+        participants = (await db.execute(
             select(DbWatchPartyParticipant).where(DbWatchPartyParticipant.room_id == room.id)
-        )
-        participants = participants_q.scalars().all()
+        )).scalars().all()
         if len(participants) >= room.max_participants:
             raise Exception("Room is full")
-
-        # Check if already in room
         already_in = any(p.user_id == user.id for p in participants)
         if not already_in:
             db.add(DbWatchPartyParticipant(room_id=room.id, user_id=user.id))
             await db.commit()
-
-        # Notify host
         try:
             await notification_service.create(
-                db, str(room.host_id),
-                title="🎉 New Viewer Joined!",
+                db, str(room.host_id), title="🎉 New Viewer Joined!",
                 message=f"{user.name} joined your watch party",
-                notif_type="social",
-                action_url=f"/watch-party/{roomCode}"
+                notif_type="social", action_url=f"/watch-party/{roomCode}"
             )
         except Exception:
             pass
-
         import json
         return json.dumps({
-            "roomId": str(room.id),
-            "roomCode": room.room_code,
-            "movieboxId": room.moviebox_id,
-            "contentType": room.content_type,
-            "currentTime": room.current_time,
+            "roomId": str(room.id), "roomCode": room.room_code, "movieboxId": room.moviebox_id,
+            "contentType": room.content_type, "currentTime": room.current_time,
             "isPlaying": room.is_playing,
             "participantCount": len(participants) + (0 if already_in else 1)
         })
 
     @strawberry.mutation
     async def endWatchParty(self, info: strawberry.Info, roomCode: str) -> SuccessResponse:
-        """End a watch party (host only)."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-
         db = await info.context.get_db()
-        room_query = await db.execute(
-            select(DbWatchPartyRoom).where(
-                DbWatchPartyRoom.room_code == roomCode,
-                DbWatchPartyRoom.host_id == user.id
-            )
-        )
-        room = room_query.scalars().first()
+        room = (await db.execute(
+            select(DbWatchPartyRoom).where(DbWatchPartyRoom.room_code == roomCode, DbWatchPartyRoom.host_id == user.id)
+        )).scalars().first()
         if not room:
             raise Exception("Room not found or you're not the host")
-
         room.status = "ended"
         room.ended_at = datetime.utcnow()
         await db.commit()
         return SuccessResponse(success=True, message="Watch party ended")
 
     # ═══════════════════════════════════════════════════════════
-    # V2 — Family Plan (RBAC)
+    # Family Plan
     # ═══════════════════════════════════════════════════════════
 
     @strawberry.mutation
     async def createFamilyPlan(self, info: strawberry.Info) -> strawberry.scalars.JSON:
-        """Create a family plan (requires 'family' subscription tier)."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-
         if getattr(user, 'subscription_tier', 'free') != 'family':
             raise Exception("Family plan requires the Family subscription tier")
-
         db = await info.context.get_db()
-
-        # Check if already has a plan
-        existing = await db.execute(
-            select(DbFamilyPlan).where(DbFamilyPlan.parent_id == user.id)
-        )
-        if existing.scalars().first():
+        if (await db.execute(select(DbFamilyPlan).where(DbFamilyPlan.parent_id == user.id))).scalars().first():
             raise Exception("You already have a family plan")
-
         invite_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
-
-        plan = DbFamilyPlan(
-            parent_id=user.id,
-            invite_code=invite_code
-        )
+        plan = DbFamilyPlan(parent_id=user.id, invite_code=invite_code)
         db.add(plan)
-
-        # Add owner as first member
-        owner_member = DbFamilyMember(
-            family_plan_id=plan.id,
-            user_id=user.id,
-            role="owner"
-        )
-        db.add(owner_member)
+        db.add(DbFamilyMember(family_plan_id=plan.id, user_id=user.id, role="owner"))
         await db.commit()
-
         import json
-        return json.dumps({
-            "planId": str(plan.id),
-            "inviteCode": invite_code,
-            "memberSlots": plan.member_slots,
-            "membersUsed": 1
-        })
+        return json.dumps({"planId": str(plan.id), "inviteCode": invite_code, "memberSlots": plan.member_slots, "membersUsed": 1})
 
     @strawberry.mutation
     async def inviteFamilyMember(self, info: strawberry.Info, email: str) -> SuccessResponse:
-        """Send a family plan invite to an email address."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-
         db = await info.context.get_db()
-        plan_q = await db.execute(select(DbFamilyPlan).where(DbFamilyPlan.parent_id == user.id))
-        plan = plan_q.scalars().first()
+        plan = (await db.execute(select(DbFamilyPlan).where(DbFamilyPlan.parent_id == user.id))).scalars().first()
         if not plan:
             raise Exception("You don't have a family plan")
-
-        # Check member count
-        members_q = await db.execute(
-            select(DbFamilyMember).where(DbFamilyMember.family_plan_id == plan.id)
-        )
-        members = members_q.scalars().all()
+        members = (await db.execute(select(DbFamilyMember).where(DbFamilyMember.family_plan_id == plan.id))).scalars().all()
         if len(members) >= plan.member_slots:
             raise Exception(f"Family plan is full ({plan.member_slots} members max)")
-
-        # Check existing invite
-        existing_invite = await db.execute(
+        if (await db.execute(
             select(DbFamilyInvite).where(
                 DbFamilyInvite.family_plan_id == plan.id,
-                DbFamilyInvite.email == email,
-                DbFamilyInvite.status == "pending"
+                DbFamilyInvite.email == email, DbFamilyInvite.status == "pending"
             )
-        )
-        if existing_invite.scalars().first():
+        )).scalars().first():
             return SuccessResponse(success=False, message="An invite is already pending for this email")
-
-        token = secrets.token_urlsafe(32)
-        invite = DbFamilyInvite(
-            family_plan_id=plan.id,
-            email=email,
-            token=token,
+        db.add(DbFamilyInvite(
+            family_plan_id=plan.id, email=email,
+            token=secrets.token_urlsafe(32),
             expires_at=datetime.utcnow() + timedelta(days=7)
-        )
-        db.add(invite)
+        ))
         await db.commit()
-
         return SuccessResponse(success=True, message=f"Invite sent to {email}")
 
     @strawberry.mutation
     async def acceptFamilyInvite(self, info: strawberry.Info, token: str) -> SuccessResponse:
-        """Accept a family plan invite using the invite token."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-
         db = await info.context.get_db()
-        invite_q = await db.execute(
-            select(DbFamilyInvite).where(
-                DbFamilyInvite.token == token,
-                DbFamilyInvite.status == "pending"
-            )
-        )
-        invite = invite_q.scalars().first()
+        invite = (await db.execute(
+            select(DbFamilyInvite).where(DbFamilyInvite.token == token, DbFamilyInvite.status == "pending")
+        )).scalars().first()
         if not invite:
             raise Exception("Invalid or expired invite")
-
         if invite.expires_at and invite.expires_at < datetime.utcnow():
             invite.status = "expired"
             await db.commit()
             raise Exception("This invite has expired")
-
-        # Check if user is already in a family
-        existing_member = await db.execute(
-            select(DbFamilyMember).where(DbFamilyMember.user_id == user.id)
-        )
-        if existing_member.scalars().first():
+        if (await db.execute(select(DbFamilyMember).where(DbFamilyMember.user_id == user.id))).scalars().first():
             raise Exception("You're already part of a family plan")
-
-        # Check member count
-        plan_q = await db.execute(select(DbFamilyPlan).where(DbFamilyPlan.id == invite.family_plan_id))
-        plan = plan_q.scalars().first()
-        members_q = await db.execute(
-            select(DbFamilyMember).where(DbFamilyMember.family_plan_id == plan.id)
-        )
-        if len(members_q.scalars().all()) >= plan.member_slots:
+        plan = (await db.execute(select(DbFamilyPlan).where(DbFamilyPlan.id == invite.family_plan_id))).scalars().first()
+        members = (await db.execute(select(DbFamilyMember).where(DbFamilyMember.family_plan_id == plan.id))).scalars().all()
+        if len(members) >= plan.member_slots:
             raise Exception("Family plan is full")
-
-        # Add member
-        member = DbFamilyMember(
-            family_plan_id=plan.id,
-            user_id=user.id,
-            role="member"
-        )
-        db.add(member)
+        db.add(DbFamilyMember(family_plan_id=plan.id, user_id=user.id, role="member"))
         invite.status = "accepted"
-
-        # Upgrade the user's tier to family
         user.subscription_tier = "family"
         await db.commit()
-
         return SuccessResponse(success=True, message="Welcome to the family plan!")
 
     @strawberry.mutation
     async def removeFamilyMember(self, info: strawberry.Info, memberId: str) -> SuccessResponse:
-        """Remove a member from family plan (owner only)."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-
         db = await info.context.get_db()
-        plan_q = await db.execute(select(DbFamilyPlan).where(DbFamilyPlan.parent_id == user.id))
-        plan = plan_q.scalars().first()
+        plan = (await db.execute(select(DbFamilyPlan).where(DbFamilyPlan.parent_id == user.id))).scalars().first()
         if not plan:
             raise Exception("You don't have a family plan")
-
-        member_q = await db.execute(
-            select(DbFamilyMember).where(
-                DbFamilyMember.id == memberId,
-                DbFamilyMember.family_plan_id == plan.id
-            )
-        )
-        member = member_q.scalars().first()
+        member = (await db.execute(
+            select(DbFamilyMember).where(DbFamilyMember.id == memberId, DbFamilyMember.family_plan_id == plan.id)
+        )).scalars().first()
         if not member:
             raise Exception("Member not found")
         if member.role == "owner":
             raise Exception("Cannot remove the plan owner")
-
-        # Downgrade the removed user
-        removed_user_q = await db.execute(select(DbUser).where(DbUser.id == member.user_id))
-        removed_user = removed_user_q.scalars().first()
+        removed_user = (await db.execute(select(DbUser).where(DbUser.id == member.user_id))).scalars().first()
         if removed_user:
             removed_user.subscription_tier = "free"
-
         await db.delete(member)
         await db.commit()
         return SuccessResponse(success=True, message="Member removed from family plan")
 
     # ═══════════════════════════════════════════════════════════
-    # V2 — Layout Preferences & Push Notifications
+    # Layout & Push Notifications
     # ═══════════════════════════════════════════════════════════
 
     @strawberry.mutation
     async def saveLayoutPreference(self, info: strawberry.Info, layoutOrder: List[str]) -> SuccessResponse:
-        """Save user's custom home row ordering."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-
         db = await info.context.get_db()
-        existing_q = await db.execute(
+        existing = (await db.execute(
             select(DbUserLayoutPreference).where(DbUserLayoutPreference.user_id == user.id)
-        )
-        existing = existing_q.scalars().first()
-
+        )).scalars().first()
         if existing:
             existing.layout_order = layoutOrder
             existing.updated_at = datetime.utcnow()
         else:
-            pref = DbUserLayoutPreference(
-                user_id=user.id,
-                layout_order=layoutOrder
-            )
-            db.add(pref)
-
+            db.add(DbUserLayoutPreference(user_id=user.id, layout_order=layoutOrder))
         await db.commit()
         return SuccessResponse(success=True, message="Layout saved")
 
     @strawberry.mutation
     async def registerPushToken(self, info: strawberry.Info, fcmToken: str, deviceType: str = "web") -> SuccessResponse:
-        """Register an FCM push token for the current user."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-
         db = await info.context.get_db()
-
-        # Check for existing token
-        existing_q = await db.execute(
-            select(DbPushSubscription).where(
-                DbPushSubscription.user_id == user.id,
-                DbPushSubscription.fcm_token == fcmToken
-            )
-        )
-        existing = existing_q.scalars().first()
-
+        existing = (await db.execute(
+            select(DbPushSubscription).where(DbPushSubscription.user_id == user.id, DbPushSubscription.fcm_token == fcmToken)
+        )).scalars().first()
         if existing:
             existing.is_active = True
         else:
-            sub = DbPushSubscription(
-                user_id=user.id,
-                fcm_token=fcmToken,
-                device_type=deviceType
-            )
-            db.add(sub)
-
+            db.add(DbPushSubscription(user_id=user.id, fcm_token=fcmToken, device_type=deviceType))
         await db.commit()
         return SuccessResponse(success=True, message="Push token registered")
 
     @strawberry.mutation
     async def unregisterPushToken(self, info: strawberry.Info, fcmToken: str) -> SuccessResponse:
-        """Deactivate an FCM push token."""
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
-
         db = await info.context.get_db()
-        existing_q = await db.execute(
-            select(DbPushSubscription).where(
-                DbPushSubscription.user_id == user.id,
-                DbPushSubscription.fcm_token == fcmToken
-            )
-        )
-        existing = existing_q.scalars().first()
+        existing = (await db.execute(
+            select(DbPushSubscription).where(DbPushSubscription.user_id == user.id, DbPushSubscription.fcm_token == fcmToken)
+        )).scalars().first()
         if existing:
             existing.is_active = False
             await db.commit()
-
         return SuccessResponse(success=True, message="Push token removed")
+
+
+# ═══════════════════════════════════════════════════════════
+# Schema — must be last
+# ═══════════════════════════════════════════════════════════
 
 schema = strawberry.Schema(query=Query, mutation=Mutation)

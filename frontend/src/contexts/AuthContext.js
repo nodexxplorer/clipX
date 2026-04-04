@@ -1,369 +1,366 @@
 // src/contexts/AuthContext.js
 
-/**
- * Authentication Context
- * Single login for both users and admins with role-based routing
- */
-
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { gql } from '@apollo/client';
 import apolloClient from '@/graphql/client';
 import {
-	LOGIN_MUTATION,
-	REGISTER_MUTATION,
-	GOOGLE_AUTH_MUTATION,
-	UPDATE_PROFILE_MUTATION,
-	LOGOUT_MUTATION
+  LOGIN_MUTATION,
+  REGISTER_MUTATION,
+  GOOGLE_AUTH_MUTATION,
+  UPDATE_PROFILE_MUTATION,
+  LOGOUT_MUTATION,
 } from '@/graphql/mutations/authMutation';
-// Note: ADMIN_LOGIN is not needed anymore - using regular LOGIN_MUTATION for all users
-import { GET_CURRENT_USER } from '@/graphql/queries/userQueries';
 
+// ---------------------------------------------------------------------------
+// GET_CURRENT_USER — includes subscriptionTier so withPremium works correctly
+// ---------------------------------------------------------------------------
+const GET_CURRENT_USER = gql`
+  query GetCurrentUser {
+    me {
+      id
+      email
+      name
+      avatar
+      bio
+      role
+      subscriptionTier
+      emailVerified
+      referralCount
+      createdAt
+      preferences {
+        favoriteGenres
+        theme
+        emailNotifications
+        autoPlayTrailers
+      }
+      stats {
+        moviesWatched
+        totalWatchTime
+      }
+    }
+  }
+`;
+
+// ---------------------------------------------------------------------------
+// Context
+// ---------------------------------------------------------------------------
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-	const router = useRouter();
+  const router = useRouter();
+  const client = apolloClient;
 
-	const [user, setUser] = useState(null);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState(null);
-	const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [user,            setUser]            = useState(null);
+  const [loading,         setLoading]         = useState(true);
+  const [error,           setError]           = useState(null);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
-	const client = apolloClient;
+  // -------------------------------------------------------------------------
+  // refetchUser — calls `me` over the wire; the httpOnly cookie is sent
+  // automatically by the browser. No token read from JS.
+  // -------------------------------------------------------------------------
+  const refetchUser = useCallback(async () => {
+    try {
+      const { data } = await client.query({
+        query: GET_CURRENT_USER,
+        fetchPolicy: 'network-only',
+      });
+      if (data?.me) {
+        setUser(data.me);
+        if (!data.me.name) setNeedsOnboarding(true);
+      } else {
+        setUser(null);
+      }
+    } catch (err) {
+      const isAuthErr = err?.graphQLErrors?.some(e => {
+        const m = e.message?.toLowerCase() ?? '';
+        return m.includes('unauthorized') || m.includes('not authenticated');
+      });
+      if (isAuthErr) setUser(null);
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[Auth] refetchUser error:', err);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [client]);
 
-	// Fetch current user on mount (client-side only)
-	const refetchUser = async () => {
-		try {
-			const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-			if (!token) {
-				setLoading(false);
-				return;
-			}
-			const { data } = await client.query({
-				query: GET_CURRENT_USER,
-				fetchPolicy: 'network-only', // always fresh — user data must be accurate
-			});
-			if (data?.me) {
-				setUser(data.me);
-				if (!data.me.name || data.me.name === '') {
-					setNeedsOnboarding(true);
-				}
-			}
-		} catch (err) {
-			// Only clear user if it's an auth error (401/403), not a network error
-			if (err?.graphQLErrors?.some(e => e.message?.toLowerCase().includes('unauthorized') || e.message?.toLowerCase().includes('not authenticated'))) {
-				setUser(null);
-				localStorage.removeItem('token');
-			}
-			if (process.env.NODE_ENV === 'development') console.error('Error fetching user:', err);
-		} finally {
-			setLoading(false);
-		}
-	};
+  // Initial auth check on mount — purely driven by the cookie
+  useEffect(() => {
+    refetchUser();
+  }, [refetchUser]);
 
-	// On mount, try to fetch current user (client-side only)
-	useEffect(() => {
-		if (typeof window === 'undefined') return;
-		refetchUser();
-	}, []);
+  // Silent re-fetch every 6 hours to keep user state fresh
+  useEffect(() => {
+    const SIX_HOURS = 6 * 60 * 60 * 1000;
+    const id = setInterval(refetchUser, SIX_HOURS);
+    return () => clearInterval(id);
+  }, [refetchUser]);
 
-	// ---------- Token Refresh ----------
-	// Silently refresh the JWT every 6 hours to prevent session expiry
-	useEffect(() => {
-		if (typeof window === 'undefined') return;
-		const REFRESH_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
+  // Listen for session-expired events emitted by the Apollo error link
+  useEffect(() => {
+    const handle = () => {
+      setUser(null);
+      client.clearStore();
+    };
+    window.addEventListener('clipx:session-expired', handle);
+    return () => window.removeEventListener('clipx:session-expired', handle);
+  }, [client]);
 
-		const refreshFn = async () => {
-			const token = localStorage.getItem('token');
-			if (!token) return;
-			try {
-				const { data } = await client.mutate({
-					mutation: gql`mutation RefreshToken { refreshToken { token user { id email name avatar role } } }`,
-				});
-				if (data?.refreshToken?.token) {
-					localStorage.setItem('token', data.refreshToken.token);
-					if (data.refreshToken.user) {
-						setUser(prev => ({ ...prev, ...data.refreshToken.user }));
-					}
-				}
-			} catch {
-				// Token expired entirely — user needs to log in again
-			}
-		};
+  // -------------------------------------------------------------------------
+  // login
+  // The backend sets the httpOnly cookie in the Set-Cookie response header.
+  // We extract the user object from the mutation response and put it in state.
+  // Nothing is written to localStorage.
+  // -------------------------------------------------------------------------
+  const login = useCallback(async (email, password) => {
+    try {
+      setLoading(true);
+      setError(null);
 
-		// Refresh once shortly after mount (5s delay to avoid race with initial fetch)
-		const initial = setTimeout(refreshFn, 5000);
-		const interval = setInterval(refreshFn, REFRESH_INTERVAL);
-		return () => { clearTimeout(initial); clearInterval(interval); };
-	}, [client]);
+      const { data, errors } = await client.mutate({
+        mutation: LOGIN_MUTATION,
+        variables: { email, password },
+      });
 
-	// Handle Google OAuth
-	const handleGoogleAuth = async (credentialToken) => {
-		try {
-			setLoading(true);
-			setError(null);
+      if (errors?.length) throw new Error(errors[0].message);
 
+      const result = data?.login;
 
-			const { data, errors } = await client.mutate({
-				mutation: GOOGLE_AUTH_MUTATION,
-				variables: { idToken: credentialToken },
-			});
+      if (!result?.user) {
+        return { success: false, error: 'Invalid login response' };
+      }
 
+      // Cookie is set by the server — we only keep the user object in state
+      setUser(result.user);
 
-			if (errors && errors.length > 0) {
-				throw new Error(errors[0].message);
-			}
+      if (result.user.role === 'admin') {
+        router.push('/admin');
+      } else if (!result.user.name) {
+        setNeedsOnboarding(true);
+        router.push('/auth/onboarding');
+      } else {
+        router.push('/dashboard');
+      }
 
-			if (data?.googleAuth) {
-				const { token, user: authUser, isNewUser } = data.googleAuth;
+      return { success: true };
+    } catch (err) {
+      const message = err.message || 'Login failed';
+      if (process.env.NODE_ENV === 'development') console.error('[Auth] login:', message);
+      setError(message);
+      return { success: false, error: message };
+    } finally {
+      setLoading(false);
+    }
+  }, [client, router]);
 
-				// Store token
-				localStorage.setItem('token', token);
-				if (authUser.role) {
-					localStorage.setItem('role', authUser.role);
-				}
-				setUser(authUser);
+  // -------------------------------------------------------------------------
+  // register
+  // -------------------------------------------------------------------------
+  const register = useCallback(async (email, password, name, referralCode) => {
+    try {
+      setLoading(true);
+      setError(null);
 
-				// Role-based routing
-				if (authUser.role === 'admin') {
-					router.push('/admin');
-				} else if (isNewUser || !authUser.name) {
-					setNeedsOnboarding(true);
-					router.push('/auth/onboarding');
-				} else {
-					router.push('/dashboard');
-				}
+      const { data, errors } = await client.mutate({
+        mutation: REGISTER_MUTATION,
+        variables: { input: { email, password, name, referralCode } },
+      });
 
-				return { success: true };
-			}
+      if (errors?.length) throw new Error(errors[0].message);
 
-			return { success: false, error: 'Invalid response from server' };
-		} catch (err) {
-			if (process.env.NODE_ENV === 'development') console.error('Google auth error:', err);
-			const message = err.message || 'Google authentication failed';
-			setError(message);
-			return { success: false, error: message };
-		} finally {
-			setLoading(false);
-		}
-	};
+      if (data?.register?.user) {
+        // Cookie set by server; we store only the user object
+        setUser(data.register.user);
+        setNeedsOnboarding(true);
+        router.push('/auth/onboarding');
+        return { success: true };
+      }
 
-	// Email/Password Login
-	const login = async (email, password) => {
-		try {
-			setLoading(true);
-			setError(null);
+      return { success: false, error: 'Invalid registration response' };
+    } catch (err) {
+      const message = err.message || 'Registration failed';
+      setError(message);
+      return { success: false, error: message };
+    } finally {
+      setLoading(false);
+    }
+  }, [client, router]);
 
-			const { data, errors } = await client.mutate({
-				mutation: LOGIN_MUTATION,
-				variables: { email, password },
-			});
+  // -------------------------------------------------------------------------
+  // Google OAuth
+  // -------------------------------------------------------------------------
+  const handleGoogleAuth = useCallback(async (credentialToken) => {
+    try {
+      setLoading(true);
+      setError(null);
 
-			if (errors && errors.length > 0) {
-				throw new Error(errors[0].message);
-			}
+      const { data, errors } = await client.mutate({
+        mutation: GOOGLE_AUTH_MUTATION,
+        variables: { idToken: credentialToken },
+      });
 
-			// The login mutation now returns JSON
-			const result = typeof data?.login === 'string' ? JSON.parse(data.login) : data?.login;
+      if (errors?.length) throw new Error(errors[0].message);
 
-			if (!result) {
-				return { success: false, error: 'Invalid login response' };
-			}
+      if (data?.googleAuth?.user) {
+        const { user: authUser, isNewUser } = data.googleAuth;
+        // Cookie set by server
+        setUser(authUser);
 
-			if (result.token) {
-				localStorage.setItem('token', result.token);
-				const authUser = result.user;
-				if (authUser?.role) {
-					localStorage.setItem('role', authUser.role);
-				}
-				setUser(authUser);
+        if (authUser.role === 'admin') {
+          router.push('/admin');
+        } else if (isNewUser || !authUser.name) {
+          setNeedsOnboarding(true);
+          router.push('/auth/onboarding');
+        } else {
+          router.push('/dashboard');
+        }
 
-				// Role-based routing
-				if (authUser?.role === 'admin') {
-					router.push('/admin');
-				} else if (!authUser?.name) {
-					setNeedsOnboarding(true);
-					router.push('/auth/onboarding');
-				} else {
-					router.push('/dashboard');
-				}
+        return { success: true };
+      }
 
-				return { success: true };
-			}
+      return { success: false, error: 'Invalid response from server' };
+    } catch (err) {
+      const message = err.message || 'Google authentication failed';
+      if (process.env.NODE_ENV === 'development') console.error('[Auth] googleAuth:', message);
+      setError(message);
+      return { success: false, error: message };
+    } finally {
+      setLoading(false);
+    }
+  }, [client, router]);
 
-			return { success: false, error: 'Invalid login response' };
-		} catch (err) {
-			const message = err.message || 'Login failed';
-			if (process.env.NODE_ENV === 'development') console.error('❌ Login failed:', message);
-			setError(message);
-			return { success: false, error: message };
-		} finally {
-			setLoading(false);
-		}
-	};
+  // -------------------------------------------------------------------------
+  // completeOnboarding
+  // -------------------------------------------------------------------------
+  const completeOnboarding = useCallback(async (name, preferences = {}) => {
+    try {
+      setLoading(true);
+      setError(null);
 
-	// Email/Password Registration
-	const register = async (email, password) => {
-		try {
-			setLoading(true);
-			setError(null);
+      const { data, errors } = await client.mutate({
+        mutation: UPDATE_PROFILE_MUTATION,
+        variables: {
+          input: {
+            name,
+            favoriteGenres: preferences.genres || [],
+            preferences: {
+              theme:               preferences.theme,
+              emailNotifications:  preferences.emailNotifications,
+              autoPlayTrailers:    preferences.autoPlayTrailers,
+            },
+          },
+        },
+      });
 
-			const { data, errors } = await client.mutate({
-				mutation: REGISTER_MUTATION,
-				variables: { input: { email, password } },
-			});
+      if (errors?.length) throw new Error(errors[0].message);
 
-			if (errors && errors.length > 0) {
-				throw new Error(errors[0].message);
-			}
+      if (data?.updateProfile) {
+        setUser(data.updateProfile);
+        setNeedsOnboarding(false);
+        router.push('/dashboard');
+        return { success: true };
+      }
 
-			if (data?.register) {
-				const { token, user: authUser } = data.register;
+      return { success: false, error: 'Invalid response from server' };
+    } catch (err) {
+      const message = err.message || 'Failed to update profile';
+      setError(message);
+      return { success: false, error: message };
+    } finally {
+      setLoading(false);
+    }
+  }, [client, router]);
 
-				localStorage.setItem('token', token);
-				setUser(authUser);
-				setNeedsOnboarding(true);
-				router.push('/auth/onboarding');
+  // -------------------------------------------------------------------------
+  // updateProfile — does NOT set the global loading flag so profile pages can
+  // use their own local isSaving state without freezing the nav.
+  // -------------------------------------------------------------------------
+  const updateProfile = useCallback(async (input) => {
+    try {
+      setError(null);
 
-				return { success: true };
-			}
+      const { data, errors } = await client.mutate({
+        mutation: UPDATE_PROFILE_MUTATION,
+        variables: { input },
+      });
 
-			return { success: false, error: 'Invalid registration response' };
-		} catch (err) {
-			const message = err.message || 'Registration failed';
-			setError(message);
-			return { success: false, error: message };
-		} finally {
-			setLoading(false);
-		}
-	};
+      if (errors?.length) throw new Error(errors[0].message);
 
-	// Complete user onboarding
-	const completeOnboarding = async (name, preferences = {}) => {
-		try {
-			setLoading(true);
-			setError(null);
+      if (data?.updateProfile) {
+        setUser(data.updateProfile);
+        return { success: true };
+      }
 
-			const { data, errors } = await client.mutate({
-				mutation: UPDATE_PROFILE_MUTATION,
-				variables: {
-					input: {
-						name,
-						favoriteGenres: preferences.genres || [],
-						preferences: {
-							theme: preferences.theme,
-							emailNotifications: preferences.emailNotifications,
-							autoPlayTrailers: preferences.autoPlayTrailers
-						}
-					}
-				},
-			});
+      return { success: false, error: 'Invalid update response' };
+    } catch (err) {
+      const message = err.message || 'Failed to update profile';
+      if (process.env.NODE_ENV === 'development') console.error('[Auth] updateProfile:', message);
+      setError(message);
+      return { success: false, error: message };
+    }
+  }, [client]);
 
-			if (errors && errors.length > 0) {
-				throw new Error(errors[0].message);
-			}
+  // -------------------------------------------------------------------------
+  // logout
+  // Calls the backend mutation so the server clears the httpOnly cookie via
+  // Set-Cookie: auth_token=; Max-Age=0. Then we clear Apollo's cache so no
+  // stale user data lingers in memory.
+  // Nothing in localStorage needs to be touched.
+  // -------------------------------------------------------------------------
+  const logout = useCallback(async () => {
+    try {
+      await client.mutate({ mutation: LOGOUT_MUTATION });
+    } catch (err) {
+      // Proceed with client-side logout even if the server call fails
+      if (process.env.NODE_ENV === 'development') console.error('[Auth] logout error:', err);
+    } finally {
+      setUser(null);
+      setNeedsOnboarding(false);
+      try {
+        await client.resetStore();
+      } catch {
+        // Ignore reset errors
+      }
+      router.push('/auth/login');
+    }
+  }, [client, router]);
 
-			if (data?.updateProfile) {
-				setUser(data.updateProfile);
-				setNeedsOnboarding(false);
-				router.push('/dashboard');
-				return { success: true };
-			}
+  // -------------------------------------------------------------------------
+  // Context value
+  // -------------------------------------------------------------------------
+  const value = {
+    user,
+    loading,
+    error,
+    isAuthenticated: !!user,
+    needsOnboarding,
+    // Derived convenience flags — read from server-verified user object only
+    isAdmin:   user?.role === 'admin',
+    isPremium: ['standard', 'pro'].includes(user?.subscriptionTier),
+    // Actions
+    login,
+    register,
+    handleGoogleAuth,
+    completeOnboarding,
+    updateProfile,
+    logout,
+    refetchUser,
+    clearError: () => setError(null),
+  };
 
-			return { success: false, error: 'Invalid response from server' };
-		} catch (err) {
-			const message = err.message || 'Failed to update profile';
-			setError(message);
-			return { success: false, error: message };
-		} finally {
-			setLoading(false);
-		}
-	};
-
-	// Update profile — does NOT touch the global `loading` flag
-	// (that flag is reserved for the initial auth check; profile saves
-	//  use local `isSaving` state in profile.js instead)
-	const updateProfile = async (input) => {
-		try {
-			setError(null);
-
-			const { data, errors } = await client.mutate({
-				mutation: UPDATE_PROFILE_MUTATION,
-				variables: { input },
-			});
-
-			if (errors && errors.length > 0) {
-				if (process.env.NODE_ENV === 'development') console.error('[Auth] GraphQL errors:', errors);
-				throw new Error(errors[0].message);
-			}
-
-			if (!data || !data.updateProfile) {
-				if (process.env.NODE_ENV === 'development') console.warn('[Auth] updateProfile: no data returned');
-				return { success: false, error: 'Invalid update response' };
-			}
-
-			setUser(data.updateProfile);
-			return { success: true };
-
-		} catch (err) {
-			if (process.env.NODE_ENV === 'development') console.error('[Auth] updateProfile error:', err);
-			const message = err.message || 'Failed to update profile';
-			setError(message);
-			return { success: false, error: message };
-		}
-	};
-
-	// Logout
-	const logout = async () => {
-		try {
-			await client.mutate({ mutation: LOGOUT_MUTATION });
-		} catch (err) {
-			console.error('Logout error:', err);
-		} finally {
-			localStorage.removeItem('token');
-			localStorage.removeItem('role');
-			localStorage.removeItem('admin_token');
-			setUser(null);
-			setNeedsOnboarding(false);
-
-			try {
-				await client.resetStore();
-			} catch (e) {
-				// ignore
-			}
-			router.push('/auth/login');
-		}
-	};
-
-	const value = {
-		user,
-		loading,
-		error,
-		isAuthenticated: !!user,
-		needsOnboarding,
-		login,
-		register,
-		handleGoogleAuth,
-		completeOnboarding,
-		updateProfile,
-		logout,
-		refetchUser,
-		clearError: () => setError(null)
-	};
-
-	return (
-		<AuthContext.Provider value={value}>
-			{children}
-		</AuthContext.Provider>
-	);
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
-	const context = useContext(AuthContext);
-	if (!context) {
-		throw new Error('useAuth must be used within an AuthProvider');
-	}
-	return context;
+  const context = useContext(AuthContext);
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
+  return context;
 }
 
 export default AuthContext;

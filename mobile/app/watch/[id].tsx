@@ -1,70 +1,124 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, StatusBar } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { Ionicons } from '@expo/vector-icons';
 import { GET_STREAMING_URL, GET_MOVIE, UPDATE_WATCH_PROGRESS } from '@/lib/graphql';
-import { colors, spacing, radius, fontSize, fontWeight } from '@/constants/theme';
+import { colors, spacing, radius, fontSize, fontWeight, API_URL } from '@/constants/theme';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
-export default function WatchScreen() {
-    const { id, localUri } = useLocalSearchParams<{ id: string, localUri?: string }>();
-    const router = useRouter();
+/**
+ * Resolve a streaming URL returned by the backend.
+ * GraphQL returns relative paths like /api/proxy/stream?token=xxx
+ * We need to prepend the API base URL so the video player gets
+ * a full absolute URL it can actually fetch.
+ */
+function resolveStreamUrl(url: string | null | undefined): string | null {
+    if (!url) return null;
+    if (url.startsWith('http://') || url.startsWith('https://')) return url;
+    // Relative path — prepend API base
+    const base = API_URL.replace(/\/+$/, '');
+    return `${base}${url}`;
+}
 
+/**
+ * Inner component that owns the VideoPlayer instance.
+ * Only mounted when `streamUrl` is known so the source never transitions
+ * from null → string, which would trigger `useReleasingSharedObject` to
+ * release the native player while `VideoView` still holds a reference.
+ */
+function PlayerView({
+    streamUrl,
+    movieId,
+    isLocal,
+    onBack,
+}: {
+    streamUrl: string;
+    movieId: string;
+    isLocal: boolean;
+    onBack: () => void;
+}) {
     const [updateProgress] = useMutation<any>(UPDATE_WATCH_PROGRESS);
 
-    // Queries (Skip if localUri is provided)
-    const { data: movieData } = useQuery<any>(GET_MOVIE, { variables: { id }, skip: !!localUri });
-    const { data: streamData, loading: streamLoading, error: streamError } = useQuery<any>(GET_STREAMING_URL, {
-        variables: { movieId: id },
-        skip: !!localUri
+    const player = useVideoPlayer(streamUrl, (p) => {
+        p.loop = false;
+        p.play();
     });
 
-    const movie = movieData?.movie;
-    const streamUrl = localUri ? localUri : streamData?.streamingUrl;
-
-    // Player setup - initialized when streamUrl is available
-    const player = useVideoPlayer(streamUrl || null, player => {
-        player.loop = false;
-        player.play();
-    });
-
-    // Periodic Sync (Only for online streams currently)
+    // Periodic progress sync (only for online streams)
     useEffect(() => {
-        if (!player || !!localUri) return;
-        
+        if (!player || isLocal) return;
+
         const syncInterval = setInterval(() => {
             if (player.playing) {
                 updateProgress({
                     variables: {
-                        movieId: id,
+                        movieId,
                         contentType: 'movie',
                         currentTime: Math.floor(player.currentTime || 0),
-                        duration: Math.floor(player.duration || 120 * 60)
-                    }
-                }).catch(err => console.log('Sync error:', err.message));
+                        duration: Math.floor(player.duration || 120 * 60),
+                    },
+                }).catch((err) => console.log('Sync error:', err.message));
             }
         }, 10000);
 
         return () => clearInterval(syncInterval);
-    }, [player, id, updateProgress, localUri]);
+    }, [player, movieId, updateProgress, isLocal]);
 
     // Final sync on unmount
     useEffect(() => {
         return () => {
-            if (player && !localUri) {
+            if (player && !isLocal) {
                 updateProgress({
                     variables: {
-                        movieId: id,
+                        movieId,
                         contentType: 'movie',
                         currentTime: Math.floor(player.currentTime || 0),
-                        duration: Math.floor(player.duration || 120 * 60)
-                    }
+                        duration: Math.floor(player.duration || 120 * 60),
+                    },
                 }).catch(() => {});
             }
         };
-    }, [player, id, updateProgress, localUri]);
+    }, [player, movieId, updateProgress, isLocal]);
 
+    return (
+        <View style={styles.container}>
+            <StatusBar hidden />
+            <VideoView
+                style={styles.video}
+                player={player}
+                allowsFullscreen
+                allowsPictureInPicture
+                nativeControls={true}
+            />
+            <Pressable style={styles.backBtnWrapper} onPress={onBack}>
+                <Ionicons name="close" size={32} color="#fff" />
+            </Pressable>
+        </View>
+    );
+}
+
+export default function WatchScreen() {
+    const { id, localUri } = useLocalSearchParams<{ id: string; localUri?: string }>();
+    const router = useRouter();
+
+    // Queries (skip if localUri is provided)
+    const { data: movieData } = useQuery<any>(GET_MOVIE, { variables: { id }, skip: !!localUri });
+    const {
+        data: streamData,
+        loading: streamLoading,
+        error: streamError,
+    } = useQuery<any>(GET_STREAMING_URL, {
+        variables: { movieId: id },
+        skip: !!localUri,
+    });
+
+    const movie = movieData?.movie;
+    const streamUrl = localUri ? localUri : resolveStreamUrl(streamData?.streamingUrl);
+
+    const handleBack = useCallback(() => router.back(), [router]);
+
+    // Loading state — stream URL not yet available
     if (!localUri && streamLoading) {
         return (
             <View style={styles.centerContainer}>
@@ -75,6 +129,7 @@ export default function WatchScreen() {
         );
     }
 
+    // Error or no URL available
     if (streamError || !streamUrl) {
         return (
             <View style={styles.centerContainer}>
@@ -89,7 +144,15 @@ export default function WatchScreen() {
                         <Ionicons name="arrow-back" size={18} color="#fff" />
                         <Text style={styles.retryText}>Go Back</Text>
                     </Pressable>
-                    <Pressable style={styles.reportBtn} onPress={() => router.push({ pathname: '/report', params: { movieId: id, movieTitle: movie?.title } })}>
+                    <Pressable
+                        style={styles.reportBtn}
+                        onPress={() =>
+                            router.push({
+                                pathname: '/report',
+                                params: { movieId: id, movieTitle: movie?.title },
+                            })
+                        }
+                    >
                         <Ionicons name="flag-outline" size={18} color={colors.warning} />
                         <Text style={styles.reportText}>Report Issue</Text>
                     </Pressable>
@@ -98,21 +161,14 @@ export default function WatchScreen() {
         );
     }
 
+    // Stream URL is available — render the player
     return (
-        <View style={styles.container}>
-            <StatusBar hidden />
-            <VideoView 
-                style={styles.video} 
-                player={player} 
-                allowsFullscreen 
-                allowsPictureInPicture
-                nativeControls={true}
-            />
-            {/* Safe Top left back button if native controls are hidden or don't map well to our 'Go back' */}
-            <Pressable style={styles.backBtnWrapper} onPress={() => router.back()}>
-                <Ionicons name="close" size={32} color="#fff" />
-            </Pressable>
-        </View>
+        <PlayerView
+            streamUrl={streamUrl}
+            movieId={id}
+            isLocal={!!localUri}
+            onBack={handleBack}
+        />
     );
 }
 
@@ -128,6 +184,6 @@ const styles = StyleSheet.create({
     retryText: { color: '#fff', fontWeight: fontWeight.bold },
     reportBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 10, backgroundColor: 'rgba(245,158,11,0.1)', borderRadius: radius.md, borderWidth: 1, borderColor: 'rgba(245,158,11,0.2)' },
     reportText: { color: colors.warning, fontWeight: fontWeight.bold },
-    
     backBtnWrapper: { position: 'absolute', top: 40, left: 20, zIndex: 100, padding: 8, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: radius.round },
 });
+

@@ -7,12 +7,15 @@ export const MOVIE_FRAGMENT = gql`
     title
     overview
     posterPath
+    posterUrl
     backdropPath
+    backdropUrl
     releaseDate
     voteAverage
     voteCount
     runtime
     popularity
+    inWatchlist
   }
 `;
 
@@ -59,9 +62,12 @@ export const SEARCH_MOVIES = gql`
   ${MOVIE_FRAGMENT}
 `;
 
+// H7 FIX: Replaced `offset` with `page` to match the backend schema.
+// The backend movies() resolver expects `page: Int`, not `offset: Int`.
+// Using the wrong param caused the query to always return the first page.
 export const GET_MOVIES = gql`
-  query GetMovies($limit: Int, $offset: Int, $sort: String, $filter: MovieFilter) {
-    movies(limit: $limit, offset: $offset, sort: $sort, filter: $filter) {
+  query GetMovies($limit: Int, $page: Int, $sort: String, $filter: MovieFilter) {
+    movies(limit: $limit, page: $page, sort: $sort, filter: $filter) {
       movies { ...MovieWithGenres }
       total
       hasMore
@@ -98,7 +104,7 @@ export const GET_WATCHLIST = gql`
   query GetWatchlist {
     watchlist {
       id
-      movies { id title description year rating posterUrl genres { name } }
+      movies { ...MovieFields genres { name } }
     }
   }
 `;
@@ -106,11 +112,11 @@ export const GET_WATCHLIST = gql`
 export const GET_DASHBOARD = gql`
   query GetDashboardData {
     dashboardData {
-      watchlist { id title posterUrl rating releaseDate }
-      recentlyViewed { id title posterUrl rating }
+      watchlist { ...MovieFields }
+      recentlyViewed { ...MovieFields }
       continueWatching {
         id
-        movie { id title backdropUrl posterUrl durationMinutes }
+        movie { ...MovieFields }
         currentTime duration
       }
       stats { moviesWatched totalWatchTime monthlyWatchTime watchlistCount reviewsWritten }
@@ -127,7 +133,10 @@ export const GET_NOTIFICATIONS = gql`
 // === Mutations ===
 export const LOGIN = gql`
   mutation Login($email: String!, $password: String!) {
-    login(email: $email, password: $password)
+    login(email: $email, password: $password) {
+      token
+      user { id email name avatar role createdAt }
+    }
   }
 `;
 
@@ -150,10 +159,24 @@ export const GOOGLE_AUTH = gql`
   }
 `;
 
-export const TOGGLE_WATCHLIST = gql`
-  mutation ToggleWatchlist($movieId: ID!) {
-    toggleWatchlist(movieId: $movieId) {
-      added
+// H7 FIX: TOGGLE_WATCHLIST removed. The backend exposes two distinct mutations
+// (addToWatchlist / removeFromWatchlist). A single toggle caused state desync
+// bugs where the client and server disagreed on the current watchlist state.
+// Callers should check whether the movie is currently in the watchlist and
+// call the appropriate mutation explicitly.
+export const ADD_TO_WATCHLIST = gql`
+  mutation AddToWatchlist($movieId: ID!) {
+    addToWatchlist(movieId: $movieId) {
+      success
+      message
+    }
+  }
+`;
+
+export const REMOVE_FROM_WATCHLIST = gql`
+  mutation RemoveFromWatchlist($movieId: ID!) {
+    removeFromWatchlist(movieId: $movieId) {
+      success
       message
     }
   }

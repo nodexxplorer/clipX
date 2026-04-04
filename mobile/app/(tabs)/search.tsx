@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SEARCH_MOVIES, GET_TRENDING, GET_HOME_DATA } from '@/lib/graphql';
 import { colors, spacing, radius, fontSize, fontWeight, POSTER_ASPECT } from '@/constants/theme';
+import { getPosterUri } from '@/lib/utils';
 import type { Movie, Genre } from '@/types';
 
 const { width: SW } = Dimensions.get('window');
@@ -30,9 +31,7 @@ const SORT_OPTIONS = [
 const YEAR_OPTIONS = ['All', '2024', '2023', '2022', '2021', '2020', '2010s', '2000s'];
 const RATING_OPTIONS = ['All', '9+', '8+', '7+', '6+'];
 
-function getPoster(m: Movie) {
-  return m.posterUrl || (m.posterPath ? `https://image.tmdb.org/t/p/w342${m.posterPath}` : undefined);
-}
+// Helper removed — using shared getPosterUri from @/lib/utils
 
 function MovieCard({ movie }: { movie: Movie }) {
   const router = useRouter();
@@ -42,7 +41,7 @@ function MovieCard({ movie }: { movie: Movie }) {
       style={styles.card}
     >
       <Image
-        source={{ uri: getPoster(movie) }}
+        source={{ uri: getPosterUri(movie) }}
         style={styles.poster}
         contentFit="cover"
         transition={200}

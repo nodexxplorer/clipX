@@ -1,0 +1,422 @@
+type ActivityLog {
+  id: ID!
+  type: String!
+  description: String!
+  timestamp: String!
+}
+
+type AdminDashboardStats {
+  totalUsers: Int!
+  totalMovies: Int!
+  totalGenres: Int!
+  activeUsers: Int!
+  newUsersToday: Int!
+  newUsersThisWeek: Int!
+  totalDownloads: Int!
+  totalWatchlistItems: Int!
+  avgSessionDuration: String!
+  userGrowth: [GrowthPoint!]!
+  genreDistribution: [GenreDistribution!]!
+  topMovies: [TopMovieStat!]!
+  recentActivity: [ActivityLog!]!
+}
+
+type AdminUser {
+  id: ID!
+  email: String!
+  username: String
+  firstName: String
+  lastName: String
+  avatar: String
+  isActive: Boolean!
+  isBanned: Boolean!
+  lastActive: String
+  createdAt: String
+  watchlistCount: Int!
+  downloadCount: Int!
+}
+
+type AdminUsersResponse {
+  users: [AdminUser!]!
+  totalCount: Int!
+}
+
+type AuthResponse {
+  token: String!
+  user: User!
+}
+
+type BrowseMoviesResponse {
+  movies: [Movie!]!
+  total: Int!
+  hasMore: Boolean!
+}
+
+type BrowseSeriesResponse {
+  series: [Movie!]!
+  total: Int!
+  hasMore: Boolean!
+}
+
+type CastMember {
+  id: ID!
+  name: String!
+  character: String!
+  profileImage: String
+}
+
+type ChatMessageType {
+  id: ID!
+  userId: String!
+  userName: String
+  userAvatar: String
+  room: String!
+  content: String!
+  createdAt: String!
+}
+
+type ContinueWatching {
+  id: ID!
+  movie: Movie!
+  currentTime: Int!
+  duration: Int!
+}
+
+type DashboardData {
+  watchlist: [Movie!]!
+  recentlyViewed: [RecentlyViewed!]!
+  continueWatching: [ContinueWatching!]!
+  stats: UserDashboardStats!
+}
+
+input DateRangeInput {
+  startDate: String!
+  endDate: String!
+}
+
+type Episode {
+  id: ID!
+  title: String!
+  episodeNumber: Int!
+  seasonNumber: Int!
+  releaseDate: String
+  posterUrl: String
+  description: String
+}
+
+type Genre {
+  id: ID!
+  name: String!
+  slug: String!
+  movieCount: Int!
+}
+
+type GenreDistribution {
+  genre: Genre!
+  movieCount: Int!
+  viewCount: Int!
+}
+
+type GoogleAuthResponse {
+  token: String!
+  user: User!
+  isNewUser: Boolean!
+}
+
+type GrowthPoint {
+  date: String!
+  count: Int!
+}
+
+"""
+The `JSON` scalar type represents JSON values as specified by [ECMA-404](https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf).
+"""
+scalar JSON @specifiedBy(url: "https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf")
+
+type LoginActivityEntry {
+  id: ID!
+  action: String!
+  deviceInfo: String
+  ipAddress: String
+  location: String
+  success: Boolean!
+  createdAt: String!
+}
+
+type Movie {
+  id: ID!
+  title: String!
+  overview: String
+  posterPath: String
+  backdropPath: String
+  releaseDate: String
+  voteAverage: Float!
+  voteCount: Int!
+  runtime: Int
+  popularity: Float!
+  genres: [Genre!]
+  tagline: String
+  status: String
+  trailerUrl: String
+  inWatchlist: Boolean!
+  cast: [CastMember!]
+  recommendations: [Movie!]
+  downloadCount: Int!
+  reason: String
+  score: Float!
+  editorNote: String
+  awards: String
+  seasons: [Season!]
+  posterUrl: String
+  backdropUrl: String
+  firstAirDate: String
+  rating: Float!
+  durationMinutes: Int
+  description: String
+  year: Int
+}
+
+input MovieFilter {
+  genre: String = null
+  year: Int = null
+  minRating: Float = null
+}
+
+type MoviePagination {
+  items: [Movie!]!
+  totalCount: Int!
+  hasMore: Boolean!
+  currentPage: Int!
+}
+
+type Mutation {
+  updateWatchProgress(movieId: String!, contentType: String!, currentTime: Int!, duration: Int!): SuccessResponse!
+  login(email: String!, password: String!, totpCode: String = null): AuthResponse!
+  register(input: RegisterInput!): AuthResponse!
+  googleAuth(idToken: String!): GoogleAuthResponse!
+  forgotPassword(email: String!): SuccessResponse!
+  resetPassword(token: String!, newPassword: String!): SuccessResponse!
+  updateProfile(input: UpdateProfileInput!): User!
+  submitReport(reason: String!, description: String!, movieboxId: String = null): SuccessResponse!
+  recordWatchProgress(movieId: ID!, currentTime: Int!, duration: Int!): SuccessResponse!
+  addToWatchlist(movieId: ID!): SuccessResponse!
+  removeFromWatchlist(movieId: ID!): SuccessResponse!
+  changePassword(currentPassword: String!, newPassword: String!): SuccessResponse!
+  logout: SuccessResponse!
+  refreshToken: AuthResponse!
+  deleteAccount(password: String = null): SuccessResponse!
+  clearWatchHistory: SuccessResponse!
+  markNotificationRead(id: ID!): SuccessResponse!
+  addReview(content: String!, rating: Float!, isFeatured: Boolean = false, movieboxId: String = null): SuccessResponse!
+  updateReportStatus(id: ID!, status: String!): SuccessResponse!
+  markAllNotificationsRead: SuccessResponse!
+  deleteNotification(id: ID!): SuccessResponse!
+  sendChatMessage(content: String!, room: String = "global"): ChatMessageType!
+  submitReview(content: String!, rating: Float!): Review!
+  submitMovieReview(movieId: String!, content: String!, rating: Float!): Review!
+  adminSendNotification(title: String!, message: String!, userId: ID = null, notifType: String = "system"): SuccessResponse!
+  adminUpdateUserRole(id: ID!, role: String!): SuccessResponse!
+  adminDeleteUser(id: ID!): SuccessResponse!
+  verifyEmail(token: String!): SuccessResponse!
+  resendVerification: SuccessResponse!
+  initializeSubscription(plan: String!, billing: String! = "monthly"): JSON!
+  verifyPayment(reference: String!): SuccessResponse!
+  cancelSubscription: SuccessResponse!
+  mySubscription: JSON!
+  myPaymentHistory: JSON!
+  applyPromoCode(code: String!): PromoCodeResult!
+  likeReview(reviewId: String!, likeType: String!): SuccessResponse!
+  reportReview(reviewId: String!, reason: String!, description: String = null): SuccessResponse!
+  createWatchParty(movieboxId: String!, contentType: String! = "movie"): JSON!
+  joinWatchParty(roomCode: String!): JSON!
+  endWatchParty(roomCode: String!): SuccessResponse!
+  createFamilyPlan: JSON!
+  inviteFamilyMember(email: String!): SuccessResponse!
+  acceptFamilyInvite(token: String!): SuccessResponse!
+  removeFamilyMember(memberId: String!): SuccessResponse!
+  saveLayoutPreference(layoutOrder: [String!]!): SuccessResponse!
+  registerPushToken(fcmToken: String!, deviceType: String! = "web"): SuccessResponse!
+  unregisterPushToken(fcmToken: String!): SuccessResponse!
+}
+
+type Notification {
+  id: ID!
+  title: String!
+  message: String!
+  isRead: Boolean!
+  createdAt: String!
+  type: String!
+  actionUrl: String
+}
+
+type PremiumSignupStats {
+  totalPremiumUsers: Int!
+  remainingSlots: Int!
+  isEligible: Boolean!
+  isActive: Boolean!
+}
+
+type PromoCodeResult {
+  success: Boolean!
+  message: String!
+  discountPercent: Int!
+  plan: String
+}
+
+type Query {
+  me: User
+  movies(filter: MovieFilter = null, sort: String = "popular", limit: Int = 20, offset: Int = 0): BrowseMoviesResponse!
+  myReferralCode: String
+  validateReferral(code: String!): Boolean!
+  movieReviews(movieId: String!): [Review!]!
+  watchHistory(limit: Int! = 50, offset: Int! = 0): [WatchHistoryItem!]!
+  dashboardStats(dateRange: DateRangeInput = null): AdminDashboardStats!
+  dashboardData: DashboardData
+  personalizedRecommendations(userId: ID = null, limit: Int = 10): [Movie!]!
+  trending(limit: Int = 20, timeWindow: String = "week"): [Movie!]!
+  popular(limit: Int = 20, page: Int = 1): [Movie!]!
+  trendingSeries(limit: Int = 10): [Movie!]!
+  featured(limit: Int = 5): [Movie!]!
+  editorsChoice(limit: Int = 5): [Movie!]!
+  awardWinning(limit: Int = 10): [Movie!]!
+  movie(id: ID!): Movie
+  searchMovies(query: String!, page: Int = 1, limit: Int = 24): MoviePagination!
+  searchSuggestions(limit: Int = 8): [Movie!]!
+  similarMovies(movieId: ID!, limit: Int = 12): [Movie!]!
+  allSeries(filter: SeriesFilter = null, sort: String = "popular", limit: Int = 20, offset: Int = 0): BrowseSeriesResponse!
+  anime(page: Int = 1, limit: Int = 20): MoviePagination!
+  moviesByGenre(genreId: ID = null, genreSlug: String = null, page: Int = 1, limit: Int = 20): MoviePagination!
+  moviesByIds(ids: [ID!]!): [Movie!]!
+  streamingUrl(movieId: ID!, season: Int = 0, episode: Int = 1): String
+  genres: [Genre!]!
+  notifications: [Notification!]!
+  unreadNotificationCount: Int!
+  landingReviews: [Review!]!
+  getReports: [Report!]!
+  adminUsers(limit: Int = 20, offset: Int = 0, search: String = null, status: String = null): AdminUsersResponse!
+  adminUserDetail(id: ID!): AdminUser!
+  adminNotifications(limit: Int = 50): [Notification!]!
+  chatMessages(room: String = "global", limit: Int = 50, before: String = null): [ChatMessageType!]!
+  loginActivity(limit: Int = 20): [LoginActivityEntry!]!
+  premiumSignupStats: PremiumSignupStats!
+}
+
+type RecentlyViewed {
+  id: ID!
+  title: String!
+  posterUrl: String
+  rating: Float!
+}
+
+input RegisterInput {
+  email: String!
+  password: String!
+  name: String = null
+  referralCode: String = null
+}
+
+type Report {
+  id: ID!
+  reason: String!
+  description: String
+  status: String!
+  createdAt: String!
+}
+
+type Review {
+  id: ID!
+  content: String!
+  rating: Float
+  isFeatured: Boolean!
+  createdAt: String!
+  userName: String
+  userAvatar: String
+}
+
+type Season {
+  id: ID!
+  seasonNumber: Int!
+  episodes: [Episode!]!
+}
+
+input SeriesFilter {
+  genre: String = null
+  year: Int = null
+  minRating: Float = null
+}
+
+type SuccessResponse {
+  success: Boolean!
+  message: String
+}
+
+type TopMovieStat {
+  movie: Movie!
+  views: Int!
+  downloads: Int!
+  watchlistAdds: Int!
+}
+
+input UpdateProfileInput {
+  name: String = null
+  favoriteGenres: [String!] = null
+  avatar: String = null
+  bio: String = null
+  preferences: UserPreferencesInput = null
+}
+
+type User {
+  id: ID!
+  email: String!
+  name: String
+  avatar: String
+  bio: String
+  role: String!
+  subscriptionTier: String!
+  emailVerified: Boolean!
+  referralCount: Int!
+  preferences: UserPreferences!
+  stats: UserStats!
+  createdAt: String!
+}
+
+type UserDashboardStats {
+  moviesWatched: Int!
+  totalWatchTime: Int!
+  monthlyWatchTime: Int!
+  watchlistCount: Int!
+  reviewsWritten: Int!
+}
+
+type UserPreferences {
+  favoriteGenres: [String!]!
+  theme: String!
+  emailNotifications: Boolean!
+  autoPlayTrailers: Boolean!
+}
+
+input UserPreferencesInput {
+  theme: String = "dark"
+  emailNotifications: Boolean = true
+  autoPlayTrailers: Boolean = true
+}
+
+type UserStats {
+  id: ID!
+  moviesWatched: Int!
+  totalWatchTime: Int!
+  reviewsWritten: Int!
+  watchlistCount: Int!
+}
+
+type WatchHistoryItem {
+  id: ID!
+  movieboxId: String!
+  title: String!
+  posterUrl: String
+  contentType: String!
+  currentTime: Int!
+  duration: Int!
+  progress: Float!
+  watchedAt: String!
+}

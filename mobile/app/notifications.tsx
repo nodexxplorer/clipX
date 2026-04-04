@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { GET_NOTIFICATIONS } from '@/lib/graphql';
 import { colors, spacing, radius, fontSize, fontWeight } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Notification } from '@/types';
 
 const iconMap: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
@@ -58,6 +59,7 @@ function getTimeAgo(dateStr: string): string {
 }
 
 export default function NotificationsScreen() {
+    const insets = useSafeAreaInsets();
     const { isAuthenticated } = useAuth();
     const router = useRouter();
     const { data, loading, refetch } = useQuery<any>(GET_NOTIFICATIONS, { skip: !isAuthenticated });
@@ -83,7 +85,7 @@ export default function NotificationsScreen() {
 
     return (
         <View style={styles.container}>
-            <View style={styles.header}>
+            <View style={[styles.header, { paddingTop: insets.top + spacing.lg }]}>
                 <Pressable onPress={() => router.back()} style={styles.backBtn}>
                     <Ionicons name="arrow-back" size={22} color={colors.text} />
                 </Pressable>
@@ -118,7 +120,7 @@ const styles = StyleSheet.create({
     authBtn: { marginTop: spacing.xl, paddingHorizontal: 40, paddingVertical: spacing.md, backgroundColor: colors.primary, borderRadius: radius.md },
     authBtnText: { color: '#fff', fontWeight: fontWeight.bold },
 
-    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.xl, paddingTop: 56, paddingBottom: spacing.md },
+    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.xl, paddingBottom: spacing.md },
     backBtn: { padding: spacing.sm },
     headerTitle: { flex: 1, color: colors.text, fontSize: fontSize.xxl, fontWeight: fontWeight.black, textAlign: 'center' },
 

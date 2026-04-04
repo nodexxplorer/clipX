@@ -30,7 +30,6 @@ const TABS: TabDef[] = [
   { name: 'search', title: 'Search', icon: 'search-outline', iconFocused: 'search' },
   // slot 2 is the FAB
   { name: 'watchlist', title: 'Watchlist', icon: 'heart-outline', iconFocused: 'heart' },
-  { name: 'downloads', title: 'Downloads', icon: 'download-outline', iconFocused: 'download' },
   { name: 'profile', title: 'Profile', icon: 'person-outline', iconFocused: 'person' },
 ];
 

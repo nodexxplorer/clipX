@@ -147,9 +147,18 @@ def get_app() -> FastAPI:
     from app.api.routes import movies, proxy, chat, ai, webhooks, invoices, watch_party
     from app.api.graphql.schema import schema
 
+    # H6 FIX: OpenAPI schema, Swagger UI (/docs), and ReDoc (/redoc) are
+    # disabled in production. They enumerate every endpoint and parameter —
+    # useful for development, a reconnaissance gift in production.
+    import os
+    _env = os.getenv("ENV", "development")
+    _is_prod = _env == "production"
+
     app = FastAPI(
         title=settings.PROJECT_NAME,
-        openapi_url=f"{settings.API_V1_STR}/openapi.json",
+        openapi_url=None if _is_prod else f"{settings.API_V1_STR}/openapi.json",
+        docs_url=None if _is_prod else "/docs",
+        redoc_url=None if _is_prod else "/redoc",
         lifespan=lifespan,
     )
 

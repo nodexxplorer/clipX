@@ -1,5 +1,6 @@
 // src/components/common/LoadingSpinner.jsx
 import { motion } from 'framer-motion';
+import { FiAlertCircle, FiRefreshCw, FiFilm } from 'react-icons/fi';
 
 export const LoadingSpinner = ({ size = 'md', text = 'Loading...' }) => {
   const sizes = {
@@ -20,8 +21,7 @@ export const LoadingSpinner = ({ size = 'md', text = 'Loading...' }) => {
   );
 };
 
-// src/components/common/ErrorMessage.jsx
-import { FiAlertCircle, FiRefreshCw } from 'react-icons/fi';
+
 
 export const ErrorMessage = ({ message = 'Something went wrong', retry }) => {
   return (
@@ -51,8 +51,7 @@ export const ErrorMessage = ({ message = 'Something went wrong', retry }) => {
   );
 };
 
-// src/components/common/EmptyState.jsx
-import { FiFilm } from 'react-icons/fi';
+
 
 export const EmptyState = ({
   icon: Icon = FiFilm,

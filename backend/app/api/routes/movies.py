@@ -45,12 +45,26 @@ async def get_stream(movie_id: str, season: int = 0, episode: int = 1, db: Async
         data = await movie_service.get_stream_links(movie_id, season=season, episode=episode, db=db)
         # Obfuscate stream URLs — replace raw CDN URLs with signed proxy tokens
         from app.core.stream_token import create_stream_token
+        import urllib.parse
         if hasattr(data, 'links'):
             for link in data.links:
-                if link.url and link.url.startswith('http'):
-                    token = create_stream_token(link.url)
-                    # Replace with proxy URL — frontend will call /api/proxy/stream?token=xxx
-                    link.url = f'/api/proxy/stream?token={token}'
+                if link.url:
+                    # The movie_service already wraps CDN URLs in proxy URLs like:
+                    #   http://localhost:8000/api/proxy/stream?url=<encoded_cdn_url>
+                    # We need to extract the raw CDN URL before tokenizing,
+                    # otherwise the token resolves to a localhost URL which is
+                    # blocked by the proxy's own SSRF protection.
+                    raw_url = link.url
+                    if '?url=' in raw_url:
+                        parsed = urllib.parse.urlparse(raw_url)
+                        qs = urllib.parse.parse_qs(parsed.query)
+                        if 'url' in qs:
+                            raw_url = qs['url'][0]
+
+                    if raw_url.startswith('http'):
+                        token = create_stream_token(raw_url)
+                        # Replace with proxy URL — frontend will call /api/proxy/stream?token=xxx
+                        link.url = f'/api/proxy/stream?token={token}'
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

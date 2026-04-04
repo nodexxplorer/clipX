@@ -26,6 +26,8 @@ ALLOWED_DOMAINS = {
     "fmoviesunblocked.net",
     "image.tmdb.org",
     "i.ibb.co",
+    "hakunaymatata.com",
+    "cloudfront.net",
 }
 
 BLOCKED_IP_RANGES = [

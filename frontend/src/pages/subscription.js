@@ -11,10 +11,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     FiCreditCard, FiCalendar, FiAlertTriangle, FiCheck, FiX,
     FiUsers, FiPlus, FiTrash2, FiRefreshCw, FiDownload,
-    FiCrown, FiStar, FiMonitor, FiChevronRight, FiMail, FiArrowUp, FiArrowDown, FiExternalLink, FiLoader
+    FiFrown, FiStar, FiMonitor, FiChevronRight, FiMail, FiArrowUp, FiArrowDown, FiExternalLink, FiLoader
 } from 'react-icons/fi';
 import { useAuth } from '@/contexts/AuthContext';
-import LoadingSpinner from '@/components/common/LoadingSpinner';
+import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import PromoCodeInput from '@/components/common/PromoCodeInput';
 import GracePeriodBanner from '@/components/common/GracePeriodBanner';
 import { gql } from '@apollo/client';
@@ -59,7 +59,7 @@ const MY_PAYMENTS = gql`
 const tiers = {
     free: { name: 'Free', price: '₦0', icon: FiMonitor, color: 'gray', gradient: 'from-gray-500 to-gray-600' },
     standard: { name: 'Standard', price: '₦3,000', icon: FiStar, color: 'primary', gradient: 'from-primary-500 to-blue-600' },
-    pro: { name: 'Pro', price: '₦8,000', icon: FiCrown, color: 'purple', gradient: 'from-purple-500 to-pink-600' },
+    pro: { name: 'Pro', price: '₦8,000', icon: FiFrown, color: 'purple', gradient: 'from-purple-500 to-pink-600' },
 };
 
 export default function SubscriptionPage() {
@@ -78,6 +78,21 @@ export default function SubscriptionPage() {
     const [isProcessing, setIsProcessing] = useState(false);
     const [billingCycle, setBillingCycle] = useState('monthly');
     const [paymentHistory, setPaymentHistory] = useState([]);
+
+    console.log("DEBUG_IMPORTS:", {
+        Head: typeof Head,
+        Link: typeof Link,
+        motion: typeof motion.div,
+        AnimatePresence: typeof AnimatePresence,
+        LoadingSpinner: typeof LoadingSpinner,
+        PromoCodeInput: typeof PromoCodeInput,
+        GracePeriodBanner: typeof GracePeriodBanner,
+        FiCreditCard: typeof FiCreditCard,
+        FiFrown: typeof FiFrown,
+        FiMonitor: typeof FiMonitor,
+        FiStar: typeof FiStar,
+        FiArrowUp: typeof FiArrowUp
+    });
 
     const [initSubscription] = useMutation(INIT_SUBSCRIPTION);
     const [verifyPayment] = useMutation(VERIFY_PAYMENT);
