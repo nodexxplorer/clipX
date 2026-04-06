@@ -199,7 +199,7 @@ export const UPDATE_PROFILE = gql`
 `;
 
 export const UPDATE_WATCH_PROGRESS = gql`
-  mutation UpdateWatchProgress($movieId: ID!, $contentType: String!, $currentTime: Int!, $duration: Int!) {
+  mutation UpdateWatchProgress($movieId: String!, $contentType: String!, $currentTime: Int!, $duration: Int!) {
     updateWatchProgress(movieId: $movieId, contentType: $contentType, currentTime: $currentTime, duration: $duration) {
       success
       message
@@ -437,5 +437,12 @@ export const UNREGISTER_PUSH_TOKEN = gql`
       success
       message
     }
+  }
+`;
+// ─── Family Plan (Item 10) ────────────────────────────────────────────────────
+// NOTE: Requires myFamilyPlan resolver in schema.py (see family.tsx for details).
+export const GET_MY_FAMILY_PLAN = gql`
+  query GetMyFamilyPlan {
+    myFamilyPlan
   }
 `;

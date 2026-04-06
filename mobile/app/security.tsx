@@ -16,12 +16,12 @@ export default function SecurityScreen() {
 
 
     // Change password
-    const [changePasswordMutation, { loading: changePwLoading }] = useMutation(CHANGE_PASSWORD);
+    const [changePasswordMutation, { loading: changePwLoading }] = useMutation<any>(CHANGE_PASSWORD);
     const [currentPw, setCurrentPw] = useState('');
     const [newPw, setNewPw] = useState('');
 
     // Login activity
-    const { data: activityData, loading: activityLoading } = useQuery(LOGIN_ACTIVITY, {
+    const { data: activityData, loading: activityLoading } = useQuery<any>(LOGIN_ACTIVITY, {
         variables: { limit: 15 },
         fetchPolicy: 'network-only',
     });

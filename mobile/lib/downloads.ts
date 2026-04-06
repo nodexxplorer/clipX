@@ -40,6 +40,7 @@ export const startDownload = async (
   if (Platform.OS === 'web') return;
 
   const safeTitle = title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  // @ts-ignore
   const localPath = `${FileSystem.documentDirectory || ''}${safeTitle}_${id}.mp4`;
 
   try {

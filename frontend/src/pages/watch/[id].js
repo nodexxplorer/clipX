@@ -45,6 +45,9 @@ export default function WatchPage() {
   const inactivityTimer = useRef(null);
   const restoringTimeRef = useRef(null);
   const wasPlayingRef = useRef(false);
+  const audioContextRef = useRef(null);
+  const gainNodeRef = useRef(null);
+  const mediaSourceRef = useRef(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -97,10 +100,12 @@ export default function WatchPage() {
       const saved = localStorage.getItem('clipx_volume');
       if (saved !== null) {
         const v = parseFloat(saved);
-        if (!isNaN(v) && v >= 0 && v <= 1) {
+        if (!isNaN(v) && v >= 0 && v <= 2) {
           setVolume(v);
           setIsMuted(v === 0);
-          if (videoRef.current) videoRef.current.volume = v;
+          if (videoRef.current) {
+            videoRef.current.volume = Math.min(1, v);
+          }
         }
       }
     } catch { }
@@ -502,9 +507,14 @@ export default function WatchPage() {
 
   const adjustVolume = useCallback((delta) => {
     setVolume(prevVolume => {
-      const newVolume = Math.max(0, Math.min(1, prevVolume + delta));
+      const newVolume = Math.max(0, Math.min(2, prevVolume + delta));
       if (videoRef.current) {
-        videoRef.current.volume = newVolume;
+        if (gainNodeRef.current) {
+          gainNodeRef.current.gain.value = newVolume;
+          videoRef.current.volume = 1;
+        } else {
+          videoRef.current.volume = Math.min(1, newVolume);
+        }
       }
       try { localStorage.setItem('clipx_volume', String(newVolume)); } catch { }
       // Show OSD
@@ -820,6 +830,7 @@ export default function WatchPage() {
         {/* Video Player */}
         <video
           ref={videoRef}
+          crossOrigin="anonymous"
           src={streamingUrl && /^https?:\/\/.+/.test(streamingUrl) ? streamingUrl : null}
           className={`w-full h-full ${videoFit === 'contain' ? 'object-contain' :
             videoFit === 'cover' ? 'object-cover' :
@@ -1312,14 +1323,40 @@ export default function WatchPage() {
                       <input
                         type="range"
                         min="0"
-                        max="1"
+                        max="2"
                         step="0.05"
                         value={isMuted ? 0 : volume}
                         onChange={(e) => {
                           const v = parseFloat(e.target.value);
                           setVolume(v);
                           setIsMuted(v === 0);
-                          if (videoRef.current) videoRef.current.volume = v;
+                          
+                          // Init Audio Amplification if over 100%
+                          if (v > 1 && !audioContextRef.current && videoRef.current) {
+                            try {
+                              const AudioContext = window.AudioContext || window.webkitAudioContext;
+                              const ctx = new AudioContext();
+                              audioContextRef.current = ctx;
+                              const source = ctx.createMediaElementSource(videoRef.current);
+                              const gainNode = ctx.createGain();
+                              source.connect(gainNode);
+                              gainNode.connect(ctx.destination);
+                              gainNodeRef.current = gainNode;
+                              mediaSourceRef.current = source;
+                              if (ctx.state === 'suspended') ctx.resume();
+                            } catch (err) {
+                              console.warn('Audio amplification failed:', err);
+                            }
+                          }
+                          
+                          if (videoRef.current) {
+                            if (gainNodeRef.current) {
+                                gainNodeRef.current.gain.value = v;
+                                videoRef.current.volume = 1;
+                            } else {
+                                videoRef.current.volume = Math.min(1, v);
+                            }
+                          }
                           try { localStorage.setItem('clipx_volume', String(v)); } catch { }
                         }}
                         className="w-20 accent-primary-500 cursor-pointer"

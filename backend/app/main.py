@@ -25,9 +25,38 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.window_seconds = window_seconds
         self._requests: dict[str, list[float]] = defaultdict(list)      
 
+    # Tighter limits per endpoint type
+    AUTH_REFRESH_MAX = 5   # token refresh — 5/min/IP
+    AUTH_REFRESH_WIN = 60
+
     async def dispatch(self, request: Request, call_next):
-        # Only rate-limit POST to /graphql (where login/register mutations go)
-        if request.method == "POST" and request.url.path == "/graphql":
+        path = request.url.path
+
+        # /api/auth/refresh — tighter limit (5/min) to protect token-vending endpoint
+        if request.method == "POST" and path == "/api/auth/refresh":
+            client_ip = request.client.host if request.client else "unknown"
+            from app.core.cache import cache
+            redis_ok = await cache._ensure_connected()
+            if redis_ok and cache._redis:
+                try:
+                    rk = f"rate_limit:refresh:{client_ip}"
+                    cur = await cache._redis.get(rk)
+                    if cur and int(cur) >= self.AUTH_REFRESH_MAX:
+                        return Response(
+                            content='{"detail":"Too many refresh attempts. Please wait."}',
+                            status_code=429, media_type="application/json",
+                            headers={"Retry-After": str(self.AUTH_REFRESH_WIN)}
+                        )
+                    pipe = cache._redis.pipeline()
+                    pipe.incr(rk)
+                    if not cur:
+                        pipe.expire(rk, self.AUTH_REFRESH_WIN)
+                    await pipe.execute()
+                except Exception:
+                    pass  # fail open on Redis errors
+
+        # /graphql — 30/min global limit (login, register, all mutations)
+        if request.method == "POST" and path == "/graphql":
             client_ip = request.client.host if request.client else "unknown"
 
             from app.core.cache import cache
@@ -144,7 +173,7 @@ async def lifespan(app: FastAPI):
 
 
 def get_app() -> FastAPI:
-    from app.api.routes import movies, proxy, chat, ai, webhooks, invoices, watch_party
+    from app.api.routes import movies, proxy, chat, ai, webhooks, invoices, watch_party, auth as auth_routes
     from app.api.graphql.schema import schema
 
     # H6 FIX: OpenAPI schema, Swagger UI (/docs), and ReDoc (/redoc) are
@@ -177,6 +206,7 @@ def get_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.include_router(auth_routes.router, prefix="/api", tags=["auth"])
     app.include_router(movies.router, prefix=settings.API_V1_STR, tags=["movies"])
     app.include_router(proxy.router, prefix=f"{settings.API_V1_STR}/proxy", tags=["proxy"])
     app.include_router(chat.router, tags=["chat"])

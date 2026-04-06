@@ -59,6 +59,8 @@ export default function RootLayout() {
               <Stack.Screen name="history" />
               <Stack.Screen name="report" />
               <Stack.Screen name="search" options={{ animation: 'fade' }} />
+              <Stack.Screen name="legal" options={{ animation: 'slide_from_bottom' }} />
+              <Stack.Screen name="continue-watching" options={{ animation: 'slide_from_bottom' }} />
             </Stack>
             <StatusBar style="light" />
           </ParentalProvider>

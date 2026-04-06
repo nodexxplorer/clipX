@@ -109,3 +109,19 @@ export const GET_LANDING_REVIEWS = gql`
     }
   }
 `;
+
+export const GET_WATCH_HISTORY = gql`
+  query GetWatchHistory($limit: Int, $offset: Int) {
+    watchHistory(limit: $limit, offset: $offset) {
+      id
+      movieboxId
+      title
+      posterUrl
+      contentType
+      currentTime
+      duration
+      progress
+      watchedAt
+    }
+  }
+`;

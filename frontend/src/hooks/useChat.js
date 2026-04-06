@@ -39,27 +39,42 @@ export function useChat(room = 'global') {
         }
     }, [historyData]);
 
-    // Get token safely (don't include in dependencies to prevent loops)
-    const getToken = useCallback(() => {
-        return typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    // Fetch a short-lived (60 s) WS ticket from the server.
+    // Browsers do not send httpOnly cookies on WebSocket upgrades, so we
+    // call this REST endpoint (which receives the cookie normally) and get
+    // a signed ticket to pass as ?ticket= on the WS URL.
+    const getWsTicket = useCallback(async () => {
+        if (typeof window === 'undefined') return null;
+        try {
+            const apiBase = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
+                .replace(/\/graphql$/, '');
+            const res = await fetch(`${apiBase}/api/auth/ws-ticket`, {
+                method: 'POST',
+                credentials: 'include', // sends the httpOnly auth_token cookie
+            });
+            if (!res.ok) return null;
+            const json = await res.json();
+            return json.ticket ?? null;
+        } catch {
+            return null;
+        }
     }, []);
 
     // WebSocket connection — stabilized to prevent reconnection storms
-    const connect = useCallback(() => {
+    const connect = useCallback(async () => {
         if (!mountedRef.current) return;
         if (wsRef.current?.readyState === WebSocket.OPEN) return;
         if (wsRef.current?.readyState === WebSocket.CONNECTING) return;
 
-        const token = getToken();
-        // Don't connect if no user or token
-        if (!token) return;
+        const ticket = await getWsTicket();
+        if (!ticket) return; // not authenticated
 
         const wsBase = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
             .replace(/^http/, 'ws')
             .replace(/\/graphql$/, '');
 
         const params = new URLSearchParams({ room });
-        params.set('token', token);
+        params.set('ticket', ticket);
         if (user?.name) params.set('name', user.name);
         if (user?.avatar) params.set('avatar', user.avatar);
 

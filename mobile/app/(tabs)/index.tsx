@@ -16,7 +16,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { GET_HOME_DATA } from '@/lib/graphql';
+import { GET_HOME_DATA, GET_DASHBOARD } from '@/lib/graphql';
+import type { ContinueWatchingItem } from '@/types';
 import {
   colors, spacing, radius, fontSize, fontWeight,
   POSTER_ASPECT, BACKDROP_ASPECT,
@@ -405,6 +406,11 @@ function Skeleton() {
 
 export default function HomeScreen() {
   const { user } = useAuth();
+  // Real Continue Watching — uses dashboardData.continueWatching
+  const { data: dashData } = useQuery<{
+    dashboardData: { continueWatching: ContinueWatchingItem[] }
+  }>(GET_DASHBOARD, { fetchPolicy: 'cache-and-network', skip: !user });
+
   const { data, loading, error, refetch } = useQuery<{
     trending: Movie[];
     popular: Movie[];
@@ -450,8 +456,8 @@ export default function HomeScreen() {
   // Pick best hero movies (have backdrop + overview)
   const heroPool = trending.filter(m => (m.backdropPath || m.backdropUrl) && m.overview);
 
-  // Simulate continue watching from first 3 trending (replace with real data)
-  const continueWatching = trending.slice(0, 3);
+  // Real Continue Watching from user's history (capped at 5 for the home row)
+  const continueWatching = (dashData?.dashboardData?.continueWatching ?? []).slice(0, 5);
 
   return (
     <View style={styles.container}>
@@ -491,18 +497,24 @@ export default function HomeScreen() {
       {/* ── Upgrade Banner (non-pro) ── */}
       {user && <UpgradeBanner plan={user.subscriptionTier ?? 'free'} />}
 
-      {/* ── Continue Watching ── */}
+      {/* ── Continue Watching — real data from dashboardData ── */}
       {user && continueWatching.length > 0 && (
         <View style={styles.rowContainer}>
-          <SectionHeader title="▶  Continue Watching" />
+          <SectionHeader
+            title="▶  Continue Watching"
+            onSeeAll={() => router.push('/continue-watching' as any)}
+          />
           <FlatList
             data={continueWatching}
             horizontal
             showsHorizontalScrollIndicator={false}
-            keyExtractor={m => m.id}
+            keyExtractor={item => item.id}
             contentContainerStyle={styles.rowList}
-            renderItem={({ item, index }) => (
-              <ContinueCard movie={item} progress={0.3 + index * 0.2} />
+            renderItem={({ item }) => (
+              <ContinueCard
+                movie={item.movie}
+                progress={item.duration > 0 ? item.currentTime / item.duration : 0}
+              />
             )}
           />
         </View>

@@ -1988,6 +1988,9 @@ class Mutation:
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
+        # Email verification gate — prevents unverified accounts from subscribing
+        if not getattr(user, "email_verified", False):
+            raise Exception("Please verify your email address before subscribing. Check your inbox for a verification link.")
         from app.core.paystack import initialize_transaction, PLAN_AMOUNTS
         import uuid as uuid_mod
         plan_key = f"{plan}_{billing}"

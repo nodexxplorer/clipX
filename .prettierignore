@@ -1,0 +1,16 @@
+# Ignore node_modules
+node_modules/
+# Ignore build artifacts and directories
+dist/
+build/
+.next/
+.expo/
+# Ignore python venv stuff
+backend/venv/
+backend/__pycache__/
+coverage/
+
+# Don't format raw assets or generated package-locks (this is typically standard anyway, but good to add)
+*.lock
+package-lock.json
+yarn.lock

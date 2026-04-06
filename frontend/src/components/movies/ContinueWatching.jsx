@@ -9,7 +9,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { FiPlay, FiClock, FiChevronRight } from 'react-icons/fi';
 import { useAuth } from '@/contexts/AuthContext';
-import { GET_WATCHLIST } from '@/graphql/queries/userQueries';
+import { GET_WATCHLIST, GET_WATCH_HISTORY } from '@/graphql/queries/userQueries';
 
 function formatTime(seconds) {
     if (!seconds) return '0:00';

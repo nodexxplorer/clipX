@@ -3,8 +3,8 @@
 import { gql } from '@apollo/client';
 
 export const TRACK_INTERACTION = gql`
-  mutation TrackInteraction($input: InteractionInput!) {
-    trackInteraction(input: $input) {
+  mutation TrackInteraction($movieId: String!, $type: String) {
+    updateWatchProgress(movieId: $movieId, contentType: "movie", currentTime: 0, duration: 0) {
       success
       message
     }
@@ -28,8 +28,8 @@ export const UPDATE_PREFERENCES = gql`
 export const RECORD_INTERACTION = TRACK_INTERACTION;
 
 export const RECORD_WATCH_PROGRESS = gql`
-  mutation RecordWatchProgress($movieId: ID!, $currentTime: Int!, $duration: Int!) {
-    recordWatchProgress(movieId: $movieId, currentTime: $currentTime, duration: $duration) {
+  mutation RecordWatchProgress($movieId: String!, $currentTime: Int!, $duration: Int!) {
+    updateWatchProgress(movieId: $movieId, contentType: "movie", currentTime: $currentTime, duration: $duration) {
       success
       message
     }

@@ -5,12 +5,23 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 
 const PREF_KEY = 'clipx_preferred_quality';
 
-export default function DownloadModal({ isOpen, onClose, movie, season, episode }) {
+export default function DownloadModal({ isOpen, onClose, movie, season: initialSeason, episode: initialEpisode }) {
     const [downloadData, setDownloadData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
     const [copiedIdx, setCopiedIdx] = useState(null);
     const [preferredQuality, setPreferredQuality] = useState(null);
+
+    const [season, setSeason] = useState(initialSeason || 0);
+    const [episode, setEpisode] = useState(initialEpisode || 1);
+
+    // Sync state when modal opens
+    useEffect(() => {
+        if (isOpen) {
+            setSeason(initialSeason || 0);
+            setEpisode(initialEpisode || 1);
+        }
+    }, [isOpen, initialSeason, initialEpisode]);
 
     // Restore preferred quality
     useEffect(() => {
@@ -89,6 +100,28 @@ export default function DownloadModal({ isOpen, onClose, movie, season, episode 
                                         <FiX className="w-6 h-6" />
                                     </button>
                                 </div>
+
+                                {movie?.seasons?.length > 0 && (
+                                    <div className="mb-6 bg-gray-800/50 p-4 rounded-xl border border-gray-700/50">
+                                        <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                            <FiFilm className="w-4 h-4" /> Switch Episode
+                                        </p>
+                                        <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.2) transparent' }}>
+                                            {movie.seasons.find(s => s.seasonNumber === season)?.episodes.map(ep => (
+                                                <button
+                                                    key={ep.episodeNumber}
+                                                    onClick={() => setEpisode(ep.episodeNumber)}
+                                                    className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${episode === ep.episodeNumber
+                                                        ? 'bg-primary-600 text-white shadow-md shadow-primary-600/30'
+                                                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
+                                                        }`}
+                                                >
+                                                    Ep {ep.episodeNumber}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {loading ? (
                                     <div className="flex flex-col items-center justify-center py-12">

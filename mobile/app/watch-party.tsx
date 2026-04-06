@@ -18,19 +18,19 @@ export default function WatchPartyScreen() {
     const { code } = useLocalSearchParams();
     const router = useRouter();
 
-    const [ws, setWs] = useState(null);
+    const [ws, setWs] = useState<WebSocket | null>(null);
     const [connected, setConnected] = useState(false);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [participantCount, setParticipantCount] = useState(0);
-    const [messages, setMessages] = useState([]);
+    const [messages, setMessages] = useState<any[]>([]);
     const [messageInput, setMessageInput] = useState('');
-    const [roomCode, setRoomCode] = useState(code || '');
+    const [roomCode, setRoomCode] = useState((typeof code === 'string' ? code : code?.[0]) || '');
     const [joined, setJoined] = useState(!!code);
 
-    const flatListRef = useRef(null);
+    const flatListRef = useRef<FlatList<any>>(null);
 
-    const joinRoom = useCallback(async (roomId) => {
+    const joinRoom = useCallback(async (roomId: string | string[]) => {
         const token = await AsyncStorage.getItem('token');
         if (!token || !roomId) return;
 
@@ -72,7 +72,7 @@ export default function WatchPartyScreen() {
         return () => ws?.close();
     }, [code]);
 
-    const sendEvent = (type, payload = {}) => {
+    const sendEvent = (type: string, payload: any = {}) => {
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type, ...payload }));
         }
@@ -84,7 +84,7 @@ export default function WatchPartyScreen() {
         setMessageInput('');
     };
 
-    const formatTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    const formatTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
     // Join screen
     if (!joined) {

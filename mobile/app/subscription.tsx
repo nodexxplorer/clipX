@@ -21,6 +21,8 @@ export default function SubscriptionScreen() {
   const [showCancel, setShowCancel] = useState(false);
   const [cancelStep, setCancelStep] = useState<'offer' | 'confirm'>('offer');
 
+  const [cancelSub] = useMutation<any>(CANCEL_SUBSCRIPTION);
+
   if (!isAuthenticated || !user) {
     return (
       <View style={styles.center}>
@@ -38,7 +40,7 @@ export default function SubscriptionScreen() {
   const isPaid = user.subscriptionTier !== 'free';
   const expiresAt = user.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt) : null;
 
-  const [cancelSub] = useMutation<any>(CANCEL_SUBSCRIPTION);
+
 
   const handleCancel = async () => {
     if (cancelStep === 'offer') {
