@@ -178,4 +178,117 @@ export const ReviewSkeleton = () => {
   );
 };
 
+export const HistoryItemSkeleton = () => {
+  return (
+    <div className={`${shimmer} bg-white/[0.02] border border-white/5 rounded-xl p-3 sm:p-4 flex items-center gap-4`}>
+      {/* Poster */}
+      <div className="w-16 h-24 sm:w-20 sm:h-28 flex-shrink-0 rounded-lg bg-white/[0.04]" />
+      {/* Info */}
+      <div className="flex-1 space-y-2">
+        <div className="bg-white/[0.04] h-5 rounded-lg w-3/5" />
+        <div className="flex gap-2">
+          <div className="bg-white/[0.04] h-4 rounded w-14" />
+          <div className="bg-white/[0.04] h-4 rounded w-16" />
+        </div>
+        <div className="hidden sm:flex items-center gap-2 mt-1">
+          <div className="bg-white/[0.04] h-2 rounded-full w-40" />
+          <div className="bg-white/[0.04] h-3 rounded w-20" />
+        </div>
+      </div>
+      {/* Right side */}
+      <div className="flex-shrink-0 hidden sm:block space-y-2">
+        <div className="bg-white/[0.04] h-3 rounded w-14 ml-auto" />
+        <div className="bg-white/[0.04] h-3 rounded w-10 ml-auto" />
+      </div>
+      {/* Button */}
+      <div className="hidden sm:block bg-white/[0.04] h-9 rounded-lg w-24 flex-shrink-0" />
+    </div>
+  );
+};
+
+export const HistorySkeleton = () => {
+  return (
+    <div className="space-y-8 animate-pulse">
+      {/* Group header */}
+      <div>
+        <div className="bg-white/[0.04] h-4 rounded w-24 mb-4" />
+        <div className="space-y-2">
+          {[...Array(4)].map((_, i) => (
+            <HistoryItemSkeleton key={i} />
+          ))}
+        </div>
+      </div>
+      <div>
+        <div className="bg-white/[0.04] h-4 rounded w-32 mb-4" />
+        <div className="space-y-2">
+          {[...Array(3)].map((_, i) => (
+            <HistoryItemSkeleton key={i} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export const NotificationSkeleton = () => {
+  return (
+    <div className="space-y-3 animate-pulse">
+      {[...Array(6)].map((_, i) => (
+        <div key={i} className={`${shimmer} flex items-start gap-4 p-5 rounded-xl border border-white/5 bg-white/[0.02]`}>
+          <div className="w-10 h-10 rounded-lg bg-white/[0.04] flex-shrink-0" />
+          <div className="flex-1 space-y-2">
+            <div className="bg-white/[0.04] h-4 rounded w-2/5" />
+            <div className="bg-white/[0.04] h-3 rounded w-full" />
+            <div className="bg-white/[0.04] h-3 rounded w-3/4" />
+            <div className="bg-white/[0.04] h-2 rounded w-16 mt-1" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export const WatchPlayerSkeleton = () => {
+  return (
+    <div className="min-h-screen bg-black">
+      {/* Player area */}
+      <div className={`${shimmer} w-full aspect-video bg-white/[0.03] max-h-[80vh]`}>
+        <div className="w-full h-full flex items-center justify-center">
+          <div className="w-20 h-20 rounded-full bg-white/[0.04]" />
+        </div>
+      </div>
+      {/* Info below player */}
+      <div className="max-w-7xl mx-auto px-6 py-6 space-y-4">
+        <div className="bg-white/[0.04] h-8 rounded-xl w-2/3" />
+        <div className="flex gap-3">
+          <div className="bg-white/[0.04] h-5 rounded w-16" />
+          <div className="bg-white/[0.04] h-5 rounded w-20" />
+          <div className="bg-white/[0.04] h-5 rounded w-24" />
+        </div>
+        <div className="space-y-2 mt-4">
+          <div className="bg-white/[0.04] h-4 rounded w-full" />
+          <div className="bg-white/[0.04] h-4 rounded w-4/5" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export const GenrePageSkeleton = () => {
+  return (
+    <div className="min-h-screen py-24 px-6 animate-pulse">
+      <div className="max-w-7xl mx-auto">
+        <div className="bg-white/[0.04] h-10 rounded-xl w-48 mb-4" />
+        <div className="bg-white/[0.04] h-5 rounded-lg w-80 mb-10" />
+        {/* Genre grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          {[...Array(8)].map((_, i) => (
+            <div key={i} className={`${shimmer} bg-white/[0.04] h-32 rounded-xl`} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default LoadingSpinner;

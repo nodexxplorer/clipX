@@ -24,7 +24,7 @@ import { RECORD_INTERACTION } from '@/graphql/mutations/interactionMutations';
 import CastList from '@/components/movies/CastList';
 import SimilarMovies from '@/components/recommendations/SimilarMovies';
 import MovieReviews from '@/components/movies/MovieReviews';
-import LoadingSpinner from '@/components/common/LoadingSpinner';
+import { MovieDetailSkeleton } from '@/components/common/LoadingSpinner';
 import DownloadModal from '@/components/common/DownloadModal';
 import Modal from '@/components/common/Modal';
 import { fromSlug } from '@/utils/slug';
@@ -118,11 +118,7 @@ export default function MovieDetailPage() {
   };
 
   if (!router.isReady || loading || !id) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <MovieDetailSkeleton />;
   }
 
   if (error) {

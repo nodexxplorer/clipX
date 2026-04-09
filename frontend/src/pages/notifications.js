@@ -8,12 +8,13 @@ import { useRouter } from 'next/router';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     FiBell, FiInfo, FiCheck, FiAlertTriangle, FiGift,
-    FiStar, FiTrash2, FiCheckCircle, FiFilter, FiArrowLeft
+    FiStar, FiTrash2, FiCheckCircle, FiFilter, FiArrowLeft,
+    FiShield, FiFilm, FiUsers, FiFlag
 } from 'react-icons/fi';
 import { useAuth } from '@/contexts/AuthContext';
 import { gql } from '@apollo/client';
 import { useQuery, useMutation } from '@apollo/client/react';
-import LoadingSpinner from '@/components/common/LoadingSpinner';
+import { NotificationSkeleton, EmptyState } from '@/components/common/LoadingSpinner';
 
 const GET_NOTIFICATIONS = gql`
   query GetNotifications {
@@ -41,12 +42,17 @@ const MARK_ALL_READ = gql`
 `;
 
 const typeConfig = {
-    info:    { icon: FiInfo,           color: 'text-blue-400',   bg: 'bg-blue-500/10',    border: 'border-blue-500/20' },
-    success: { icon: FiCheck,          color: 'text-green-400',  bg: 'bg-green-500/10',   border: 'border-green-500/20' },
-    warning: { icon: FiAlertTriangle,  color: 'text-yellow-400', bg: 'bg-yellow-500/10',  border: 'border-yellow-500/20' },
-    error:   { icon: FiAlertTriangle,  color: 'text-red-400',    bg: 'bg-red-500/10',     border: 'border-red-500/20' },
-    promo:   { icon: FiGift,           color: 'text-purple-400', bg: 'bg-purple-500/10',  border: 'border-purple-500/20' },
-    update:  { icon: FiStar,           color: 'text-primary-400', bg: 'bg-primary-500/10', border: 'border-primary-500/20' },
+    info:     { icon: FiInfo,           color: 'text-blue-400',    bg: 'bg-blue-500/10',    border: 'border-blue-500/20' },
+    success:  { icon: FiCheck,          color: 'text-green-400',   bg: 'bg-green-500/10',   border: 'border-green-500/20' },
+    warning:  { icon: FiAlertTriangle,  color: 'text-yellow-400',  bg: 'bg-yellow-500/10',  border: 'border-yellow-500/20' },
+    error:    { icon: FiAlertTriangle,  color: 'text-red-400',     bg: 'bg-red-500/10',     border: 'border-red-500/20' },
+    promo:    { icon: FiGift,           color: 'text-purple-400',  bg: 'bg-purple-500/10',  border: 'border-purple-500/20' },
+    update:   { icon: FiStar,           color: 'text-primary-400', bg: 'bg-primary-500/10', border: 'border-primary-500/20' },
+    security: { icon: FiShield,         color: 'text-orange-400',  bg: 'bg-orange-500/10',  border: 'border-orange-500/20' },
+    system:   { icon: FiBell,           color: 'text-cyan-400',    bg: 'bg-cyan-500/10',    border: 'border-cyan-500/20' },
+    social:   { icon: FiUsers,          color: 'text-pink-400',    bg: 'bg-pink-500/10',    border: 'border-pink-500/20' },
+    report:   { icon: FiFlag,           color: 'text-amber-400',   bg: 'bg-amber-500/10',   border: 'border-amber-500/20' },
+    release:  { icon: FiFilm,           color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
 };
 
 function getTimeAgo(dateStr) {
@@ -94,7 +100,13 @@ export default function NotificationsPage() {
     };
 
     if (authLoading) {
-        return <div className="min-h-screen flex items-center justify-center bg-gray-950"><LoadingSpinner size="lg" /></div>;
+        return (
+            <div className="min-h-screen py-24 px-4 sm:px-6">
+                <div className="max-w-3xl mx-auto">
+                    <NotificationSkeleton />
+                </div>
+            </div>
+        );
     }
     if (!isAuthenticated) {
         router.push('/auth/login');
@@ -168,7 +180,7 @@ export default function NotificationsPage() {
 
                     {/* Notification List */}
                     {loading && !data ? (
-                        <div className="flex justify-center py-20"><LoadingSpinner /></div>
+                        <NotificationSkeleton />
                     ) : filtered.length > 0 ? (
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
                             {filtered.map((notif, idx) => {
@@ -206,13 +218,11 @@ export default function NotificationsPage() {
                             })}
                         </motion.div>
                     ) : (
-                        <div className="text-center py-20">
-                            <FiBell className="w-12 h-12 text-gray-700 mx-auto mb-4" />
-                            <p className="text-gray-500 font-bold">
-                                {filter === 'unread' ? 'No unread notifications' : 'No notifications yet'}
-                            </p>
-                            <p className="text-gray-600 text-sm mt-2">We'll notify you about new releases, updates, and more</p>
-                        </div>
+                        <EmptyState
+                            icon={FiBell}
+                            title={filter === 'unread' ? 'No unread notifications' : 'No notifications yet'}
+                            message="We'll notify you about new releases, updates, and more"
+                        />
                     )}
                 </div>
             </div>

@@ -802,8 +802,15 @@ export default function WatchPage() {
 
   if (!isMounted || loading) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <LoadingSpinner size="lg" />
+      <div className="min-h-screen bg-black flex flex-col">
+        {/* Cinematic skeleton for player */}
+        <div className="relative w-full flex-1 flex items-center justify-center">
+          <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-black to-gray-900" />
+          <div className="relative z-10 flex flex-col items-center gap-4">
+            <div className="w-20 h-20 rounded-full border-4 border-primary-500/30 border-t-primary-500 animate-spin" />
+            <p className="text-gray-500 text-sm font-medium animate-pulse">Preparing stream…</p>
+          </div>
+        </div>
       </div>
     );
   }

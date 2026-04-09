@@ -16,7 +16,7 @@ import {
 } from 'react-icons/fi';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
-import LoadingSpinner from '@/components/common/LoadingSpinner';
+import { HistorySkeleton } from '@/components/common/LoadingSpinner';
 
 const GET_WATCH_HISTORY = gql`
   query GetWatchHistory($limit: Int, $offset: Int) {
@@ -133,8 +133,10 @@ export default function WatchHistoryPage() {
 
     if (authLoading) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-950">
-                <LoadingSpinner size="lg" />
+            <div className="min-h-screen bg-gray-950" style={{ paddingTop: '100px' }}>
+                <div className="max-w-6xl mx-auto px-4 pb-20">
+                    <HistorySkeleton />
+                </div>
             </div>
         );
     }
@@ -227,9 +229,7 @@ export default function WatchHistoryPage() {
 
                     {/* Loading */}
                     {loading && !data && (
-                        <div className="flex justify-center py-20">
-                            <LoadingSpinner size="lg" />
-                        </div>
+                        <HistorySkeleton />
                     )}
 
                     {/* Empty State */}

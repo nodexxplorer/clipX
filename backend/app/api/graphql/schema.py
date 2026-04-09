@@ -1870,10 +1870,23 @@ class Mutation:
 
             await _log_activity(db, str(user.id), "login", info, success=True)
             try:
+                ua = (info.context.request.headers.get("user-agent") or "Unknown device")[:120]
+                ip = info.context.request.client.host if info.context.request.client else "Unknown"
+                # Determine a simple browser/device label from user-agent
+                if "Mobile" in ua or "Android" in ua or "iPhone" in ua:
+                    device_label = "📱 Mobile"
+                elif "Windows" in ua:
+                    device_label = "💻 Windows"
+                elif "Mac" in ua:
+                    device_label = "🍎 Mac"
+                elif "Linux" in ua:
+                    device_label = "🐧 Linux"
+                else:
+                    device_label = "🌐 Browser"
                 await notification_service.create(
-                    db, str(user.id), title="Welcome back! 👋",
-                    message="You just signed in to clipX. Enjoy your session!",
-                    notif_type="system", action_url="/dashboard"
+                    db, str(user.id), title=f"New sign-in detected ({device_label})",
+                    message=f"You signed in from {device_label} (IP: {ip}). If this wasn't you, change your password immediately.",
+                    notif_type="security", action_url="/profile#security"
                 )
             except Exception as e:
                 print(f"Login notification error: {e}")

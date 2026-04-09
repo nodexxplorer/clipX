@@ -19,7 +19,7 @@ import { watchUrl } from '@/utils/urlHelpers';
 import MovieHero from '@/components/movies/MovieHero';
 import MovieRow from '@/components/movies/MovieRow';
 import PersonalizedRecommendations from '@/components/recommendations/PersonalizedRecommendations';
-import LoadingSpinner from '@/components/common/LoadingSpinner';
+import { DashboardSkeleton } from '@/components/common/LoadingSpinner';
 import First50Banner from '@/components/common/First50Banner';
 import GracePeriodBanner from '@/components/common/GracePeriodBanner';
 import { GET_DASHBOARD_DATA } from '@/graphql/queries/userQueries';
@@ -68,11 +68,7 @@ export default function DashboardPage() {
   }, [refetch]);
 
   if (authLoading || (loading && !data)) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-[#050607]">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   if (!user) return null;
