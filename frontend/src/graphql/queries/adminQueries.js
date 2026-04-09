@@ -105,3 +105,70 @@ export const GET_GENRES = gql`
     }
   }
 `;
+
+// ─── Revenue Page ────────────────────────────────────────────────────────────
+export const GET_REVENUE_STATS = gql`
+  query RevenueStats($days: Int) {
+    revenueStats(days: $days)
+  }
+`;
+
+// ─── Security Page ───────────────────────────────────────────────────────────
+export const GET_ADMIN_LOGIN_ACTIVITY = gql`
+  query AdminLoginActivity($limit: Int) {
+    adminLoginActivity(limit: $limit) {
+      id action deviceInfo ipAddress location success createdAt
+    }
+  }
+`;
+
+export const GET_ADMIN_ACTIVE_SESSIONS = gql`
+  query AdminActiveSessions {
+    adminActiveSessions
+  }
+`;
+
+// ─── Moderation / Reviews ────────────────────────────────────────────────────
+export const GET_ADMIN_ALL_REVIEWS = gql`
+  query AdminAllReviews($limit: Int, $offset: Int, $filter: String) {
+    adminAllReviews(limit: $limit, offset: $offset, filter: $filter)
+  }
+`;
+
+// ─── Content Management ──────────────────────────────────────────────────────
+export const GET_ADMIN_CONTENT_LIST = gql`
+  query AdminContentList($limit: Int, $search: String) {
+    adminContentList(limit: $limit, search: $search)
+  }
+`;
+
+// ─── Admin Mutations ─────────────────────────────────────────────────────────
+export const ADMIN_FEATURE_REVIEW = gql`
+  mutation AdminFeatureReview($id: ID!, $featured: Boolean!) {
+    adminFeatureReview(id: $id, featured: $featured) { success message }
+  }
+`;
+
+export const ADMIN_DELETE_REVIEW = gql`
+  mutation AdminDeleteReview($id: ID!) {
+    adminDeleteReview(id: $id) { success message }
+  }
+`;
+
+export const ADMIN_BULK_BAN_USERS = gql`
+  mutation AdminBulkBanUsers($userIds: [ID!]!, $reason: String) {
+    adminBulkBanUsers(userIds: $userIds, reason: $reason) { success message }
+  }
+`;
+
+export const ADMIN_BULK_DELETE_REVIEWS = gql`
+  mutation AdminBulkDeleteReviews($reviewIds: [ID!]!) {
+    adminBulkDeleteReviews(reviewIds: $reviewIds) { success message }
+  }
+`;
+
+export const ADMIN_REVOKE_SESSION = gql`
+  mutation AdminRevokeSession($sessionId: ID!) {
+    adminRevokeSession(sessionId: $sessionId) { success message }
+  }
+`;

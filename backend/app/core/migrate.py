@@ -92,6 +92,32 @@ MIGRATIONS = [
     END $$;
     """,
 
+    # Account lockout columns
+    """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'users' AND column_name = 'failed_login_attempts'
+        ) THEN
+            ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0;
+            RAISE NOTICE 'Added failed_login_attempts to users';
+        ELSE
+            RAISE NOTICE 'failed_login_attempts already exists on users';
+        END IF;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'users' AND column_name = 'locked_until'
+        ) THEN
+            ALTER TABLE users ADD COLUMN locked_until TIMESTAMP NULL;
+            RAISE NOTICE 'Added locked_until to users';
+        ELSE
+            RAISE NOTICE 'locked_until already exists on users';
+        END IF;
+    END $$;
+    """,
+
     # Add paystack_customer_code to users
     """
     DO $$
@@ -383,6 +409,90 @@ MIGRATIONS = [
     );
     CREATE UNIQUE INDEX IF NOT EXISTS ix_yearly_stats_user_year ON yearly_stats (user_id, year);
     """,
+
+    # ═══════════════════════════════════════════════════════════
+    # V3 Tables — Subtitles, Password Reset, Notification Prefs,
+    #              Session Management, Offline Downloads
+    # ═══════════════════════════════════════════════════════════
+
+    # Subtitles / captions (.srt / .vtt)
+    """
+    CREATE TABLE IF NOT EXISTS subtitles (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        moviebox_id VARCHAR(255) NOT NULL,
+        content_type VARCHAR(50) DEFAULT 'movie',
+        language VARCHAR(10) NOT NULL DEFAULT 'en',
+        label VARCHAR(100) DEFAULT 'English',
+        format VARCHAR(10) DEFAULT 'vtt',
+        file_url VARCHAR(500) NOT NULL,
+        season INTEGER NULL,
+        episode INTEGER NULL,
+        uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS ix_subtitles_content ON subtitles (moviebox_id, language);
+    """,
+
+    # Password reset tokens
+    """
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token VARCHAR(128) NOT NULL UNIQUE,
+        is_used BOOLEAN DEFAULT FALSE,
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS ix_password_reset_tokens_token ON password_reset_tokens (token);
+    """,
+
+    # Notification preferences (granular) — stored as JSONB on users
+    """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'users' AND column_name = 'notification_preferences'
+        ) THEN
+            ALTER TABLE users ADD COLUMN notification_preferences JSONB DEFAULT '{}'::jsonb;
+            RAISE NOTICE 'Added notification_preferences to users';
+        ELSE
+            RAISE NOTICE 'notification_preferences already exists on users';
+        END IF;
+    END $$;
+    """,
+
+    # Offline download tokens (encrypted download tracking)
+    """
+    CREATE TABLE IF NOT EXISTS offline_downloads (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        moviebox_id VARCHAR(255) NOT NULL,
+        content_type VARCHAR(50) DEFAULT 'movie',
+        encryption_key VARCHAR(512) NOT NULL,
+        iv VARCHAR(128) NOT NULL,
+        quality VARCHAR(10) DEFAULT '720p',
+        expires_at TIMESTAMP NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS ix_offline_downloads_user ON offline_downloads (user_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS ix_offline_downloads_user_content ON offline_downloads (user_id, moviebox_id);
+    """,
+
+    # Movie views telemetry for admin dashboard topMovies + genreDistribution
+    """
+    CREATE TABLE IF NOT EXISTS movie_views (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        moviebox_id VARCHAR(255) NOT NULL,
+        title VARCHAR(500) DEFAULT '',
+        genre VARCHAR(100) DEFAULT '',
+        viewed_at TIMESTAMP DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS ix_movie_views_moviebox ON movie_views (moviebox_id);
+    CREATE INDEX IF NOT EXISTS ix_movie_views_genre ON movie_views (genre);
+    CREATE INDEX IF NOT EXISTS ix_movie_views_date ON movie_views (viewed_at);
+    """,
 ]
 
 
@@ -390,7 +500,7 @@ async def run_migrations():
     from app.core.database import engine
     from sqlalchemy import text
 
-    print("🔄 Running database migrations...")
+    print("[migrate] Running database migrations...")
     for i, sql in enumerate(MIGRATIONS):
         try:
             async with engine.begin() as conn:
@@ -403,11 +513,11 @@ async def run_migrations():
                     for part in parts:
                         await conn.execute(text(part))
 
-            print(f"  ✅ Migration {i + 1}/{len(MIGRATIONS)} applied")
+            print(f"  [OK] Migration {i + 1}/{len(MIGRATIONS)} applied")
         except Exception as e:
-            print(f"  ⚠️  Migration {i + 1}/{len(MIGRATIONS)} skipped: {e}")
+            print(f"  [SKIP] Migration {i + 1}/{len(MIGRATIONS)} skipped: {e}")
 
-    print("✅ All migrations complete!")
+    print("[migrate] All migrations complete!")
 
 
 if __name__ == "__main__":

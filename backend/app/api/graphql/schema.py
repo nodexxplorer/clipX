@@ -14,6 +14,7 @@ from app.models.database import (
     FamilyPlan as DbFamilyPlan, FamilyMember as DbFamilyMember, FamilyInvite as DbFamilyInvite,
     UserLayoutPreference as DbUserLayoutPreference, PushSubscription as DbPushSubscription,
     YearlyStats as DbYearlyStats,
+    Subtitle as DbSubtitle, PasswordResetToken as DbPasswordResetToken,
 )
 from sqlalchemy.future import select
 import os
@@ -448,6 +449,83 @@ async def _log_activity(db, user_id, action: str, info=None, success: bool = Tru
 
 
 # ═══════════════════════════════════════════════════════════
+# Subtitle / Notification Prefs / Referral Types
+# ═══════════════════════════════════════════════════════════
+
+@strawberry.type
+class SubtitleType:
+    id: strawberry.ID
+    movieboxId: str
+    contentType: str = "movie"
+    language: str = "en"
+    label: str = "English"
+    format: str = "vtt"
+    fileUrl: str = ""
+    season: Optional[int] = None
+    episode: Optional[int] = None
+    createdAt: Optional[str] = None
+
+@strawberry.type
+class NotificationPreferencesType:
+    newRelease: bool = True
+    watchlist: bool = True
+    recommendations: bool = True
+    accountActivity: bool = True
+    promotions: bool = False
+    socialUpdates: bool = True
+    downloadComplete: bool = True
+
+@strawberry.input
+class NotificationPreferencesInput:
+    newRelease: Optional[bool] = None
+    watchlist: Optional[bool] = None
+    recommendations: Optional[bool] = None
+    accountActivity: Optional[bool] = None
+    promotions: Optional[bool] = None
+    socialUpdates: Optional[bool] = None
+    downloadComplete: Optional[bool] = None
+
+@strawberry.type
+class ReferralEntry:
+    id: strawberry.ID
+    email: str
+    name: Optional[str] = None
+    joinedAt: Optional[str] = None
+    subscriptionTier: str = "free"
+
+@strawberry.type
+class ReferralDashboard:
+    totalReferrals: int = 0
+    activeReferrals: int = 0
+    premiumConversions: int = 0
+    referrals: List[ReferralEntry] = strawberry.field(default_factory=list)
+
+@strawberry.type
+class SessionEntry:
+    id: strawberry.ID
+    deviceInfo: Optional[str] = None
+    ipAddress: Optional[str] = None
+    lastActive: str = ""
+    createdAt: str = ""
+    isCurrent: bool = False
+
+@strawberry.type
+class OfflineDownloadToken:
+    movieboxId: str
+    encryptionKey: str
+    iv: str
+    quality: str = "720p"
+    expiresAt: str = ""
+
+@strawberry.input
+class InteractionInput:
+    movieboxId: str
+    interactionType: str = "view"  # view, click, share, download
+    title: Optional[str] = None
+    genre: Optional[str] = None
+    contentType: Optional[str] = "movie"
+
+# ═══════════════════════════════════════════════════════════
 # Query
 # ═══════════════════════════════════════════════════════════
 
@@ -622,7 +700,7 @@ class Query:
                     (SELECT count(*) FROM users WHERE created_at >= :week) AS new_week,
                     (SELECT count(DISTINCT user_id) FROM history WHERE updated_at >= :week) AS active_users,
                     (SELECT count(*) FROM watchlist) AS total_watchlist,
-                    (SELECT coalesce(avg(current_time), 0) FROM history WHERE current_time > 0) AS avg_duration
+                    (SELECT coalesce(avg(h.current_time), 0) FROM history h WHERE h.current_time > 0) AS avg_duration
             """)
             result = await db.execute(counts_sql, {"today": today_start, "week": week_start})
             row = result.one()
@@ -643,6 +721,47 @@ class Query:
                 select(DbNotification).order_by(DbNotification.created_at.desc()).limit(20)
             )).scalars().all()
 
+            # ── Top Movies (from movie_views table) ──────────────
+            top_movies = []
+            try:
+                top_rows = (await db.execute(text("""
+                    SELECT moviebox_id, title, COUNT(*) AS view_count
+                    FROM movie_views
+                    WHERE viewed_at >= :week
+                    GROUP BY moviebox_id, title
+                    ORDER BY view_count DESC
+                    LIMIT 5
+                """), {"week": week_start})).fetchall()
+                for tr in top_rows:
+                    top_movies.append(TopMovieStat(
+                        title=tr.title or tr.moviebox_id,
+                        views=tr.view_count or 0,
+                        downloads=0,
+                        watchlistAdds=0,
+                    ))
+            except Exception as e:
+                print(f"[dashboardStats] topMovies error: {e}")
+
+            # ── Genre Distribution (from movie_views table) ──────
+            genre_dist = []
+            try:
+                genre_rows = (await db.execute(text("""
+                    SELECT genre, COUNT(*) AS view_count
+                    FROM movie_views
+                    WHERE genre IS NOT NULL AND genre != ''
+                    GROUP BY genre
+                    ORDER BY view_count DESC
+                    LIMIT 10
+                """))).fetchall()
+                for gr in genre_rows:
+                    genre_dist.append(GenreDistribution(
+                        genre=Genre(name=gr.genre, slug=gr.genre.lower().replace(" ", "-")),
+                        movieCount=0,
+                        viewCount=gr.view_count or 0,
+                    ))
+            except Exception as e:
+                print(f"[dashboardStats] genreDistribution error: {e}")
+
             return AdminDashboardStats(
                 totalUsers=row.total_users or 0,
                 totalMovies=(row.total_movies or 0) + (row.total_series or 0),
@@ -654,8 +773,8 @@ class Query:
                 totalWatchlistItems=row.total_watchlist or 0,
                 avgSessionDuration=avg_session_str,
                 userGrowth=[GrowthPoint(date=str(r.day), count=r.cnt) for r in growth_rows],
-                genreDistribution=[],
-                topMovies=[],
+                genreDistribution=genre_dist,
+                topMovies=top_movies,
                 recentActivity=[
                     ActivityLog(id=str(n.id), type=n.type or "system",
                                 description=f"{n.title}: {n.message[:80]}",
@@ -1260,6 +1379,267 @@ class Query:
             print(f"Login activity query error: {e}")
             return []
 
+    # ─── Admin: Login activity (all users) ────────────────────────────────────
+    @strawberry.field
+    async def adminLoginActivity(self, info: strawberry.Info, limit: Optional[int] = 50) -> List[LoginActivityEntry]:
+        user = await info.context.user
+        if not user or user.role not in ("admin", "superadmin"):
+            raise Exception("Admin access required")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            try:
+                result = await db.execute(text("""
+                    SELECT la.id, la.action, la.user_agent, la.ip_address,
+                           COALESCE(u.email, 'unknown') as location,
+                           la.success, la.created_at
+                    FROM login_activity la
+                    LEFT JOIN users u ON u.id = la.user_id
+                    ORDER BY la.created_at DESC
+                    LIMIT :lim
+                """), {"lim": limit or 50})
+                return [
+                    LoginActivityEntry(
+                        id=str(r[0]), action=r[1] or "login", deviceInfo=r[2],
+                        ipAddress=r[3], location=r[4],
+                        success=r[5] if r[5] is not None else True,
+                        createdAt=str(r[6]) if r[6] else ""
+                    )
+                    for r in result.fetchall()
+                ]
+            except Exception as e:
+                print(f"[adminLoginActivity] Error: {e}")
+                return []
+
+    # ─── Admin: Active sessions ───────────────────────────────────────────────
+    @strawberry.field
+    async def adminActiveSessions(self, info: strawberry.Info) -> strawberry.scalars.JSON:
+        user = await info.context.user
+        if not user or user.role not in ("admin", "superadmin"):
+            raise Exception("Admin access required")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            try:
+                result = await db.execute(text("""
+                    SELECT rt.id, COALESCE(u.email, 'unknown') as email,
+                           rt.device_info, rt.ip_address, rt.created_at, rt.expires_at
+                    FROM refresh_tokens rt
+                    JOIN users u ON u.id = rt.user_id
+                    WHERE rt.is_revoked = FALSE AND rt.expires_at > NOW()
+                    ORDER BY rt.created_at DESC
+                    LIMIT 100
+                """))
+                rows = result.fetchall()
+                return [
+                    {
+                        "id": str(r[0]), "user": r[1] or "unknown",
+                        "device": r[2] or "Unknown device", "ip": r[3] or "unknown",
+                        "location": "", "lastActive": str(r[4]) if r[4] else "",
+                        "active": True
+                    }
+                    for r in rows
+                ]
+            except Exception as e:
+                print(f"[adminActiveSessions] Error: {e}")
+                return []
+
+    # ─── Admin: Revenue stats ─────────────────────────────────────────────────
+    @strawberry.field
+    async def revenueStats(self, info: strawberry.Info, days: Optional[int] = 30) -> strawberry.scalars.JSON:
+        user = await info.context.user
+        if not user or user.role not in ("admin", "superadmin"):
+            raise Exception("Admin access required")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            try:
+                # Count subscribers by tier
+                tier_result = await db.execute(text("""
+                    SELECT subscription_tier, COUNT(*) as cnt
+                    FROM users GROUP BY subscription_tier
+                """))
+                tiers = {"free": 0, "standard": 0, "pro": 0}
+                total_subs = 0
+                for r in tier_result.fetchall():
+                    tier = (r[0] or "free").lower()
+                    if tier in tiers:
+                        tiers[tier] = r[1]
+                    total_subs += r[1]
+
+                paid = tiers["standard"] + tiers["pro"]
+                mrr = tiers["standard"] * 3000 + tiers["pro"] * 8000
+                arr = mrr * 12
+
+                # Recent payments from payment_history (if table exists)
+                recent_payments = []
+                failed_payments = []
+                try:
+                    ph_result = await db.execute(text("""
+                        SELECT ph.id, u.email, ph.amount, ph.plan, ph.status, ph.created_at, ph.reference
+                        FROM payment_history ph
+                        LEFT JOIN users u ON u.id = ph.user_id
+                        ORDER BY ph.created_at DESC LIMIT 20
+                    """))
+                    for r in ph_result.fetchall():
+                        entry = {
+                            "id": str(r[0]), "user": r[1] or "unknown", "amount": r[2] or 0,
+                            "plan": r[3] or "unknown", "status": r[4] or "paid",
+                            "date": str(r[5])[:10] if r[5] else "", "reference": r[6] or ""
+                        }
+                        if entry["status"] == "failed":
+                            entry["attempts"] = 1
+                            failed_payments.append(entry)
+                        else:
+                            recent_payments.append(entry)
+                except Exception:
+                    pass  # table may not exist yet
+
+                # Growth: monthly user count over last 6 months
+                growth = []
+                try:
+                    gr = await db.execute(text("""
+                        SELECT TO_CHAR(created_at, 'Mon') as month, COUNT(*) as cnt
+                        FROM users
+                        WHERE created_at >= NOW() - INTERVAL '6 months'
+                        GROUP BY TO_CHAR(created_at, 'Mon'), DATE_TRUNC('month', created_at)
+                        ORDER BY DATE_TRUNC('month', created_at)
+                    """))
+                    for r in gr.fetchall():
+                        growth.append({"month": r[0], "value": r[1]})
+                except Exception:
+                    pass
+
+                return {
+                    "mrr": mrr, "arr": arr,
+                    "totalSubscribers": total_subs,
+                    "churnRate": 0.0,
+                    "tiers": tiers,
+                    "growth": growth if growth else [{"month": "Now", "value": total_subs}],
+                    "recentPayments": recent_payments[:10],
+                    "failedPayments": failed_payments[:10],
+                    "methodBreakdown": [
+                        {"method": "Card", "percentage": 100, "amount": mrr}
+                    ]
+                }
+            except Exception as e:
+                print(f"[revenueStats] Error: {e}")
+                return {"mrr": 0, "arr": 0, "totalSubscribers": 0, "churnRate": 0,
+                        "tiers": {"free": 0, "standard": 0, "pro": 0}, "growth": [],
+                        "recentPayments": [], "failedPayments": [], "methodBreakdown": []}
+
+    # ─── Admin: All reviews with report counts ────────────────────────────────
+    @strawberry.field
+    async def adminAllReviews(self, info: strawberry.Info, limit: Optional[int] = 50, offset: Optional[int] = 0, filter: Optional[str] = None) -> strawberry.scalars.JSON:
+        user = await info.context.user
+        if not user or user.role not in ("admin", "superadmin"):
+            raise Exception("Admin access required")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            try:
+                where_clause = ""
+                if filter == "flagged":
+                    where_clause = "HAVING COALESCE(rr.report_count, 0) > 0"
+                elif filter == "featured":
+                    where_clause = "WHERE r.is_featured = TRUE"
+
+                q = f"""
+                    SELECT r.id, r.content, r.rating, r.is_featured, r.created_at,
+                           u.name as user_name, u.avatar as user_avatar,
+                           r.moviebox_id,
+                           COALESCE(rr.report_count, 0) as report_count
+                    FROM reviews r
+                    LEFT JOIN users u ON u.id = r.user_id
+                    LEFT JOIN (
+                        SELECT review_id, COUNT(*) as report_count
+                        FROM review_reports GROUP BY review_id
+                    ) rr ON rr.review_id = r.id
+                    {"WHERE r.is_featured = TRUE" if filter == "featured" else ""}
+                    ORDER BY COALESCE(rr.report_count, 0) DESC, r.created_at DESC
+                    LIMIT :lim OFFSET :off
+                """
+                result = await db.execute(text(q), {"lim": limit or 50, "off": offset or 0})
+                rows = result.fetchall()
+
+                counts = await db.execute(text("""
+                    SELECT COUNT(*) as total,
+                           SUM(CASE WHEN rr.rc > 0 THEN 1 ELSE 0 END) as flagged,
+                           SUM(CASE WHEN r.is_featured THEN 1 ELSE 0 END) as featured
+                    FROM reviews r
+                    LEFT JOIN (SELECT review_id, COUNT(*) as rc FROM review_reports GROUP BY review_id) rr ON rr.review_id = r.id
+                """))
+                c = counts.fetchone()
+
+                reviews = [
+                    {
+                        "id": str(r[0]), "content": r[1] or "",
+                        "rating": float(r[2]) if r[2] else None,
+                        "isFeatured": bool(r[3]),
+                        "createdAt": str(r[4]) if r[4] else "",
+                        "userName": r[5], "userAvatar": r[6],
+                        "movieboxId": r[7],
+                        "reportCount": int(r[8] or 0),
+                    }
+                    for r in rows
+                ]
+                return {
+                    "reviews": reviews,
+                    "totalCount": int(c[0] or 0) if c else 0,
+                    "flaggedCount": int(c[1] or 0) if c else 0,
+                    "featuredCount": int(c[2] or 0) if c else 0,
+                }
+            except Exception as e:
+                print(f"[adminAllReviews] Error: {e}")
+                return {"reviews": [], "totalCount": 0, "flaggedCount": 0, "featuredCount": 0}
+
+    # ─── Admin: Content list (movies + series) ────────────────────────────────
+    @strawberry.field
+    async def adminContentList(self, info: strawberry.Info, limit: Optional[int] = 50, search: Optional[str] = None) -> strawberry.scalars.JSON:
+        user = await info.context.user
+        if not user or user.role not in ("admin", "superadmin"):
+            raise Exception("Admin access required")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            try:
+                items = []
+                # Movies
+                mq = "SELECT id, title, poster_url, release_year, rating, moviebox_id FROM movies"
+                if search:
+                    mq += " WHERE title ILIKE :s"
+                mq += " ORDER BY id DESC LIMIT :lim"
+                params = {"lim": limit or 50}
+                if search:
+                    params["s"] = f"%{search}%"
+                result = await db.execute(text(mq), params)
+                for r in result.fetchall():
+                    items.append({
+                        "id": str(r[0]), "title": r[1] or "Untitled", "type": "movie",
+                        "poster": r[2] or "", "year": r[3] or "",
+                        "rating": float(r[4]) if r[4] else 0, "tier": "free",
+                        "status": "published", "trending": False, "featured": False,
+                        "views": 0, "bookmarks": 0,
+                    })
+                # Series
+                sq = "SELECT id, title, poster_url, release_year, rating, moviebox_id FROM series"
+                if search:
+                    sq += " WHERE title ILIKE :s"
+                sq += " ORDER BY id DESC LIMIT :lim"
+                result2 = await db.execute(text(sq), params)
+                for r in result2.fetchall():
+                    items.append({
+                        "id": str(r[0]), "title": r[1] or "Untitled", "type": "series",
+                        "poster": r[2] or "", "year": r[3] or "",
+                        "rating": float(r[4]) if r[4] else 0, "tier": "free",
+                        "status": "published", "trending": False, "featured": False,
+                        "views": 0, "bookmarks": 0,
+                    })
+                return items
+            except Exception as e:
+                print(f"[adminContentList] Error: {e}")
+                return []
+
     @strawberry.field
     async def premiumSignupStats(self) -> PremiumSignupStats:
         from app.core.database import AsyncSessionLocal
@@ -1277,6 +1657,164 @@ class Query:
         except Exception as e:
             print(f"Premium stats error: {e}")
             return PremiumSignupStats()
+
+    # ── Subtitles ──────────────────────────────────────────
+    @strawberry.field
+    async def subtitlesForContent(
+        self, movieboxId: str, season: Optional[int] = None, episode: Optional[int] = None,
+    ) -> List[SubtitleType]:
+        from app.core.database import AsyncSessionLocal
+        try:
+            async with AsyncSessionLocal() as db:
+                q = select(DbSubtitle).where(DbSubtitle.moviebox_id == movieboxId)
+                if season is not None:
+                    q = q.where(DbSubtitle.season == season)
+                if episode is not None:
+                    q = q.where(DbSubtitle.episode == episode)
+                rows = (await db.execute(q)).scalars().all()
+                return [SubtitleType(
+                    id=strawberry.ID(str(r.id)), movieboxId=r.moviebox_id,
+                    contentType=r.content_type or "movie", language=r.language or "en",
+                    label=r.label or "English", format=r.format or "vtt",
+                    fileUrl=r.file_url or "", season=r.season, episode=r.episode,
+                    createdAt=str(r.created_at) if r.created_at else None,
+                ) for r in rows]
+        except Exception as e:
+            print(f"[subtitlesForContent] {e}")
+            return []
+
+    # ── Notification Preferences ───────────────────────────
+    @strawberry.field
+    async def myNotificationPreferences(self, info: strawberry.Info) -> NotificationPreferencesType:
+        user = await info.context.user
+        if not user:
+            return NotificationPreferencesType()
+        prefs = user.preferences or {}
+        np = prefs.get("notification_preferences", {})
+        return NotificationPreferencesType(
+            newRelease=np.get("newRelease", True),
+            watchlist=np.get("watchlist", True),
+            recommendations=np.get("recommendations", True),
+            accountActivity=np.get("accountActivity", True),
+            promotions=np.get("promotions", False),
+            socialUpdates=np.get("socialUpdates", True),
+            downloadComplete=np.get("downloadComplete", True),
+        )
+
+    # ── Admin Referral Dashboard ───────────────────────────
+    @strawberry.field
+    async def adminReferralDashboard(self, info: strawberry.Info) -> ReferralDashboard:
+        user = await info.context.user
+        if not user or user.role != "admin":
+            raise Exception("Admin only")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        try:
+            async with AsyncSessionLocal() as db:
+                rows = (await db.execute(
+                    text("SELECT id, email, name, referral_count, subscription_tier, created_at FROM users WHERE referral_count > 0 ORDER BY referral_count DESC LIMIT 100")
+                )).fetchall()
+                entries = []
+                total = 0
+                premium = 0
+                for r in rows:
+                    total += r.referral_count or 0
+                    if r.subscription_tier and r.subscription_tier != "free":
+                        premium += 1
+                    entries.append(ReferralEntry(
+                        id=strawberry.ID(str(r.id)), email=r.email or "",
+                        name=r.name, joinedAt=str(r.created_at) if r.created_at else None,
+                        subscriptionTier=r.subscription_tier or "free",
+                    ))
+                return ReferralDashboard(
+                    totalReferrals=total, activeReferrals=len(entries),
+                    premiumConversions=premium, referrals=entries,
+                )
+        except Exception as e:
+            print(f"[adminReferralDashboard] {e}")
+            return ReferralDashboard()
+
+    # ── User-facing session management ─────────────────────
+    @strawberry.field
+    async def mySessions(self, info: strawberry.Info) -> List[SessionEntry]:
+        """List active sessions for the current user."""
+        user = await info.context.user
+        if not user:
+            return []
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        # Try to identify the current token to mark it
+        current_token_hash = None
+        try:
+            request = info.context.request
+            raw_token = request.cookies.get("refresh_token")
+            if raw_token:
+                import hashlib
+                current_token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+        except Exception:
+            pass
+
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(text("""
+                    SELECT id, device_info, ip_address, created_at, expires_at, token_hash
+                    FROM refresh_tokens
+                    WHERE user_id = :uid AND is_revoked = FALSE AND expires_at > NOW()
+                    ORDER BY created_at DESC
+                """), {"uid": str(user.id)})
+                rows = result.fetchall()
+                return [
+                    SessionEntry(
+                        id=str(r[0]),
+                        deviceInfo=r[1] or "Unknown device",
+                        ipAddress=r[2] or "Unknown",
+                        lastActive=str(r[3]) if r[3] else "",
+                        createdAt=str(r[3]) if r[3] else "",
+                        isCurrent=(r[5] == current_token_hash) if current_token_hash else False,
+                    )
+                    for r in rows
+                ]
+        except Exception as e:
+            print(f"[mySessions] Error: {e}")
+            return []
+
+    # ── Revenue CSV export (admin) ─────────────────────────
+    @strawberry.field
+    async def revenueExportCsv(self, info: strawberry.Info, days: Optional[int] = 90) -> str:
+        """Generate a CSV of revenue data for the specified time window. Returns CSV as a string."""
+        user = await info.context.user
+        if not user or user.role not in ("admin", "superadmin"):
+            raise Exception("Admin access required")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        import csv, io
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(text("""
+                    SELECT ph.id, u.email, ph.amount, ph.currency, ph.plan,
+                           ph.status, ph.payment_method, ph.paid_at, ph.created_at,
+                           ph.paystack_reference
+                    FROM payment_history ph
+                    LEFT JOIN users u ON u.id = ph.user_id
+                    WHERE ph.created_at >= NOW() - MAKE_INTERVAL(days => :days)
+                    ORDER BY ph.created_at DESC
+                """), {"days": days or 90})
+                rows = result.fetchall()
+
+                output = io.StringIO()
+                writer = csv.writer(output)
+                writer.writerow(["ID", "Email", "Amount", "Currency", "Plan",
+                                 "Status", "Method", "PaidAt", "CreatedAt", "Reference"])
+                for r in rows:
+                    writer.writerow([
+                        str(r[0]), r[1] or "", r[2] or 0, r[3] or "NGN", r[4] or "",
+                        r[5] or "", r[6] or "", str(r[7]) if r[7] else "",
+                        str(r[8]) if r[8] else "", r[9] or ""
+                    ])
+                return output.getvalue()
+        except Exception as e:
+            print(f"[revenueExportCsv] Error: {e}")
+            return "Error generating CSV: " + str(e)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1492,20 +2030,62 @@ class Mutation:
 
     @strawberry.mutation
     async def forgotPassword(self, info: strawberry.Info, email: str) -> SuccessResponse:
+        # ── Rate limit: 3 attempts per hour per IP ──────────────
+        try:
+            import redis.asyncio as aioredis
+            client_ip = info.context.request.client.host if info.context.request.client else "unknown"
+            rate_key = f"rate:forgot_password:{client_ip}"
+            r = aioredis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"), decode_responses=True)
+            attempts = await r.get(rate_key)
+            if attempts and int(attempts) >= 3:
+                return SuccessResponse(success=True, message="If an account exists, a reset link was sent")
+            pipe = r.pipeline()
+            pipe.incr(rate_key)
+            pipe.expire(rate_key, 3600)  # 1 hour window
+            await pipe.execute()
+            await r.aclose()
+        except Exception as e:
+            print(f"[forgotPassword] Rate limit check skipped: {e}")
+
         db = await info.context.get_db()
         user = (await db.execute(select(DbUser).where(DbUser.email == email))).scalars().first()
-        if user:
+        if user and user.password:
             try:
                 from app.core.email_service import send_password_reset_email
-                if user.password:
-                    send_password_reset_email(str(user.id), user.email, user.name or "User")
+                # Invalidate any existing tokens for this user
+                from sqlalchemy import update
+                await db.execute(
+                    update(DbPasswordResetToken)
+                    .where(DbPasswordResetToken.user_id == user.id, DbPasswordResetToken.is_used == False)
+                    .values(is_used=True)
+                )
+                # Create a new DB-tracked token
+                reset_token_str = secrets.token_urlsafe(64)
+                db.add(DbPasswordResetToken(
+                    user_id=user.id,
+                    token=reset_token_str,
+                    expires_at=datetime.utcnow() + timedelta(hours=1),
+                ))
+                await db.commit()
+                # Also create a JWT for the email link (carries user_id)
+                send_password_reset_email(str(user.id), user.email, user.name or "User")
             except Exception as e:
                 print(f"Failed to send reset email: {e}")
+        # Always return success to prevent email enumeration
         return SuccessResponse(success=True, message="If an account exists, a reset link was sent")
 
     @strawberry.mutation
     async def resetPassword(self, info: strawberry.Info, token: str, newPassword: str) -> SuccessResponse:
-        from app.core.auth import decode_access_token, get_password_hash
+        import re
+        from app.core.auth import decode_access_token, get_password_hash, revoke_all_user_tokens
+        # Validate password strength
+        if len(newPassword) < 8:
+            raise Exception("Password must be at least 8 characters long")
+        if not re.search(r"[A-Za-z]", newPassword):
+            raise Exception("Password must contain at least one letter")
+        if not re.search(r"\d", newPassword):
+            raise Exception("Password must contain at least one number")
+
         payload = decode_access_token(token)
         if not payload or payload.get("type") != "reset":
             raise Exception("Invalid or expired reset token")
@@ -1515,14 +2095,25 @@ class Mutation:
         if not user:
             raise Exception("User not found")
         user.password = get_password_hash(newPassword)
+        # Reset account lockout if any
+        user.failed_login_attempts = 0
+        user.locked_until = None
         await db.commit()
+        # Revoke all existing sessions (force re-login everywhere)
+        try:
+            await revoke_all_user_tokens(db, str(user.id))
+        except Exception as e:
+            print(f"[resetPassword] Failed to revoke tokens: {e}")
+        # Notify user
         try:
             await notification_service.create(
                 db, str(user.id), title="Password Updated 🔒",
-                message="Your password was successfully changed.", notif_type="system"
+                message="Your password was successfully changed. All sessions have been logged out.",
+                notif_type="system"
             )
         except Exception:
             pass
+        await _log_activity(db, str(user.id), "password_reset", info, success=True)
         return SuccessResponse(success=True, message="Password reset successfully")
 
     @strawberry.mutation
@@ -1849,6 +2440,68 @@ class Mutation:
         except Exception:
             pass
         return SuccessResponse(success=True, message="Review reported. We'll review it shortly.")
+
+    @strawberry.mutation
+    async def adminFeatureReview(self, info: strawberry.Info, id: strawberry.ID, featured: bool) -> SuccessResponse:
+        user = await info.context.user
+        if not user or user.role not in ("admin", "superadmin"):
+            raise Exception("Admin access required")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("UPDATE reviews SET is_featured = :f WHERE id = :id"), {"f": featured, "id": str(id)})
+            await db.commit()
+        return SuccessResponse(success=True, message="Review updated")
+
+    @strawberry.mutation
+    async def adminDeleteReview(self, info: strawberry.Info, id: strawberry.ID) -> SuccessResponse:
+        user = await info.context.user
+        if not user or user.role not in ("admin", "superadmin"):
+            raise Exception("Admin access required")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("DELETE FROM reviews WHERE id = :id"), {"id": str(id)})
+            await db.commit()
+        return SuccessResponse(success=True, message="Review deleted")
+
+    @strawberry.mutation
+    async def adminBulkBanUsers(self, info: strawberry.Info, userIds: List[strawberry.ID], reason: Optional[str] = "Banned by admin") -> SuccessResponse:
+        user = await info.context.user
+        if not user or user.role not in ("admin", "superadmin"):
+            raise Exception("Admin access required")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            for uid in userIds:
+                await db.execute(text("UPDATE users SET is_banned = TRUE WHERE id = :id"), {"id": str(uid)})
+            await db.commit()
+        return SuccessResponse(success=True, message=f"{len(userIds)} user(s) banned")
+
+    @strawberry.mutation
+    async def adminBulkDeleteReviews(self, info: strawberry.Info, reviewIds: List[strawberry.ID]) -> SuccessResponse:
+        user = await info.context.user
+        if not user or user.role not in ("admin", "superadmin"):
+            raise Exception("Admin access required")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            for rid in reviewIds:
+                await db.execute(text("DELETE FROM reviews WHERE id = :id"), {"id": str(rid)})
+            await db.commit()
+        return SuccessResponse(success=True, message=f"{len(reviewIds)} review(s) deleted")
+
+    @strawberry.mutation
+    async def adminRevokeSession(self, info: strawberry.Info, sessionId: strawberry.ID) -> SuccessResponse:
+        user = await info.context.user
+        if not user or user.role not in ("admin", "superadmin"):
+            raise Exception("Admin access required")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("UPDATE refresh_tokens SET is_revoked = TRUE WHERE id = :id"), {"id": str(sessionId)})
+            await db.commit()
+        return SuccessResponse(success=True, message="Session revoked")
 
     @strawberry.mutation
     async def submitReport(self, info: strawberry.Info, reason: str, description: str, movieboxId: Optional[str] = None) -> SuccessResponse:
@@ -2353,6 +3006,233 @@ class Mutation:
             existing.is_active = False
             await db.commit()
         return SuccessResponse(success=True, message="Push token removed")
+
+    # ═══════════════════════════════════════════════════════════
+    # Notification Preferences (granular)
+    # ═══════════════════════════════════════════════════════════
+
+    @strawberry.mutation
+    async def updateNotificationPreferences(
+        self, info: strawberry.Info, input: NotificationPreferencesInput
+    ) -> NotificationPreferencesType:
+        """Update granular push notification preferences."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        db = await info.context.get_db()
+        current_prefs = dict(user.preferences) if user.preferences else {}
+        np = current_prefs.get("notification_preferences", {})
+
+        if input.newRelease is not None:
+            np["newRelease"] = input.newRelease
+        if input.watchlist is not None:
+            np["watchlist"] = input.watchlist
+        if input.recommendations is not None:
+            np["recommendations"] = input.recommendations
+        if input.accountActivity is not None:
+            np["accountActivity"] = input.accountActivity
+        if input.promotions is not None:
+            np["promotions"] = input.promotions
+        if input.socialUpdates is not None:
+            np["socialUpdates"] = input.socialUpdates
+        if input.downloadComplete is not None:
+            np["downloadComplete"] = input.downloadComplete
+
+        current_prefs["notification_preferences"] = np
+        user.preferences = current_prefs
+        await db.commit()
+
+        return NotificationPreferencesType(
+            newRelease=np.get("newRelease", True),
+            watchlist=np.get("watchlist", True),
+            recommendations=np.get("recommendations", True),
+            accountActivity=np.get("accountActivity", True),
+            promotions=np.get("promotions", False),
+            socialUpdates=np.get("socialUpdates", True),
+            downloadComplete=np.get("downloadComplete", True),
+        )
+
+    # ═══════════════════════════════════════════════════════════
+    # Subtitle / Caption Upload
+    # ═══════════════════════════════════════════════════════════
+
+    @strawberry.mutation
+    async def uploadSubtitle(
+        self, info: strawberry.Info,
+        movieboxId: str, fileUrl: str,
+        language: str = "en", label: str = "English",
+        format: str = "vtt", contentType: str = "movie",
+        season: Optional[int] = None, episode: Optional[int] = None,
+    ) -> SubtitleType:
+        """Upload/register a subtitle file (.srt or .vtt) for content."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        if format not in ("srt", "vtt"):
+            raise Exception("Format must be 'srt' or 'vtt'")
+        from app.core.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            sub = DbSubtitle(
+                moviebox_id=movieboxId,
+                content_type=contentType,
+                language=language[:10],
+                label=label[:100],
+                format=format,
+                file_url=fileUrl[:500],
+                season=season,
+                episode=episode,
+                uploaded_by=user.id,
+            )
+            db.add(sub)
+            await db.commit()
+            await db.refresh(sub)
+            return SubtitleType(
+                id=strawberry.ID(str(sub.id)),
+                movieboxId=sub.moviebox_id,
+                contentType=sub.content_type or "movie",
+                language=sub.language or "en",
+                label=sub.label or "English",
+                format=sub.format or "vtt",
+                fileUrl=sub.file_url or "",
+                season=sub.season,
+                episode=sub.episode,
+                createdAt=str(sub.created_at) if sub.created_at else None,
+            )
+
+    # ═══════════════════════════════════════════════════════════
+    # User Session Management
+    # ═══════════════════════════════════════════════════════════
+
+    @strawberry.mutation
+    async def revokeMySession(self, info: strawberry.Info, sessionId: strawberry.ID) -> SuccessResponse:
+        """Revoke a specific session (refresh token) for the current user."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(text("""
+                UPDATE refresh_tokens SET is_revoked = TRUE
+                WHERE id = :sid AND user_id = :uid AND is_revoked = FALSE
+            """), {"sid": str(sessionId), "uid": str(user.id)})
+            await db.commit()
+            if result.rowcount > 0:
+                return SuccessResponse(success=True, message="Session revoked")
+        return SuccessResponse(success=False, message="Session not found")
+
+    @strawberry.mutation
+    async def revokeAllMySessions(self, info: strawberry.Info) -> SuccessResponse:
+        """Revoke all sessions except the current one (force logout everywhere else)."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        # Identify current session by its token hash
+        current_hash = None
+        try:
+            request = info.context.request
+            raw = request.cookies.get("refresh_token")
+            if raw:
+                import hashlib
+                current_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        except Exception:
+            pass
+
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            if current_hash:
+                await db.execute(text("""
+                    UPDATE refresh_tokens SET is_revoked = TRUE
+                    WHERE user_id = :uid AND is_revoked = FALSE AND token_hash != :current
+                """), {"uid": str(user.id), "current": current_hash})
+            else:
+                await db.execute(text("""
+                    UPDATE refresh_tokens SET is_revoked = TRUE
+                    WHERE user_id = :uid AND is_revoked = FALSE
+                """), {"uid": str(user.id)})
+            await db.commit()
+        return SuccessResponse(success=True, message="All other sessions revoked")
+
+    # ═══════════════════════════════════════════════════════════
+    # Offline Download Encryption
+    # ═══════════════════════════════════════════════════════════
+
+    @strawberry.mutation
+    async def requestOfflineDownload(
+        self, info: strawberry.Info, movieboxId: str,
+        contentType: str = "movie", quality: str = "720p",
+    ) -> OfflineDownloadToken:
+        """Generate an encrypted download token for offline viewing."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        tier = getattr(user, "subscription_tier", "free") or "free"
+        from app.core.drm import TIER_QUALITY_MAP
+        tier_config = TIER_QUALITY_MAP.get(tier, TIER_QUALITY_MAP["free"])
+        if not tier_config.get("allow_download", False):
+            raise Exception("Offline downloads require a Standard or Pro subscription.")
+
+        import os, hashlib
+        encryption_key = os.urandom(32).hex()  # AES-256 key
+        iv = os.urandom(16).hex()              # AES IV
+
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        expires_at = datetime.utcnow() + timedelta(days=30)
+
+        async with AsyncSessionLocal() as db:
+            # Upsert: if already downloaded, refresh the key
+            await db.execute(text("""
+                INSERT INTO offline_downloads (user_id, moviebox_id, content_type, encryption_key, iv, quality, expires_at)
+                VALUES (:uid, :mid, :ct, :key, :iv, :q, :exp)
+                ON CONFLICT (user_id, moviebox_id) DO UPDATE SET
+                    encryption_key = EXCLUDED.encryption_key,
+                    iv = EXCLUDED.iv,
+                    quality = EXCLUDED.quality,
+                    expires_at = EXCLUDED.expires_at
+            """), {
+                "uid": str(user.id), "mid": movieboxId, "ct": contentType,
+                "key": encryption_key, "iv": iv, "q": quality, "exp": expires_at,
+            })
+            await db.commit()
+
+        return OfflineDownloadToken(
+            movieboxId=movieboxId,
+            encryptionKey=encryption_key,
+            iv=iv,
+            quality=quality,
+            expiresAt=str(expires_at),
+        )
+
+    # ═══════════════════════════════════════════════════════════
+    # Content Interaction Tracking
+    # ═══════════════════════════════════════════════════════════
+
+    @strawberry.mutation
+    async def trackInteraction(
+        self, info: strawberry.Info, input: InteractionInput
+    ) -> SuccessResponse:
+        """Track a user interaction (view, click, etc.) for analytics."""
+        user = await info.context.user
+        user_id = str(user.id) if user else None
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        try:
+            async with AsyncSessionLocal() as db:
+                await db.execute(text("""
+                    INSERT INTO movie_views (user_id, moviebox_id, title, genre)
+                    VALUES (:uid, :mid, :title, :genre)
+                """), {
+                    "uid": user_id,
+                    "mid": input.movieboxId or "",
+                    "title": input.title or "",
+                    "genre": input.genre or "",
+                })
+                await db.commit()
+        except Exception as e:
+            print(f"[trackInteraction] Error: {e}")
+        return SuccessResponse(success=True, message="Interaction tracked")
 
 
 # ═══════════════════════════════════════════════════════════

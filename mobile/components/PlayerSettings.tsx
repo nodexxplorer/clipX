@@ -1,10 +1,10 @@
 /**
  * Mobile Player Settings Bottom Sheet
- * Quality selector, playback speed, fit mode for the mobile video player.
+ * Quality selector, playback speed, subtitles, and screen rotation.
  */
 import React, { useState } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, Modal, ScrollView,
+  View, Text, Pressable, StyleSheet, Modal, ScrollView, Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, fontSize, fontWeight } from '@/constants/theme';
@@ -13,13 +13,27 @@ import { useSubscription } from '@/hooks/useSubscription';
 const QUALITY_OPTIONS = [
   { value: 'auto', label: 'Auto', desc: 'Best for your connection' },
   { value: '4K', label: '4K', desc: 'Ultra HD', tier: 'pro' },
-  { value: '1080', label: '1080p', desc: 'Full HD', tier: 'standard' },
-  { value: '720', label: '720p', desc: 'HD', tier: 'standard' },
-  { value: '480', label: '480p', desc: 'SD' },
-  { value: '360', label: '360p', desc: 'Data saver' },
+  { value: '1080p', label: '1080p', desc: 'Full HD', tier: 'standard' }, // FIX: was '1080'
+  { value: '720p', label: '720p', desc: 'HD', tier: 'standard' },        // FIX: was '720'
+  { value: '480p', label: '480p', desc: 'SD' },
+  { value: '360p', label: '360p', desc: 'Data saver' },
 ];
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+const DEFAULT_SUBTITLE_TRACKS = [
+  { id: 'off', label: 'Off', language: null },
+  { id: 'en', label: 'English', language: 'en' },
+  { id: 'fr', label: 'French', language: 'fr' },
+  { id: 'es', label: 'Spanish', language: 'es' },
+  { id: 'ar', label: 'Arabic', language: 'ar' },
+];
+
+interface SubtitleTrack {
+  id: string;
+  label: string;
+  language: string | null;
+}
 
 interface PlayerSettingsProps {
   visible: boolean;
@@ -28,15 +42,31 @@ interface PlayerSettingsProps {
   onQualityChange: (q: string) => void;
   playbackRate: number;
   onSpeedChange: (s: number) => void;
+  // Subtitle support
+  subtitleTrack?: string; // currently active subtitle track id ('off' or language code)
+  onSubtitleChange?: (trackId: string) => void;
+  availableSubtitles?: SubtitleTrack[];
+  // Rotation
+  isLandscape?: boolean;
+  onRotate?: () => void;
 }
 
 export default function PlayerSettings({
   visible, onClose,
   quality, onQualityChange,
   playbackRate, onSpeedChange,
+  subtitleTrack = 'off',
+  onSubtitleChange,
+  availableSubtitles,
+  isLandscape = false,
+  onRotate,
 }: PlayerSettingsProps) {
-  const [activeTab, setActiveTab] = useState<'quality' | 'speed'>('quality');
+  const [activeTab, setActiveTab] = useState<'quality' | 'speed' | 'subtitle'>('quality');
   const { isQualityAllowed } = useSubscription();
+
+  const subtitleTracks = availableSubtitles && availableSubtitles.length > 0
+    ? availableSubtitles
+    : DEFAULT_SUBTITLE_TRACKS;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -46,6 +76,20 @@ export default function PlayerSettings({
         <View style={styles.handleBar}>
           <View style={styles.handle} />
         </View>
+
+        {/* Rotate Button (top right) */}
+        {onRotate && (
+          <Pressable style={styles.rotateBtn} onPress={() => { onRotate(); onClose(); }}>
+            <Ionicons
+              name={isLandscape ? 'phone-portrait-outline' : 'phone-landscape-outline'}
+              size={18}
+              color={colors.primary}
+            />
+            <Text style={styles.rotateBtnText}>
+              {isLandscape ? 'Portrait' : 'Landscape'}
+            </Text>
+          </Pressable>
+        )}
 
         {/* Tabs */}
         <View style={styles.tabs}>
@@ -63,9 +107,18 @@ export default function PlayerSettings({
             <Ionicons name="speedometer-outline" size={16} color={activeTab === 'speed' ? colors.primary : colors.textMuted} />
             <Text style={[styles.tabText, activeTab === 'speed' && styles.tabTextActive]}>Speed</Text>
           </Pressable>
+          <Pressable
+            style={[styles.tab, activeTab === 'subtitle' && styles.tabActive]}
+            onPress={() => setActiveTab('subtitle')}
+          >
+            <Ionicons name="text-outline" size={16} color={activeTab === 'subtitle' ? colors.primary : colors.textMuted} />
+            <Text style={[styles.tabText, activeTab === 'subtitle' && styles.tabTextActive]}>Subtitles</Text>
+          </Pressable>
         </View>
 
         <ScrollView style={styles.content} bounces={false}>
+
+          {/* Quality Tab */}
           {activeTab === 'quality' && (
             <View style={styles.section}>
               {QUALITY_OPTIONS.map(q => {
@@ -92,12 +145,18 @@ export default function PlayerSettings({
                         <Text style={styles.proBadgeText}>PRO</Text>
                       </View>
                     )}
+                    {q.tier === 'standard' && !locked && !active && (
+                      <View style={styles.stdBadge}>
+                        <Text style={styles.stdBadgeText}>STD+</Text>
+                      </View>
+                    )}
                   </Pressable>
                 );
               })}
             </View>
           )}
 
+          {/* Speed Tab */}
           {activeTab === 'speed' && (
             <View style={styles.section}>
               <View style={styles.speedGrid}>
@@ -118,6 +177,45 @@ export default function PlayerSettings({
               </View>
             </View>
           )}
+
+          {/* Subtitle Tab */}
+          {activeTab === 'subtitle' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionHint}>Select subtitle language</Text>
+              {subtitleTracks.map(track => {
+                const active = subtitleTrack === track.id;
+                return (
+                  <Pressable
+                    key={track.id}
+                    style={[styles.option, active && styles.optionActive]}
+                    onPress={() => {
+                      onSubtitleChange?.(track.id);
+                      onClose();
+                    }}
+                  >
+                    <View style={styles.optionLeft}>
+                      {active
+                        ? <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                        : <Ionicons name="ellipse-outline" size={20} color={colors.textMuted} />
+                      }
+                      <View>
+                        <Text style={[styles.optionLabel, active && styles.optionLabelActive]}>
+                          {track.label}
+                        </Text>
+                        {track.language && (
+                          <Text style={styles.optionDesc}>{track.language.toUpperCase()}</Text>
+                        )}
+                      </View>
+                    </View>
+                    {track.id === 'off' && (
+                      <Ionicons name="close-circle-outline" size={18} color={colors.textMuted} />
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+
         </ScrollView>
       </View>
     </Modal>
@@ -134,7 +232,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
     paddingBottom: 40,
-    maxHeight: '60%',
+    maxHeight: '65%',
   },
   handleBar: {
     alignItems: 'center',
@@ -145,6 +243,25 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: colors.surfaceLighter,
+  },
+  rotateBtn: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(8,145,178,0.1)',
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(8,145,178,0.25)',
+  },
+  rotateBtnText: {
+    color: colors.primary,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
   },
   tabs: {
     flexDirection: 'row',
@@ -169,7 +286,7 @@ const styles = StyleSheet.create({
   },
   tabText: {
     color: colors.textMuted,
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
     fontWeight: fontWeight.bold,
   },
   tabTextActive: {
@@ -180,6 +297,15 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: spacing.xs,
+    paddingBottom: spacing.md,
+  },
+  sectionHint: {
+    color: colors.textMuted,
+    fontSize: fontSize.xs,
+    fontWeight: fontWeight.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: spacing.sm,
   },
   option: {
     flexDirection: 'row',
@@ -224,6 +350,20 @@ const styles = StyleSheet.create({
   },
   proBadgeText: {
     color: '#a78bfa',
+    fontSize: 9,
+    fontWeight: fontWeight.black,
+    letterSpacing: 0.5,
+  },
+  stdBadge: {
+    backgroundColor: 'rgba(59,130,246,0.1)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm - 2,
+    borderWidth: 1,
+    borderColor: 'rgba(59,130,246,0.3)',
+  },
+  stdBadgeText: {
+    color: '#60a5fa',
     fontSize: 9,
     fontWeight: fontWeight.black,
     letterSpacing: 0.5,

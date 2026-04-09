@@ -1,11 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, StatusBar } from 'react-native';
+import Slider from '@react-native-community/slider';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { Ionicons } from '@expo/vector-icons';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { GET_STREAMING_URL, GET_MOVIE, UPDATE_WATCH_PROGRESS } from '@/lib/graphql';
 import { colors, spacing, radius, fontSize, fontWeight, API_URL } from '@/constants/theme';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import PlayerSettings from '@/components/PlayerSettings';
 
 // ─── FIX (Bug 1 + 3) ─────────────────────────────────────────────────────────
 // resolveStreamUrl: prepends API_URL to relative proxy paths.
@@ -51,18 +54,54 @@ function PlayerView({
     onBack: () => void;
 }) {
     const [updateProgress] = useMutation<any>(UPDATE_WATCH_PROGRESS);
-    const [volumeBoost, setVolumeBoost] = useState(false);
+    // Volume: 0.0 – 2.0 (>1.0 = boosted, native cap at 1.0 unless device supports it)
+    const [volume, setVolume] = useState(1.0);
+    const [showSettings, setShowSettings] = useState(false);
+    const [quality, setQuality] = useState('auto');
+    const [playbackRate, setPlaybackRate] = useState(1);
+    const [subtitleTrack, setSubtitleTrack] = useState('off');
+    const [isLandscape, setIsLandscape] = useState(false);
 
     const player = useVideoPlayer(streamUrl, (p) => {
         p.loop = false;
         p.play();
     });
 
+    // Apply volume to player (capped at 1.0 natively; >1 is a UI-level boost cue)
     useEffect(() => {
         if (player) {
-            player.volume = volumeBoost ? 2.0 : 1.0;
+            player.volume = Math.min(volume, 1.0);
         }
-    }, [player, volumeBoost]);
+    }, [player, volume]);
+
+    // Apply playback rate
+    useEffect(() => {
+        if (player) {
+            (player as any).playbackRate = playbackRate;
+        }
+    }, [player, playbackRate]);
+
+    // Screen orientation toggle
+    const toggleRotate = useCallback(async () => {
+        try {
+            if (isLandscape) {
+                await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+                setIsLandscape(false);
+            } else {
+                await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+                setIsLandscape(true);
+            }
+        } catch (err) {
+            console.warn('Screen orientation error:', err);
+        }
+    }, [isLandscape]);
+
+    // Restore portrait on unmount
+    useEffect(() => {
+        return () => {
+            ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+        };
+    }, []);
 
     // Periodic progress sync (online streams only, every 10 s)
     useEffect(() => {
@@ -98,6 +137,8 @@ function PlayerView({
         };
     }, [player, movieId, season, updateProgress, isLocal]);
 
+    const volumePct = Math.round(volume * 100);
+
     return (
         <View style={styles.container}>
             <StatusBar hidden />
@@ -106,17 +147,60 @@ function PlayerView({
                 player={player}
                 allowsFullscreen
                 allowsPictureInPicture
-                nativeControls={true}
+                nativeControls={false}
             />
-            <Pressable style={styles.backBtnWrapper} onPress={onBack}>
-                <Ionicons name="close" size={32} color="#fff" />
-            </Pressable>
-            <Pressable style={styles.boostBtnWrapper} onPress={() => setVolumeBoost(!volumeBoost)}>
-                <Ionicons name={volumeBoost ? "volume-high" : "volume-medium"} size={20} color={volumeBoost ? colors.primary : "#fff"} />
-                <Text style={{color: volumeBoost ? colors.primary : '#fff', fontWeight: 'bold', fontSize: 12, marginLeft: 4}}>
-                    {volumeBoost ? '200%' : '100%'}
-                </Text>
-            </Pressable>
+
+            {/* Top Controls */}
+            <View style={styles.topBar}>
+                <Pressable style={styles.iconBtn} onPress={onBack}>
+                    <Ionicons name="close" size={26} color="#fff" />
+                </Pressable>
+                <View style={{ flex: 1 }} />
+                {/* Settings button */}
+                <Pressable style={styles.iconBtn} onPress={() => setShowSettings(true)}>
+                    <Ionicons name="settings-outline" size={22} color="#fff" />
+                </Pressable>
+            </View>
+
+            {/* Bottom Controls */}
+            <View style={styles.bottomBar}>
+                {/* Volume Slider: 0 – 200% */}
+                <View style={styles.volumeRow}>
+                    <Ionicons
+                        name={volume === 0 ? 'volume-mute' : volume > 1 ? 'volume-high' : 'volume-medium'}
+                        size={18}
+                        color={volume > 1 ? colors.primary : '#fff'}
+                    />
+                    <Slider
+                        style={styles.volumeSlider}
+                        minimumValue={0}
+                        maximumValue={2}
+                        step={0.05}
+                        value={volume}
+                        onValueChange={setVolume}
+                        minimumTrackTintColor={volume > 1 ? colors.primary : '#ffffff'}
+                        maximumTrackTintColor="rgba(255,255,255,0.25)"
+                        thumbTintColor={volume > 1 ? colors.primary : '#ffffff'}
+                    />
+                    <Text style={[styles.volumeLabel, volume > 1 && styles.volumeLabelBoosted]}>
+                        {volumePct}%
+                    </Text>
+                </View>
+            </View>
+
+            {/* Player Settings Sheet */}
+            <PlayerSettings
+                visible={showSettings}
+                onClose={() => setShowSettings(false)}
+                quality={quality}
+                onQualityChange={setQuality}
+                playbackRate={playbackRate}
+                onSpeedChange={setPlaybackRate}
+                subtitleTrack={subtitleTrack}
+                onSubtitleChange={setSubtitleTrack}
+                isLandscape={isLandscape}
+                onRotate={toggleRotate}
+            />
         </View>
     );
 }
@@ -239,6 +323,41 @@ export default function WatchScreen() {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#000' },
     video: { flex: 1, width: '100%', height: '100%' },
+    // Top control bar
+    topBar: {
+        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100,
+        flexDirection: 'row', alignItems: 'center',
+        paddingTop: 44, paddingHorizontal: spacing.lg, paddingBottom: spacing.md,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+    },
+    iconBtn: {
+        padding: 8,
+        backgroundColor: 'rgba(0,0,0,0.35)',
+        borderRadius: radius.round,
+    },
+    // Bottom control bar
+    bottomBar: {
+        position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 100,
+        paddingBottom: 36, paddingHorizontal: spacing.xl, paddingTop: spacing.md,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+    },
+    volumeRow: {
+        flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    },
+    volumeSlider: {
+        flex: 1, height: 36,
+    },
+    volumeLabel: {
+        color: '#fff',
+        fontSize: fontSize.xs,
+        fontWeight: fontWeight.bold,
+        minWidth: 38,
+        textAlign: 'right',
+    },
+    volumeLabelBoosted: {
+        color: colors.primary,
+    },
+    // Error / loading screens
     centerContainer: {
         flex: 1, backgroundColor: '#000',
         justifyContent: 'center', alignItems: 'center',
@@ -272,13 +391,4 @@ const styles = StyleSheet.create({
         borderWidth: 1, borderColor: 'rgba(245,158,11,0.2)',
     },
     reportText: { color: colors.warning, fontWeight: fontWeight.bold },
-    backBtnWrapper: {
-        position: 'absolute', top: 40, left: 20, zIndex: 100,
-        padding: 8, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: radius.round,
-    },
-    boostBtnWrapper: {
-        position: 'absolute', top: 40, right: 20, zIndex: 100,
-        paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: radius.md,
-        flexDirection: 'row', alignItems: 'center'
-    },
 });

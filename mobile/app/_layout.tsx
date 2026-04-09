@@ -53,8 +53,9 @@ export default function RootLayout() {
 
               {/* Feature pages */}
               <Stack.Screen name="dashboard" />
-              <Stack.Screen name="pricing" options={{ animation: 'slide_from_bottom' }} />
-              <Stack.Screen name="subscription" />
+              {/* Subscription commented out for now */}
+              {/* <Stack.Screen name="pricing" options={{ animation: 'slide_from_bottom' }} /> */}
+              {/* <Stack.Screen name="subscription" /> */}
               <Stack.Screen name="notifications" />
               <Stack.Screen name="history" />
               <Stack.Screen name="report" />

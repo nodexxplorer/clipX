@@ -122,6 +122,7 @@ export const GET_DASHBOARD = gql`
       stats { moviesWatched totalWatchTime monthlyWatchTime watchlistCount reviewsWritten }
     }
   }
+  ${MOVIE_FRAGMENT}
 `;
 
 export const GET_NOTIFICATIONS = gql`

@@ -21,6 +21,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSubscription } from '@/hooks/useSubscription';
 import { GET_MOVIE, GET_STREAMING_URL } from '@/graphql/queries/movieQueries';
 import { RECORD_WATCH_PROGRESS } from '@/graphql/mutations/interactionMutations';
+import { GET_WATCH_HISTORY } from '@/graphql/queries/userQueries';
+import apolloClient from '@/graphql/client';
 import { fromSlug } from '@/utils/slug';
 import SkipIntro from '@/components/player/SkipIntro';
 
@@ -250,16 +252,36 @@ export default function WatchPage() {
   // --- Watch History & Resume Playback ---
   const HISTORY_KEY = actualId ? `clipx_progress_${actualId}_s${season || 0}_e${episode || 1}` : null;
 
-  // Load saved position and show resume prompt once stream is ready
-  const handleStreamReady = useCallback(() => {
+  // Load saved position: prefer server-side progress for cross-device sync, fall back to localStorage
+  const handleStreamReady = useCallback(async () => {
     if (!HISTORY_KEY || hasSeekedRef.current) return;
+    let serverProgress = null;
+    // Try server-side progress first (cross-device sync)
+    if (isAuthenticated && actualId) {
+      try {
+        const { data: histData } = await apolloClient.query({
+          query: GET_WATCH_HISTORY,
+          variables: { limit: 50 },
+          fetchPolicy: 'network-only',
+        });
+        const match = (histData?.watchHistory || []).find(h => h.movieboxId === actualId);
+        if (match && match.currentTime > 30 && (!match.duration || match.currentTime < match.duration - 60)) {
+          serverProgress = { currentTime: match.currentTime, duration: match.duration };
+        }
+      } catch (_) { }
+    }
+    if (serverProgress) {
+      setResumePrompt(serverProgress);
+      return;
+    }
+    // Fall back to localStorage
     try {
       const saved = JSON.parse(localStorage.getItem(HISTORY_KEY) || 'null');
       if (saved && saved.currentTime > 30 && (!saved.duration || saved.currentTime < saved.duration - 60)) {
         setResumePrompt(saved);
       }
     } catch (_) { }
-  }, [HISTORY_KEY]);
+  }, [HISTORY_KEY, isAuthenticated, actualId]);
 
   // Stable ref for movieData so the progress interval doesn't restart
   // every time Apollo re-renders the query result

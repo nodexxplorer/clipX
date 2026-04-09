@@ -23,6 +23,8 @@ class User(Base):
     paystack_customer_code = Column(String(255), nullable=True)
     referral_count = Column(Integer, default=0)
     grace_period_end = Column(DateTime, nullable=True)
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     watchlist = relationship("Watchlist", back_populates="user", lazy="dynamic")
@@ -306,5 +308,35 @@ class YearlyStats(Base):
     longest_binge = Column(Integer, default=0)     # minutes in longest session
     data = Column(JSON, default=dict)              # extensible extra stats
     generated_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+class Subtitle(Base):
+    """Subtitle/caption file for content (.srt or .vtt)."""
+    __tablename__ = "subtitles"
+    __table_args__ = (
+        Index("ix_subtitles_content", "moviebox_id", "language"),
+    )
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    moviebox_id = Column(String(255), nullable=False, index=True)
+    content_type = Column(String(50), default="movie")  # movie / series
+    language = Column(String(10), nullable=False, default="en")  # ISO 639-1
+    label = Column(String(100), default="English")       # Display label
+    format = Column(String(10), default="vtt")           # vtt / srt
+    file_url = Column(String(500), nullable=False)       # Path or URL to the file
+    season = Column(Integer, nullable=True)               # For series
+    episode = Column(Integer, nullable=True)              # For series
+    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class PasswordResetToken(Base):
+    """One-time password reset token with short TTL."""
+    __tablename__ = "password_reset_tokens"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token = Column(String(128), unique=True, nullable=False, index=True)
+    is_used = Column(Boolean, default=False)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User")

@@ -173,7 +173,7 @@ async def lifespan(app: FastAPI):
 
 
 def get_app() -> FastAPI:
-    from app.api.routes import movies, proxy, chat, ai, webhooks, invoices, watch_party, auth as auth_routes
+    from app.api.routes import movies, proxy, chat, ai, webhooks, invoices, watch_party, auth as auth_routes, exports
     from app.api.graphql.schema import schema
 
     # H6 FIX: OpenAPI schema, Swagger UI (/docs), and ReDoc (/redoc) are
@@ -214,6 +214,7 @@ def get_app() -> FastAPI:
     app.include_router(webhooks.router, prefix=settings.API_V1_STR, tags=["webhooks"])
     app.include_router(invoices.router, prefix=settings.API_V1_STR, tags=["invoices"])
     app.include_router(watch_party.router, tags=["watch_party"])
+    app.include_router(exports.router, prefix=settings.API_V1_STR, tags=["exports"])
 
     # GraphQL router
     graphql_app = GraphQLRouter(schema, context_getter=get_context)

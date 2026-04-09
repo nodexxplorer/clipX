@@ -18,7 +18,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import PromoCodeInput from '@/components/common/PromoCodeInput';
 import GracePeriodBanner from '@/components/common/GracePeriodBanner';
 import { gql } from '@apollo/client';
-import { useMutation } from '@apollo/client/react';
+import { useMutation, useQuery } from '@apollo/client/react';
 
 const INIT_SUBSCRIPTION = gql`
   mutation InitializeSubscription($plan: String!, $billing: String!) {
@@ -45,13 +45,13 @@ const CANCEL_SUB = gql`
 `;
 
 const MY_SUBSCRIPTION = gql`
-  mutation MySubscription {
+  query MySubscription {
     mySubscription
   }
 `;
 
 const MY_PAYMENTS = gql`
-  mutation MyPaymentHistory {
+  query MyPaymentHistory {
     myPaymentHistory
   }
 `;
@@ -79,55 +79,31 @@ export default function SubscriptionPage() {
     const [billingCycle, setBillingCycle] = useState('monthly');
     const [paymentHistory, setPaymentHistory] = useState([]);
 
-    console.log("DEBUG_IMPORTS:", {
-        Head: typeof Head,
-        Link: typeof Link,
-        motion: typeof motion.div,
-        AnimatePresence: typeof AnimatePresence,
-        LoadingSpinner: typeof LoadingSpinner,
-        PromoCodeInput: typeof PromoCodeInput,
-        GracePeriodBanner: typeof GracePeriodBanner,
-        FiCreditCard: typeof FiCreditCard,
-        FiFrown: typeof FiFrown,
-        FiMonitor: typeof FiMonitor,
-        FiStar: typeof FiStar,
-        FiArrowUp: typeof FiArrowUp
-    });
-
     const [initSubscription] = useMutation(INIT_SUBSCRIPTION);
     const [verifyPayment] = useMutation(VERIFY_PAYMENT);
     const [cancelSub] = useMutation(CANCEL_SUB);
-    const [mySub] = useMutation(MY_SUBSCRIPTION);
-    const [myPayments] = useMutation(MY_PAYMENTS);
 
-    // Load subscription data
-    useEffect(() => {
-        if (!isAuthenticated) return;
-        const loadSub = async () => {
-            try {
-                const { data } = await mySub();
-                if (data?.mySubscription) {
-                    setSubData(data.mySubscription);
-                    setCurrentTier(data.mySubscription.tier || 'free');
-                }
-            } catch { }
-        };
-        loadSub();
-    }, [isAuthenticated, mySub]);
+    // Queries (not mutations) for reading data
+    const { data: mySubData, refetch: refetchSub } = useQuery(MY_SUBSCRIPTION, {
+        skip: !isAuthenticated,
+        onCompleted: (data) => {
+            if (data?.mySubscription) {
+                setSubData(data.mySubscription);
+                setCurrentTier(data.mySubscription.tier || 'free');
+            }
+        }
+    });
+    const { data: myPaymentsData } = useQuery(MY_PAYMENTS, {
+        skip: !isAuthenticated || activeTab !== 'history',
+        onCompleted: (data) => {
+            if (data?.myPaymentHistory?.payments) {
+                setPaymentHistory(data.myPaymentHistory.payments);
+            }
+        }
+    });
 
-    // Load payment history
-    useEffect(() => {
-        if (!isAuthenticated || activeTab !== 'history') return;
-        const loadPayments = async () => {
-            try {
-                const { data } = await myPayments();
-                if (data?.myPaymentHistory?.payments) {
-                    setPaymentHistory(data.myPaymentHistory.payments);
-                }
-            } catch { }
-        };
-        loadPayments();
-    }, [isAuthenticated, activeTab, myPayments]);
+    // Subscription data and payment history are loaded via useQuery hooks above.
+    // useQuery auto-fires when skip condition changes, no manual effect needed.
 
     // Verify payment after Paystack redirect
     useEffect(() => {
@@ -139,11 +115,7 @@ export default function SubscriptionPage() {
                     if (data?.verifyPayment?.success) {
                         setMessage({ type: 'success', text: data.verifyPayment.message });
                         // Reload subscription data
-                        const { data: sub } = await mySub();
-                        if (sub?.mySubscription) {
-                            setSubData(sub.mySubscription);
-                            setCurrentTier(sub.mySubscription.tier || 'free');
-                        }
+                        refetchSub();
                     }
                 } catch (err) {
                     setMessage({ type: 'error', text: err.message || 'Payment verification failed' });

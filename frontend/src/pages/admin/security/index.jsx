@@ -1,5 +1,6 @@
 // frontend/src/pages/admin/security/index.jsx
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@apollo/client/react';
 import AdminProtectedRoute from '@/pages/auth/AdminProtectedRoute';
 import AdminLayout from '@/components/admin/layout/AdminLayout';
 import {
@@ -7,6 +8,7 @@ import {
     FiLock, FiGlobe, FiMonitor, FiClock, FiRefreshCw,
     FiServer, FiDatabase, FiHardDrive, FiWifi, FiUser, FiCpu
 } from 'react-icons/fi';
+import { GET_ADMIN_LOGIN_ACTIVITY, GET_ADMIN_ACTIVE_SESSIONS, ADMIN_REVOKE_SESSION } from '@/graphql/queries/adminQueries';
 
 function HealthCard({ label, status, value, icon: Icon }) {
     const colors = {
@@ -28,50 +30,45 @@ function HealthCard({ label, status, value, icon: Icon }) {
     );
 }
 
+function timeAgo(dateStr) {
+    if (!dateStr) return '';
+    const diff = Date.now() - new Date(dateStr).getTime();
+    if (diff < 60000) return 'Just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return `${Math.floor(diff / 86400000)}d ago`;
+}
+
 export default function SecurityPage() {
     const [activeTab, setActiveTab] = useState('health');
-    const [loading, setLoading] = useState(true);
 
-    // Mock data
-    const [data, setData] = useState({
-        health: [
-            { label: 'API Server', status: 'healthy', value: 'Uptime: 99.97%', icon: FiServer },
-            { label: 'Database', status: 'healthy', value: 'Response: 12ms avg', icon: FiDatabase },
-            { label: 'CDN', status: 'warning', value: '1 node slow', icon: FiGlobe },
-            { label: 'Memory', status: 'healthy', value: '62% used', icon: FiHardDrive },
-            { label: 'CPU', status: 'healthy', value: '34% usage', icon: FiCpu },
-            { label: 'WebSocket', status: 'healthy', value: '142 connections', icon: FiWifi },
-        ],
-        sessions: [
-            { id: 1, user: 'admin@clipx.com', device: 'Chrome / Windows', ip: '192.168.1.1', location: 'Lagos, NG', lastActive: '2m ago', active: true },
-            { id: 2, user: 'john@email.com', device: 'Safari / macOS', ip: '10.0.0.45', location: 'Abuja, NG', lastActive: '5m ago', active: true },
-            { id: 3, user: 'sara@email.com', device: 'Mobile / Android', ip: '172.16.0.12', location: 'London, UK', lastActive: '12m ago', active: true },
-            { id: 4, user: 'mike@email.com', device: 'Firefox / Linux', ip: '192.168.2.20', location: 'Accra, GH', lastActive: '1h ago', active: false },
-        ],
-        loginAttempts: [
-            { id: 1, email: 'admin@clipx.com', ip: '192.168.1.1', status: 'success', time: '2 mins ago', device: 'Chrome / Windows' },
-            { id: 2, email: 'unknown@hacker.com', ip: '45.33.122.89', status: 'failed', time: '15 mins ago', device: 'Curl / Unknown' },
-            { id: 3, email: 'john@email.com', ip: '10.0.0.45', status: 'success', time: '22 mins ago', device: 'Safari / macOS' },
-            { id: 4, email: 'admin@clipx.com', ip: '198.51.100.77', status: 'failed', time: '1 hour ago', device: 'Bot / Headless' },
-            { id: 5, email: 'sara@email.com', ip: '172.16.0.12', status: 'success', time: '2 hours ago', device: 'Mobile / Android' },
-        ],
-        auditLog: [
-            { id: 1, admin: 'admin@clipx.com', action: 'Updated user role to admin', target: 'john@email.com', time: '10 mins ago' },
-            { id: 2, admin: 'admin@clipx.com', action: 'Deleted review #142', target: 'Review on "Inception"', time: '1 hour ago' },
-            { id: 3, admin: 'admin@clipx.com', action: 'Sent broadcast notification', target: 'All users', time: '3 hours ago' },
-            { id: 4, admin: 'admin@clipx.com', action: 'Banned user', target: 'spammer@bad.com', time: '1 day ago' },
-        ],
-    });
+    const { data: loginData, loading: loginLoading } = useQuery(GET_ADMIN_LOGIN_ACTIVITY, { variables: { limit: 50 }, fetchPolicy: 'cache-and-network' });
+    const { data: sessionData, loading: sessionLoading, refetch: refetchSessions } = useQuery(GET_ADMIN_ACTIVE_SESSIONS, { fetchPolicy: 'cache-and-network' });
+    const [revokeSession] = useMutation(ADMIN_REVOKE_SESSION);
 
-    useEffect(() => {
-        setTimeout(() => setLoading(false), 600);
-    }, []);
+    const loginAttempts = loginData?.adminLoginActivity || [];
+    const sessions = sessionData?.adminActiveSessions || [];
+    const loading = loginLoading || sessionLoading;
+
+    const healthItems = [
+        { label: 'API Server', status: 'healthy', value: 'Running', icon: FiServer },
+        { label: 'Database', status: 'healthy', value: 'Connected', icon: FiDatabase },
+        { label: 'CDN', status: 'healthy', value: 'Active', icon: FiGlobe },
+        { label: 'Memory', status: 'healthy', value: 'Normal', icon: FiHardDrive },
+        { label: 'CPU', status: 'healthy', value: 'Normal', icon: FiCpu },
+        { label: 'WebSocket', status: sessions.length > 0 ? 'healthy' : 'warning', value: `${sessions.length} sessions`, icon: FiWifi },
+    ];
+
+    const handleRevoke = async (id) => {
+        if (!confirm('Revoke this session?')) return;
+        await revokeSession({ variables: { sessionId: id } });
+        refetchSessions();
+    };
 
     const tabs = [
         { id: 'health', label: 'System Health', icon: FiActivity },
         { id: 'sessions', label: 'Active Sessions', icon: FiMonitor },
         { id: 'logins', label: 'Login Attempts', icon: FiLock },
-        { id: 'audit', label: 'Audit Log', icon: FiShield },
     ];
 
     return (
@@ -112,24 +109,24 @@ export default function SecurityPage() {
                             {activeTab === 'health' && (
                                 <div className="space-y-5">
                                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                                        {data.health.map((h, i) => (
+                                        {healthItems.map((h, i) => (
                                             <HealthCard key={i} {...h} />
                                         ))}
                                     </div>
                                     <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6">
-                                        <h3 className="text-white font-bold mb-3">API Rate Limit Status</h3>
+                                        <h3 className="text-white font-bold mb-3">Session Overview</h3>
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                             <div className="text-center p-4 bg-white/[0.02] rounded-xl">
-                                                <p className="text-2xl font-black text-green-400">30</p>
-                                                <p className="text-xs text-gray-500 mt-1">Requests / minute / IP</p>
+                                                <p className="text-2xl font-black text-green-400">{sessions.length}</p>
+                                                <p className="text-xs text-gray-500 mt-1">Active Sessions</p>
                                             </div>
                                             <div className="text-center p-4 bg-white/[0.02] rounded-xl">
-                                                <p className="text-2xl font-black text-white">12</p>
-                                                <p className="text-xs text-gray-500 mt-1">Rate-limited IPs today</p>
+                                                <p className="text-2xl font-black text-white">{loginAttempts.filter(l => !l.success).length}</p>
+                                                <p className="text-xs text-gray-500 mt-1">Failed Logins (recent)</p>
                                             </div>
                                             <div className="text-center p-4 bg-white/[0.02] rounded-xl">
-                                                <p className="text-2xl font-black text-primary-400">0</p>
-                                                <p className="text-xs text-gray-500 mt-1">Blocked IPs</p>
+                                                <p className="text-2xl font-black text-primary-400">{loginAttempts.filter(l => l.success).length}</p>
+                                                <p className="text-xs text-gray-500 mt-1">Successful Logins</p>
                                             </div>
                                         </div>
                                     </div>
@@ -139,24 +136,29 @@ export default function SecurityPage() {
                             {activeTab === 'sessions' && (
                                 <div className="bg-white/[0.02] border border-white/5 rounded-2xl overflow-hidden">
                                     <div className="p-5 border-b border-white/5 flex items-center justify-between">
-                                        <h3 className="text-white font-bold">Active Sessions ({data.sessions.filter(s => s.active).length})</h3>
-                                        <button className="text-xs text-red-400 bg-red-500/10 px-3 py-1.5 rounded-lg hover:bg-red-500/20 font-bold">Force Logout All</button>
+                                        <h3 className="text-white font-bold">Active Sessions ({sessions.length})</h3>
+                                        <button onClick={() => refetchSessions()} className="text-xs text-primary-400 bg-primary-500/10 px-3 py-1.5 rounded-lg hover:bg-primary-500/20 font-bold flex items-center gap-1">
+                                            <FiRefreshCw size={12} /> Refresh
+                                        </button>
                                     </div>
                                     <div className="divide-y divide-white/5">
-                                        {data.sessions.map((s) => (
+                                        {sessions.length === 0 && (
+                                            <div className="text-center py-12 text-gray-500"><p className="text-sm">No active sessions found</p></div>
+                                        )}
+                                        {sessions.map((s) => (
                                             <div key={s.id} className="flex items-center justify-between px-5 py-4 hover:bg-white/[0.02] transition-colors">
                                                 <div className="flex items-center gap-4">
-                                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${s.active ? 'bg-green-500/10' : 'bg-gray-500/10'}`}>
-                                                        <FiUser className={`w-5 h-5 ${s.active ? 'text-green-400' : 'text-gray-500'}`} />
+                                                    <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-green-500/10">
+                                                        <FiUser className="w-5 h-5 text-green-400" />
                                                     </div>
                                                     <div>
                                                         <p className="text-white text-sm font-bold">{s.user}</p>
-                                                        <p className="text-gray-500 text-xs">{s.device} • {s.ip} • {s.location}</p>
+                                                        <p className="text-gray-500 text-xs">{s.device} • {s.ip}</p>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-3">
-                                                    <span className="text-xs text-gray-500">{s.lastActive}</span>
-                                                    <button className="text-xs text-red-400 bg-red-500/10 px-2.5 py-1 rounded-lg hover:bg-red-500/20 font-bold">Logout</button>
+                                                    <span className="text-xs text-gray-500">{timeAgo(s.lastActive)}</span>
+                                                    <button onClick={() => handleRevoke(s.id)} className="text-xs text-red-400 bg-red-500/10 px-2.5 py-1 rounded-lg hover:bg-red-500/20 font-bold">Revoke</button>
                                                 </div>
                                             </div>
                                         ))}
@@ -170,46 +172,23 @@ export default function SecurityPage() {
                                         <h3 className="text-white font-bold">Login Attempts</h3>
                                     </div>
                                     <div className="divide-y divide-white/5">
-                                        {data.loginAttempts.map((l) => (
+                                        {loginAttempts.length === 0 && (
+                                            <div className="text-center py-12 text-gray-500"><p className="text-sm">No login activity recorded</p></div>
+                                        )}
+                                        {loginAttempts.map((l) => (
                                             <div key={l.id} className="flex items-center justify-between px-5 py-3 hover:bg-white/[0.02] transition-colors">
                                                 <div className="flex items-center gap-3">
-                                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${l.status === 'success' ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                                                        {l.status === 'success' ? <FiCheck className="w-4 h-4 text-green-400" /> : <FiX className="w-4 h-4 text-red-400" />}
+                                                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${l.success ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+                                                        {l.success ? <FiCheck className="w-4 h-4 text-green-400" /> : <FiX className="w-4 h-4 text-red-400" />}
                                                     </div>
                                                     <div>
-                                                        <p className="text-white text-sm font-medium">{l.email}</p>
-                                                        <p className="text-gray-500 text-xs">{l.device} • {l.ip}</p>
+                                                        <p className="text-white text-sm font-medium">{l.location || 'Unknown'}</p>
+                                                        <p className="text-gray-500 text-xs">{l.deviceInfo || 'Unknown device'} • {l.ipAddress || ''}</p>
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
-                                                    <p className={`text-xs font-bold ${l.status === 'success' ? 'text-green-400' : 'text-red-400'}`}>{l.status}</p>
-                                                    <p className="text-xs text-gray-600">{l.time}</p>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {activeTab === 'audit' && (
-                                <div className="bg-white/[0.02] border border-white/5 rounded-2xl overflow-hidden">
-                                    <div className="p-5 border-b border-white/5">
-                                        <h3 className="text-white font-bold">Audit Log</h3>
-                                    </div>
-                                    <div className="divide-y divide-white/5">
-                                        {data.auditLog.map((a) => (
-                                            <div key={a.id} className="px-5 py-4 hover:bg-white/[0.02] transition-colors">
-                                                <div className="flex items-start gap-3">
-                                                    <div className="w-8 h-8 rounded-lg bg-primary-500/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                                        <FiShield className="w-4 h-4 text-primary-400" />
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-white text-sm font-medium">{a.action}</p>
-                                                        <p className="text-gray-500 text-xs mt-0.5">
-                                                            by <span className="text-gray-400">{a.admin}</span> → <span className="text-gray-400">{a.target}</span>
-                                                        </p>
-                                                        <p className="text-gray-600 text-xs mt-1 flex items-center gap-1"><FiClock className="w-3 h-3" /> {a.time}</p>
-                                                    </div>
+                                                    <p className={`text-xs font-bold ${l.success ? 'text-green-400' : 'text-red-400'}`}>{l.success ? 'success' : 'failed'}</p>
+                                                    <p className="text-xs text-gray-600">{timeAgo(l.createdAt)}</p>
                                                 </div>
                                             </div>
                                         ))}

@@ -146,7 +146,7 @@ export default function Header() {
     { href: '/movies', label: 'Movies', icon: FiFilm },
     { href: '/movies/trending', label: 'Trending', icon: FiTrendingUp },
     { href: '/genres', label: 'Genres', icon: FiGrid },
-    { href: '/pricing', label: 'Pricing', icon: FiStar },
+    // { href: '/pricing', label: 'Pricing', icon: FiStar }, // Subscription commented out for now
   ];
 
   return (
