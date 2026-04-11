@@ -9,7 +9,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { motion } from 'framer-motion';
 import { FiLock, FiEye, FiEyeOff, FiCheck, FiAlertTriangle } from 'react-icons/fi';
-import { gql, useMutation } from '@apollo/client';
+import { gql } from '@apollo/client';
+import { useMutation } from '@apollo/client/react';
+
 
 const RESET_PASSWORD = gql`
   mutation ResetPassword($token: String!, $newPassword: String!) {
