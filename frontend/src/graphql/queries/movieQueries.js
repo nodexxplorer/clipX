@@ -74,7 +74,6 @@ export const GET_MOVIE = gql`
     movie(id: $id) {
       ...MovieWithGenres
       tagline
-      tagline
       description
       status
       trailerUrl

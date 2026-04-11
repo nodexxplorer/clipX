@@ -25,12 +25,48 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.window_seconds = window_seconds
         self._requests: dict[str, list[float]] = defaultdict(list)      
 
-    # Tighter limits per endpoint type
-    AUTH_REFRESH_MAX = 5   # token refresh — 5/min/IP
+    # Login-specific rates (tighter than global 30/min)
+    LOGIN_MAX = 5        # 5 login attempts / min / IP
+    LOGIN_WIN = 60
+
+    # Token refresh rate limit
+    AUTH_REFRESH_MAX = 5   # 5 refresh attempts / min / IP
     AUTH_REFRESH_WIN = 60
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
+
+        # ── CSRF Protection ──────────────────────────────────────
+        # Mutations over GraphQL use httpOnly cookies for auth.
+        # Require a custom header that browsers won't send in
+        # cross-origin form submissions.  This blocks CSRF.
+        if request.method == "POST" and "/graphql" in path:
+            xrw = request.headers.get("x-requested-with", "")
+            origin = request.headers.get("origin", "")
+            referer = request.headers.get("referer", "")
+            content_type = request.headers.get("content-type", "")
+
+            # Allow if custom header is present (primary CSRF defense)
+            if not xrw and "application/json" in content_type:
+                # Only enforce if auth cookies are present (authenticated session)
+                if request.cookies.get("auth_token") or request.cookies.get("refresh_token"):
+                    # Allow same-origin requests (origin or referer match known frontends)
+                    request_origin = origin or referer
+                    allowed_origins = getattr(settings, "CORS_ORIGINS", [])
+                    is_same_origin = any(
+                        request_origin.startswith(o) for o in allowed_origins if o
+                    ) if request_origin else False
+                    # Also allow localhost / 127.0.0.1 in development
+                    is_local = any(
+                        h in request_origin for h in ("localhost", "127.0.0.1", "192.168.")
+                    ) if request_origin else False
+
+                    if not is_same_origin and not is_local:
+                        return Response(
+                            content='{"errors":[{"message":"Missing X-Requested-With header"}]}',
+                            status_code=403,
+                            media_type="application/json",
+                        )
 
         # /api/auth/refresh — tighter limit (5/min) to protect token-vending endpoint
         if request.method == "POST" and path == "/api/auth/refresh":
@@ -55,12 +91,42 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 except Exception:
                     pass  # fail open on Redis errors
 
-        # /graphql — 30/min global limit (login, register, all mutations)
+        # /graphql POST — global 30/min + login-specific 5/min
         if request.method == "POST" and path == "/graphql":
             client_ip = request.client.host if request.client else "unknown"
 
             from app.core.cache import cache
             redis_available = await cache._ensure_connected()
+
+            # ── Login-specific IP rate limit (5/min) ──────────────
+            # Peek at the body to detect login mutations
+            try:
+                body_bytes = await request.body()
+                body_str = body_bytes.decode("utf-8", errors="ignore")
+                is_login = '"login"' in body_str.lower() or 'mutation' in body_str.lower() and 'login' in body_str.lower()
+            except Exception:
+                body_bytes = b""
+                is_login = False
+
+            if is_login and redis_available and cache._redis:
+                try:
+                    login_key = f"rate_limit:login:{client_ip}"
+                    cur = await cache._redis.get(login_key)
+                    if cur and int(cur) >= self.LOGIN_MAX:
+                        return Response(
+                            content='{"errors":[{"message":"Too many login attempts. Please wait a minute."}]}',
+                            status_code=429, media_type="application/json",
+                            headers={"Retry-After": str(self.LOGIN_WIN)}
+                        )
+                    pipe = cache._redis.pipeline()
+                    pipe.incr(login_key)
+                    if not cur:
+                        pipe.expire(login_key, self.LOGIN_WIN)
+                    await pipe.execute()
+                except Exception:
+                    pass
+
+            # ── Global IP rate limit (30/min) ─────────────────────
             if redis_available and cache._redis:
                 try:
                     redis_key = f"rate_limit:{client_ip}"

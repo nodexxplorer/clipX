@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@apollo/client/react';
 import Head from 'next/head';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiHeart, FiTrash2, FiFilm, FiGrid, FiList } from 'react-icons/fi';
+import { FiHeart, FiTrash2, FiFilm, FiGrid, FiList, FiShare2 } from 'react-icons/fi';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
 import { movieUrl } from '@/utils/urlHelpers';
@@ -70,6 +70,23 @@ export default function WatchlistPage() {
     }
   };
 
+  const handleShare = async () => {
+    const titles = sortedMovies.map(m => m.title).join('\n• ');
+    const text = `My clipX Watchlist:\n• ${titles}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'My clipX Watchlist', text, url: window.location.href });
+      } catch { }
+    } else {
+      try {
+        await navigator.clipboard.writeText(text);
+        alert('Watchlist copied to clipboard!');
+      } catch {
+        alert('Could not share watchlist');
+      }
+    }
+  };
+
   return (
     <>
       <Head>
@@ -131,6 +148,15 @@ export default function WatchlistPage() {
                     <option value="rating">Highest Rated</option>
                     <option value="year">Newest First</option>
                   </select>
+
+                  {/* Share Button */}
+                  <button
+                    onClick={handleShare}
+                    className="p-2 text-primary-400 hover:bg-primary-500/10 rounded-lg transition-colors"
+                    title="Share watchlist"
+                  >
+                    <FiShare2 size={20} />
+                  </button>
 
                   {/* Clear All Button */}
                   <button

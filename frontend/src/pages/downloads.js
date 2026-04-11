@@ -143,26 +143,7 @@ export default function DownloadsPage() {
                         )}
                     </motion.div>
 
-                    {/* Free tier upsell */}
-                    {subscriptionTier === 'free' && (
-                        <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.15 }}
-                            className="mb-8 p-6 bg-gradient-to-r from-primary-600/10 to-purple-600/10 border border-primary-500/20 rounded-2xl"
-                        >
-                            <div className="flex items-center gap-3 mb-3">
-                                <FiAlertTriangle className="w-5 h-5 text-primary-400" />
-                                <p className="text-white font-bold">Downloads not available on Free plan</p>
-                            </div>
-                            <p className="text-gray-400 text-sm mb-4">
-                                Upgrade to Standard or Pro to download movies and watch offline.
-                            </p>
-                            <Link href="/subscription" className="inline-flex items-center gap-2 px-5 py-2.5 bg-primary-600 text-white text-sm font-bold rounded-xl hover:bg-primary-500 transition-colors">
-                                Upgrade Plan
-                            </Link>
-                        </motion.div>
-                    )}
+                    {/* Free tier upsell — subscription disabled */}
 
                     {/* Download List */}
                     {downloads.length > 0 ? (

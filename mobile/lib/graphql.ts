@@ -102,9 +102,12 @@ export const GET_ME = gql`
 
 export const GET_WATCHLIST = gql`
   query GetWatchlist {
-    watchlist {
-      id
-      movies { ...MovieFields genres { name } }
+    dashboardData {
+      watchlist {
+        id title overview posterPath posterUrl backdropPath backdropUrl
+        releaseDate voteAverage voteCount runtime popularity inWatchlist
+        genres { name }
+      }
     }
   }
 `;
@@ -113,7 +116,12 @@ export const GET_DASHBOARD = gql`
   query GetDashboardData {
     dashboardData {
       watchlist { ...MovieFields }
-      recentlyViewed { ...MovieFields }
+      recentlyViewed {
+        id
+        title
+        posterUrl
+        rating
+      }
       continueWatching {
         id
         movie { ...MovieFields }

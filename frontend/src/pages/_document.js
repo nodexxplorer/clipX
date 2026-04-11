@@ -6,8 +6,6 @@ export default function Document() {
     <Html lang="en" className="dark">
       <Head>
         <meta charSet="utf-8" />
-        {/* Viewport — CRITICAL for mobile rendering; must be in _document not per-page <Head> */}
-        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <link rel="icon" href="/favicon.ico" />
 
 

@@ -71,6 +71,7 @@ export default function MovieReviews({ movieId }) {
     const [content, setContent] = useState('');
     const [rating, setRating] = useState(0);
     const [showForm, setShowForm] = useState(false);
+    const [moderationWarning, setModerationWarning] = useState('');
 
     const { data, refetch } = useQuery(GET_MOVIE_REVIEWS, {
         variables: { movieId },
@@ -82,6 +83,7 @@ export default function MovieReviews({ movieId }) {
             setContent('');
             setRating(0);
             setShowForm(false);
+            setModerationWarning('');
             refetch();
         },
     });
@@ -91,9 +93,37 @@ export default function MovieReviews({ movieId }) {
         ? (reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length).toFixed(1)
         : null;
 
+    // ── Client-side content moderation ────────────────────────
+    const checkContent = (text) => {
+        const lower = text.toLowerCase();
+        // Check for common toxic patterns
+        const toxicPatterns = [
+            /\b(f+u+c+k+|s+h+i+t+|a+s+s+h+o+l+e|b+i+t+c+h|d+a+m+n)\b/i,
+            /\b(n+i+g+|f+a+g+|r+e+t+a+r+d)\b/i,
+            /\b(kill\s+your|kys|die|threat)\b/i,
+        ];
+        for (const pattern of toxicPatterns) {
+            if (pattern.test(lower)) return 'Your review contains inappropriate language. Please revise it.';
+        }
+        // Check for spam (excessive repetition)
+        if (/(.)\1{9,}/.test(text)) return 'Your review appears to contain spam. Please write a genuine review.';
+        // Check for excessive caps (>70% uppercase in reviews >20 chars)
+        if (text.length > 20) {
+            const capsRatio = (text.replace(/[^A-Z]/g, '').length) / text.replace(/\s/g, '').length;
+            if (capsRatio > 0.7) return 'Please avoid excessive use of capital letters.';
+        }
+        return '';
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!content.trim() || content.trim().length < 10 || rating < 1) return;
+        const warning = checkContent(content);
+        if (warning) {
+            setModerationWarning(warning);
+            return;
+        }
+        setModerationWarning('');
         submitReview({ variables: { movieId, content: content.trim(), rating } });
     };
 
@@ -147,18 +177,25 @@ export default function MovieReviews({ movieId }) {
 
                         <textarea
                             value={content}
-                            onChange={(e) => setContent(e.target.value)}
+                            onChange={(e) => { setContent(e.target.value); setModerationWarning(''); }}
                             placeholder="Share your thoughts about this movie... (min 10 characters)"
                             rows={3}
                             className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-white placeholder-gray-500 outline-none focus:border-primary-500/50 resize-none text-sm"
                         />
+
+                        {/* Moderation warning */}
+                        {moderationWarning && (
+                            <div className="mt-2 px-4 py-2.5 bg-red-500/10 border border-red-500/20 rounded-xl flex items-center gap-2">
+                                <span className="text-red-400 text-xs font-bold">⚠️ {moderationWarning}</span>
+                            </div>
+                        )}
 
                         <div className="flex items-center justify-between mt-3">
                             <span className="text-xs text-gray-500">{content.length}/500</span>
                             <div className="flex gap-2">
                                 <button
                                     type="button"
-                                    onClick={() => { setShowForm(false); setContent(''); setRating(0); }}
+                                    onClick={() => { setShowForm(false); setContent(''); setRating(0); setModerationWarning(''); }}
                                     className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
                                 >
                                     Cancel

@@ -15,10 +15,10 @@ import LoadingSpinner from '@/components/common/LoadingSpinner';
 import Link from 'next/link';
 
 const REWARDS = [
-    { count: 1, reward: '1 week of Standard free', icon: FiStar },
-    { count: 3, reward: '1 month of Standard free', icon: FiGift },
-    { count: 5, reward: 'Permanent Standard plan', icon: FiAward },
-    { count: 10, reward: '1 month Pro upgrade', icon: FiAward },
+    { count: 1, reward: 'Special referral badge on profile', icon: FiStar },
+    { count: 3, reward: 'Exclusive referrer flair', icon: FiGift },
+    { count: 5, reward: 'Featured on community leaderboard', icon: FiAward },
+    { count: 10, reward: 'Legendary referrer status', icon: FiAward },
 ];
 
 export default function ReferralsPage() {
@@ -98,7 +98,7 @@ export default function ReferralsPage() {
                             </button>
                             <h1 className="text-3xl md:text-4xl font-black text-white">Referrals</h1>
                         </div>
-                        <p className="text-gray-400 ml-12">Invite friends and earn free premium access</p>
+                        <p className="text-gray-400 ml-12">Invite friends and grow the clipX community</p>
                     </motion.div>
 
                     {/* Stats Card */}
@@ -217,21 +217,7 @@ export default function ReferralsPage() {
                         </div>
                     </motion.div>
 
-                    {/* Bottom CTA */}
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.3 }}
-                        className="mt-8"
-                    >
-                        <Link
-                            href="/subscription"
-                            className="flex items-center justify-between p-5 bg-white/[0.02] border border-white/5 rounded-xl hover:border-white/15 transition-colors group"
-                        >
-                            <span className="text-sm text-gray-300 font-medium">View subscription plans</span>
-                            <FiChevronRight className="w-4 h-4 text-gray-500 group-hover:text-white" />
-                        </Link>
-                    </motion.div>
+                    {/* Bottom CTA — subscription links removed */}
                 </div>
             </div>
         </>

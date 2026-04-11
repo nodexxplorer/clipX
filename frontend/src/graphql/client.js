@@ -6,6 +6,9 @@ import { onError } from '@apollo/client/link/error';
 const httpLink = createHttpLink({
   uri: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/graphql',
   credentials: 'include', // sends the httpOnly auth_token cookie automatically
+  headers: {
+    'X-Requested-With': 'XMLHttpRequest', // CSRF protection — required by backend middleware
+  },
 });
 
 const errorLink = onError(({ graphQLErrors, networkError, operation }) => {

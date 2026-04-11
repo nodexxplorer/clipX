@@ -8,13 +8,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, fontSize, fontWeight } from '@/constants/theme';
-import { useSubscription } from '@/hooks/useSubscription';
 
 const QUALITY_OPTIONS = [
   { value: 'auto', label: 'Auto', desc: 'Best for your connection' },
-  { value: '4K', label: '4K', desc: 'Ultra HD', tier: 'pro' },
-  { value: '1080p', label: '1080p', desc: 'Full HD', tier: 'standard' }, // FIX: was '1080'
-  { value: '720p', label: '720p', desc: 'HD', tier: 'standard' },        // FIX: was '720'
+  { value: '4K', label: '4K', desc: 'Ultra HD' },
+  { value: '1080p', label: '1080p', desc: 'Full HD' },
+  { value: '720p', label: '720p', desc: 'HD' },
   { value: '480p', label: '480p', desc: 'SD' },
   { value: '360p', label: '360p', desc: 'Data saver' },
 ];
@@ -62,7 +61,6 @@ export default function PlayerSettings({
   onRotate,
 }: PlayerSettingsProps) {
   const [activeTab, setActiveTab] = useState<'quality' | 'speed' | 'subtitle'>('quality');
-  const { isQualityAllowed } = useSubscription();
 
   const subtitleTracks = availableSubtitles && availableSubtitles.length > 0
     ? availableSubtitles
@@ -122,34 +120,23 @@ export default function PlayerSettings({
           {activeTab === 'quality' && (
             <View style={styles.section}>
               {QUALITY_OPTIONS.map(q => {
-                const locked = q.tier && !isQualityAllowed(q.value);
                 const active = quality === q.value;
                 return (
                   <Pressable
                     key={q.value}
-                    style={[styles.option, active && styles.optionActive, locked && styles.optionLocked]}
-                    onPress={() => { if (!locked) { onQualityChange(q.value); onClose(); } }}
-                    disabled={!!locked}
+                    style={[styles.option, active && styles.optionActive]}
+                    onPress={() => { onQualityChange(q.value); onClose(); }}
                   >
                     <View style={styles.optionLeft}>
-                      {active && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
-                      {!active && !locked && <Ionicons name="ellipse-outline" size={20} color={colors.textMuted} />}
-                      {locked && <Ionicons name="lock-closed" size={18} color={colors.warning} />}
+                      {active
+                        ? <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                        : <Ionicons name="ellipse-outline" size={20} color={colors.textMuted} />
+                      }
                       <View>
                         <Text style={[styles.optionLabel, active && styles.optionLabelActive]}>{q.label}</Text>
                         <Text style={styles.optionDesc}>{q.desc}</Text>
                       </View>
                     </View>
-                    {q.tier === 'pro' && !locked && (
-                      <View style={styles.proBadge}>
-                        <Text style={styles.proBadgeText}>PRO</Text>
-                      </View>
-                    )}
-                    {q.tier === 'standard' && !locked && !active && (
-                      <View style={styles.stdBadge}>
-                        <Text style={styles.stdBadgeText}>STD+</Text>
-                      </View>
-                    )}
                   </Pressable>
                 );
               })}

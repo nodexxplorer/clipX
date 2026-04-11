@@ -4,7 +4,7 @@ import { gql } from '@apollo/client';
 
 export const TRACK_INTERACTION = gql`
   mutation TrackInteraction($movieId: String!, $type: String) {
-    updateWatchProgress(movieId: $movieId, contentType: "movie", currentTime: 0, duration: 0) {
+    updateWatchProgress(movieId: $movieId, currentTime: 0, duration: 0) {
       success
       message
     }
@@ -29,7 +29,7 @@ export const RECORD_INTERACTION = TRACK_INTERACTION;
 
 export const RECORD_WATCH_PROGRESS = gql`
   mutation RecordWatchProgress($movieId: String!, $currentTime: Int!, $duration: Int!) {
-    updateWatchProgress(movieId: $movieId, contentType: "movie", currentTime: $currentTime, duration: $duration) {
+    updateWatchProgress(movieId: $movieId, currentTime: $currentTime, duration: $duration) {
       success
       message
     }

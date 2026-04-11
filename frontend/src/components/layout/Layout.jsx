@@ -7,6 +7,7 @@ import { useRouter } from 'next/router';
 const Header = dynamic(() => import('./Header'), { ssr: false });
 const Footer = dynamic(() => import('./Footer'), { ssr: false });
 const ChatWidget = dynamic(() => import('@/components/chat/ChatWidget'), { ssr: false });
+const EmailVerifyBanner = dynamic(() => import('@/components/common/EmailVerifyBanner'), { ssr: false });
 
 const Layout = ({ children }) => {
   const router = useRouter();
@@ -15,6 +16,9 @@ const Layout = ({ children }) => {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#050607]">
+      {/* Email verification banner */}
+      {!isWatchPage && <EmailVerifyBanner />}
+
       {/* Header - hide on watch page */}
       {!isWatchPage && <Header />}
 

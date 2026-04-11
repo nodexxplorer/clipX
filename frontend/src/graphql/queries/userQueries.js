@@ -65,9 +65,8 @@ export const GET_DASHBOARD_DATA = gql`
 
 export const GET_WATCHLIST = gql`
   query GetWatchlist {
-    watchlist {
-      id
-      movies {
+    dashboardData {
+      watchlist {
         id
         title
         description

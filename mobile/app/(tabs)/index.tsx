@@ -494,8 +494,8 @@ export default function HomeScreen() {
         />
       )}
 
-      {/* ── Upgrade Banner (non-pro) ── */}
-      {user && <UpgradeBanner plan={user.subscriptionTier ?? 'free'} />}
+      {/* Upgrade Banner — subscription disabled */}
+      {/* {user && <UpgradeBanner plan={user.subscriptionTier ?? 'free'} />} */}
 
       {/* ── Continue Watching — real data from dashboardData ── */}
       {user && continueWatching.length > 0 && (
@@ -559,8 +559,8 @@ export default function HomeScreen() {
         onSeeAll={() => router.push('/movies' as any)}
       />
 
-      {/* ── AI Recommendation Banner (Pro) ── */}
-      {user?.subscriptionTier === 'pro' && (
+      {/* AI Recommendation Banner — subscription disabled, show to all users */}
+      {user && (
         <Pressable
           style={styles.aiBanner}
           onPress={() => router.push('/recommendations' as any)}

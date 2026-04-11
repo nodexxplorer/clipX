@@ -1,12 +1,13 @@
 // src/components/common/SearchBar.jsx
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { useLazyQuery, useQuery } from '@apollo/client/react';
+import { useLazyQuery, useQuery, useMutation } from '@apollo/client/react';
 import { movieUrl } from '@/utils/urlHelpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiSearch, FiX, FiWifiOff, FiTrendingUp, FiClock, FiTrash2 } from 'react-icons/fi';
 import Image from 'next/image';
 import { SEARCH_MOVIES, SEARCH_SUGGESTIONS } from '@/graphql/queries/movieQueries';
+import { LOG_SEARCH } from '@/graphql/mutations/adminMutations';
 
 const SearchBar = ({
   placeholder = 'Search movies...',
@@ -30,6 +31,7 @@ const SearchBar = ({
   const [searchMovies, { loading, data, error }] = useLazyQuery(SEARCH_MOVIES, {
     fetchPolicy: 'cache-first',
   });
+  const [logSearchMutation] = useMutation(LOG_SEARCH, { ignoreResults: true });
 
   // Fetch trending suggestions (cached by Apollo)
   const { data: suggestionsData } = useQuery(SEARCH_SUGGESTIONS, {
@@ -119,6 +121,11 @@ const SearchBar = ({
     const trimmed = query.trim();
     if (!trimmed) return;
     saveToRecent(trimmed);
+    // Log search for analytics (fire-and-forget)
+    try {
+      const resultCount = data?.searchMovies?.totalCount ?? data?.searchMovies?.items?.length ?? 0;
+      logSearchMutation({ variables: { query: trimmed, resultCount } }).catch(() => {});
+    } catch { }
     router.push(`/search?q=${encodeURIComponent(trimmed)}`);
     setIsOpen(false);
     setQuery('');

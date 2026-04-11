@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, StatusBar } from 'react-native';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, StatusBar, Dimensions, PanResponder, Animated } from 'react-native';
+import * as NavigationBar from 'expo-navigation-bar';
 import Slider from '@react-native-community/slider';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation } from '@apollo/client/react';
@@ -69,15 +70,23 @@ function PlayerView({
 
     // Apply volume to player (capped at 1.0 natively; >1 is a UI-level boost cue)
     useEffect(() => {
-        if (player) {
-            player.volume = Math.min(volume, 1.0);
+        try {
+            if (player) {
+                player.volume = Math.min(volume, 1.0);
+            }
+        } catch (e) {
+            // Player may have been released — ignore
         }
     }, [player, volume]);
 
     // Apply playback rate
     useEffect(() => {
-        if (player) {
-            (player as any).playbackRate = playbackRate;
+        try {
+            if (player) {
+                (player as any).playbackRate = playbackRate;
+            }
+        } catch (e) {
+            // Player may have been released — ignore
         }
     }, [player, playbackRate]);
 
@@ -107,15 +116,19 @@ function PlayerView({
     useEffect(() => {
         if (!player || isLocal) return;
         const syncInterval = setInterval(() => {
-            if (player.playing) {
-                updateProgress({
-                    variables: {
-                        movieId,
-                        contentType: season > 0 ? 'series' : 'movie',
-                        currentTime: Math.floor(player.currentTime || 0),
-                        duration: Math.floor(player.duration || 120 * 60),
-                    },
-                }).catch((err) => console.log('Sync error:', err.message));
+            try {
+                if (player.playing) {
+                    updateProgress({
+                        variables: {
+                            movieId,
+                            contentType: season > 0 ? 'series' : 'movie',
+                            currentTime: Math.floor(player.currentTime || 0),
+                            duration: Math.floor(player.duration || 120 * 60),
+                        },
+                    }).catch((err) => console.log('Sync error:', err.message));
+                }
+            } catch (e) {
+                // Player may have been released mid-interval — ignore
             }
         }, 10000);
         return () => clearInterval(syncInterval);
@@ -124,69 +137,272 @@ function PlayerView({
     // Final sync on unmount
     useEffect(() => {
         return () => {
-            if (player && !isLocal) {
-                updateProgress({
-                    variables: {
-                        movieId,
-                        contentType: season > 0 ? 'series' : 'movie',
-                        currentTime: Math.floor(player.currentTime || 0),
-                        duration: Math.floor(player.duration || 120 * 60),
-                    },
-                }).catch(() => {});
+            try {
+                if (player && !isLocal) {
+                    updateProgress({
+                        variables: {
+                            movieId,
+                            contentType: season > 0 ? 'series' : 'movie',
+                            currentTime: Math.floor(player.currentTime || 0),
+                            duration: Math.floor(player.duration || 120 * 60),
+                        },
+                    }).catch(() => {});
+                }
+            } catch (e) {
+                // Player already released on unmount — safe to ignore
             }
         };
     }, [player, movieId, season, updateProgress, isLocal]);
 
     const volumePct = Math.round(volume * 100);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [totalDuration, setTotalDuration] = useState(0);
+    const [showControls, setShowControls] = useState(true);
+    const [isSeeking, setIsSeeking] = useState(false);
+    const [gestureOverlay, setGestureOverlay] = useState<{ type: string; value: number } | null>(null);
+    const [brightness, setBrightness] = useState(1.0);
+    const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastTapRef = useRef(0);
+    const gestureStartRef = useRef({ y: 0, volume: 1.0, brightness: 1.0 });
+    const screenWidth = Dimensions.get('window').width;
+
+    // Hide navigation bar on mount, restore on unmount
+    useEffect(() => {
+        NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+        NavigationBar.setBehaviorAsync('overlay-swipe').catch(() => {});
+        return () => {
+            NavigationBar.setVisibilityAsync('visible').catch(() => {});
+        };
+    }, []);
+
+    // Auto-hide controls after 4 seconds
+    const resetHideTimer = useCallback(() => {
+        if (hideTimer.current) clearTimeout(hideTimer.current);
+        hideTimer.current = setTimeout(() => setShowControls(false), 4000);
+    }, []);
+
+    useEffect(() => {
+        if (showControls) resetHideTimer();
+        return () => { if (hideTimer.current) clearTimeout(hideTimer.current); };
+    }, [showControls, resetHideTimer]);
+
+    // Track playback position
+    useEffect(() => {
+        if (!player) return;
+        const interval = setInterval(() => {
+            try {
+                if (!isSeeking) {
+                    setCurrentTime(Math.floor(player.currentTime || 0));
+                    setTotalDuration(Math.floor(player.duration || 0));
+                }
+            } catch (e) { /* Player released */ }
+        }, 500);
+        return () => clearInterval(interval);
+    }, [player, isSeeking]);
+
+    const formatTime = (secs: number) => {
+        const h = Math.floor(secs / 3600);
+        const m = Math.floor((secs % 3600) / 60);
+        const s = secs % 60;
+        if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        return `${m}:${String(s).padStart(2, '0')}`;
+    };
+
+    // Seek handler
+    const handleSeek = useCallback((val: number) => {
+        try {
+            if (player) {
+                player.currentTime = val;
+                setCurrentTime(val);
+            }
+        } catch (e) { /* Player released */ }
+    }, [player]);
+
+    // Toggle play/pause
+    const togglePlayPause = useCallback(() => {
+        try {
+            if (!player) return;
+            if (player.playing) {
+                player.pause();
+            } else {
+                player.play();
+            }
+        } catch (e) { /* Player released */ }
+    }, [player]);
+
+    // Gesture handler via PanResponder
+    const panResponder = useMemo(() => PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dy) > 10,
+        onPanResponderGrant: (evt, _gs) => {
+            const x = evt.nativeEvent.locationX;
+            gestureStartRef.current = {
+                y: 0,
+                volume,
+                brightness,
+            };
+            // Determine side
+            const isRightSide = x > screenWidth / 2;
+            if (isRightSide) {
+                setGestureOverlay({ type: 'volume', value: volumePct });
+            } else {
+                setGestureOverlay({ type: 'brightness', value: Math.round(brightness * 100) });
+            }
+        },
+        onPanResponderMove: (evt, gs) => {
+            const x = evt.nativeEvent.pageX;
+            const isRightSide = x > screenWidth / 2;
+            const sensitivity = 200; // pixels for full range
+            const delta = -gs.dy / sensitivity;
+
+            if (isRightSide) {
+                // Volume control (right side)
+                const newVol = Math.max(0, Math.min(2, gestureStartRef.current.volume + delta));
+                setVolume(newVol);
+                setGestureOverlay({ type: 'volume', value: Math.round(newVol * 100) });
+            } else {
+                // Brightness control (left side)
+                const newBright = Math.max(0, Math.min(1, gestureStartRef.current.brightness + delta));
+                setBrightness(newBright);
+                setGestureOverlay({ type: 'brightness', value: Math.round(newBright * 100) });
+            }
+        },
+        onPanResponderRelease: () => {
+            setTimeout(() => setGestureOverlay(null), 500);
+        },
+    }), [volume, brightness, screenWidth, volumePct]);
+
+    // Handle tap (single tap = toggle controls, double tap = play/pause)
+    const handleTap = useCallback(() => {
+        const now = Date.now();
+        if (now - lastTapRef.current < 300) {
+            // Double tap → play/pause
+            togglePlayPause();
+            lastTapRef.current = 0;
+        } else {
+            // Single tap → toggle controls after short delay
+            lastTapRef.current = now;
+            setTimeout(() => {
+                if (Date.now() - lastTapRef.current >= 280) {
+                    setShowControls(prev => !prev);
+                }
+            }, 300);
+        }
+    }, [togglePlayPause]);
+
+    const progress = totalDuration > 0 ? currentTime / totalDuration : 0;
 
     return (
         <View style={styles.container}>
             <StatusBar hidden />
             <VideoView
-                style={styles.video}
+                style={[styles.video, { opacity: brightness }]}
                 player={player}
                 allowsFullscreen
                 allowsPictureInPicture
                 nativeControls={false}
             />
 
-            {/* Top Controls */}
-            <View style={styles.topBar}>
-                <Pressable style={styles.iconBtn} onPress={onBack}>
-                    <Ionicons name="close" size={26} color="#fff" />
-                </Pressable>
-                <View style={{ flex: 1 }} />
-                {/* Settings button */}
-                <Pressable style={styles.iconBtn} onPress={() => setShowSettings(true)}>
-                    <Ionicons name="settings-outline" size={22} color="#fff" />
-                </Pressable>
-            </View>
+            {/* Gesture layer — captures swipes and taps */}
+            <View
+                style={styles.gestureLayer}
+                {...panResponder.panHandlers}
+                onTouchEnd={(e) => {
+                    // Only handle tap if not a pan gesture
+                    if (e.nativeEvent.changedTouches.length === 1) {
+                        handleTap();
+                    }
+                }}
+            />
 
-            {/* Bottom Controls */}
-            <View style={styles.bottomBar}>
-                {/* Volume Slider: 0 – 200% */}
-                <View style={styles.volumeRow}>
+            {/* Gesture Feedback Overlay */}
+            {gestureOverlay && (
+                <View style={styles.gestureOverlay}>
                     <Ionicons
-                        name={volume === 0 ? 'volume-mute' : volume > 1 ? 'volume-high' : 'volume-medium'}
-                        size={18}
-                        color={volume > 1 ? colors.primary : '#fff'}
+                        name={gestureOverlay.type === 'volume'
+                            ? (gestureOverlay.value === 0 ? 'volume-mute' : 'volume-high')
+                            : (gestureOverlay.value > 50 ? 'sunny' : 'sunny-outline')
+                        }
+                        size={28}
+                        color="#fff"
                     />
-                    <Slider
-                        style={styles.volumeSlider}
-                        minimumValue={0}
-                        maximumValue={2}
-                        step={0.05}
-                        value={volume}
-                        onValueChange={setVolume}
-                        minimumTrackTintColor={volume > 1 ? colors.primary : '#ffffff'}
-                        maximumTrackTintColor="rgba(255,255,255,0.25)"
-                        thumbTintColor={volume > 1 ? colors.primary : '#ffffff'}
-                    />
-                    <Text style={[styles.volumeLabel, volume > 1 && styles.volumeLabelBoosted]}>
-                        {volumePct}%
-                    </Text>
+                    <Text style={styles.gestureText}>{gestureOverlay.value}%</Text>
+                    <View style={styles.gestureBarBg}>
+                        <View style={[styles.gestureBarFill, {
+                            width: `${Math.min(100, gestureOverlay.type === 'volume' ? gestureOverlay.value / 2 : gestureOverlay.value)}%`,
+                            backgroundColor: gestureOverlay.type === 'volume' ? colors.primary : '#f59e0b',
+                        }]} />
+                    </View>
                 </View>
-            </View>
+            )}
+
+            {/* Controls — only visible when showControls is true */}
+            {showControls && (
+                <>
+                    {/* Top bar */}
+                    <View style={styles.topBar}>
+                        <Pressable style={styles.iconBtn} onPress={onBack}>
+                            <Ionicons name="close" size={26} color="#fff" />
+                        </Pressable>
+                        <View style={{ flex: 1 }} />
+                        <Pressable style={styles.iconBtn} onPress={() => setShowSettings(true)}>
+                            <Ionicons name="settings-outline" size={22} color="#fff" />
+                        </Pressable>
+                    </View>
+
+                    {/* Center play/pause button */}
+                    <Pressable style={styles.centerPlayBtn} onPress={togglePlayPause}>
+                        <Ionicons
+                            name={player?.playing ? 'pause' : 'play'}
+                            size={44}
+                            color="#fff"
+                        />
+                    </Pressable>
+
+                    {/* Bottom bar with progress + controls */}
+                    <View style={styles.bottomBar}>
+                        {/* Seekable progress bar */}
+                        <Slider
+                            style={styles.progressSlider}
+                            minimumValue={0}
+                            maximumValue={totalDuration > 0 ? totalDuration : 1}
+                            value={currentTime}
+                            onSlidingStart={() => setIsSeeking(true)}
+                            onSlidingComplete={(val) => {
+                                handleSeek(Math.floor(val));
+                                setIsSeeking(false);
+                            }}
+                            onValueChange={(val) => setCurrentTime(Math.floor(val))}
+                            minimumTrackTintColor={colors.primary}
+                            maximumTrackTintColor="rgba(255,255,255,0.3)"
+                            thumbTintColor={colors.primary}
+                        />
+
+                        {/* Time + controls row */}
+                        <View style={styles.controlsRow}>
+                            <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
+                            <Text style={styles.timeSep}> / </Text>
+                            <Text style={styles.timeText}>
+                                {totalDuration > 0 ? formatTime(totalDuration) : '--:--'}
+                            </Text>
+
+                            <View style={{ flex: 1 }} />
+
+                            {/* Landscape toggle */}
+                            <Pressable
+                                style={[styles.controlBtn, isLandscape && styles.controlBtnActive]}
+                                onPress={toggleRotate}
+                            >
+                                <Ionicons
+                                    name={isLandscape ? 'phone-portrait-outline' : 'phone-landscape-outline'}
+                                    size={18}
+                                    color="#fff"
+                                />
+                            </Pressable>
+                        </View>
+                    </View>
+                </>
+            )}
 
             {/* Player Settings Sheet */}
             <PlayerSettings
@@ -310,6 +526,7 @@ export default function WatchScreen() {
 
     return (
         <PlayerView
+            key={streamUrl}
             streamUrl={streamUrl}
             movieId={id}
             season={season}
@@ -323,40 +540,104 @@ export default function WatchScreen() {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#000' },
     video: { flex: 1, width: '100%', height: '100%' },
+
+    // Gesture layer — sits on top of video, captures all touch events
+    gestureLayer: {
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        zIndex: 50,
+    },
+
     // Top control bar
     topBar: {
-        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100,
+        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 200,
         flexDirection: 'row', alignItems: 'center',
         paddingTop: 44, paddingHorizontal: spacing.lg, paddingBottom: spacing.md,
-        backgroundColor: 'rgba(0,0,0,0.45)',
+        backgroundColor: 'rgba(0,0,0,0.5)',
     },
     iconBtn: {
         padding: 8,
-        backgroundColor: 'rgba(0,0,0,0.35)',
+        backgroundColor: 'rgba(0,0,0,0.4)',
         borderRadius: radius.round,
     },
+
+    // Center play/pause
+    centerPlayBtn: {
+        position: 'absolute',
+        top: '50%', left: '50%',
+        marginTop: -32, marginLeft: -32,
+        width: 64, height: 64,
+        borderRadius: 32,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        alignItems: 'center', justifyContent: 'center',
+        zIndex: 200,
+    },
+
     // Bottom control bar
     bottomBar: {
-        position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 100,
-        paddingBottom: 36, paddingHorizontal: spacing.xl, paddingTop: spacing.md,
-        backgroundColor: 'rgba(0,0,0,0.45)',
+        position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 200,
+        paddingBottom: 20, paddingHorizontal: spacing.sm, paddingTop: 4,
+        backgroundColor: 'rgba(0,0,0,0.55)',
     },
-    volumeRow: {
-        flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    // Progress slider
+    progressSlider: {
+        width: '100%', height: 28,
+        marginBottom: -4,
     },
-    volumeSlider: {
-        flex: 1, height: 36,
+    // Time + controls row
+    controlsRow: {
+        flexDirection: 'row', alignItems: 'center',
+        paddingHorizontal: spacing.sm,
     },
-    volumeLabel: {
+    timeText: {
         color: '#fff',
-        fontSize: fontSize.xs,
+        fontSize: 12,
         fontWeight: fontWeight.bold,
-        minWidth: 38,
-        textAlign: 'right',
+        fontVariant: ['tabular-nums'],
     },
-    volumeLabelBoosted: {
-        color: colors.primary,
+    timeSep: {
+        color: 'rgba(255,255,255,0.4)',
+        fontSize: 12,
     },
+    controlBtn: {
+        flexDirection: 'row', alignItems: 'center', gap: 4,
+        paddingHorizontal: 10, paddingVertical: 6,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        borderRadius: radius.md,
+    },
+    controlBtnActive: {
+        backgroundColor: 'rgba(99,102,241,0.25)',
+        borderWidth: 1,
+        borderColor: 'rgba(99,102,241,0.4)',
+    },
+
+    // Gesture feedback overlay (center of screen)
+    gestureOverlay: {
+        position: 'absolute',
+        top: '50%', left: '50%',
+        marginTop: -50, marginLeft: -50,
+        width: 100, height: 100,
+        borderRadius: 16,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        alignItems: 'center', justifyContent: 'center',
+        zIndex: 300,
+        gap: 4,
+    },
+    gestureText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: fontWeight.black,
+    },
+    gestureBarBg: {
+        width: 70, height: 4,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        borderRadius: 2,
+        overflow: 'hidden',
+    },
+    gestureBarFill: {
+        height: '100%',
+        borderRadius: 2,
+    },
+
     // Error / loading screens
     centerContainer: {
         flex: 1, backgroundColor: '#000',

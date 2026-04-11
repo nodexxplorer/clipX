@@ -26,6 +26,7 @@ const navSections = [
     title: 'Revenue',
     items: [
       { name: 'Revenue', href: '/admin/revenue', icon: FiDollarSign },
+      { name: 'Referrals', href: '/admin/referrals', icon: FiUsers },
     ]
   },
   {

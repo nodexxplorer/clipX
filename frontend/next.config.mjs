@@ -1,15 +1,22 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    // Standardize with remotePatterns (recommended by Next.js)
+    // Skip server-side optimization for external images — the CDN
+    // (pbcdnw.aoneroom.com) responds too slowly and causes TimeoutError.
+    // Images are already optimized JPEGs from the CDN; no need to re-process.
+    unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: 'image.tmdb.org' },
       { protocol: 'https', hostname: 'via.placeholder.com' },
       { protocol: 'https', hostname: 'placehold.co' },
       { protocol: 'https', hostname: 'moviebox.ph' },
+      { protocol: 'https', hostname: '*.aoneroom.com' },
       { protocol: 'https', hostname: 'pbcdnw.aoneroom.com' },
       { protocol: 'https', hostname: 'i.ibb.co' },
+      { protocol: 'http', hostname: 'localhost' },
     ],
+    minimumCacheTTL: 3600,
+    dangerouslyAllowSVG: true,
   },
 
   // ---------------------------------------------------------------------------

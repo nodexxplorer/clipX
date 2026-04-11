@@ -94,10 +94,10 @@ export default function DashboardPage() {
         className="relative z-20 -mt-16 md:-mt-32"
       >
         {/* Banners */}
-        <div className="px-4 md:px-12 space-y-4 mb-8">
+        {/* <div className="px-4 md:px-12 space-y-4 mb-8">
           <GracePeriodBanner />
           <First50Banner />
-        </div>
+        </div> */}
 
         {/* Continue Watching Row */}
         {continueWatching.length > 0 && (

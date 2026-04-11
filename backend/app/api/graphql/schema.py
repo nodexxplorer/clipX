@@ -1816,6 +1816,43 @@ class Query:
             print(f"[revenueExportCsv] Error: {e}")
             return "Error generating CSV: " + str(e)
 
+    # ── Subscription & Payment queries (read-only, belong in Query) ────
+    @strawberry.field
+    async def mySubscription(self, info: strawberry.Info) -> strawberry.scalars.JSON:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        return {
+            "tier": getattr(user, "subscription_tier", "free") or "free",
+            "expiresAt": str(user.subscription_expires_at) if getattr(user, "subscription_expires_at", None) else None,
+            "emailVerified": getattr(user, "email_verified", False),
+            "referralCount": getattr(user, "referral_count", 0) or 0,
+        }
+
+    @strawberry.field
+    async def myPaymentHistory(self, info: strawberry.Info) -> strawberry.scalars.JSON:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        db = await info.context.get_db()
+        from sqlalchemy import text
+        try:
+            result = await db.execute(text(
+                "SELECT id, amount, currency, status, plan, payment_method, paid_at, created_at "
+                "FROM payment_history WHERE user_id = :uid ORDER BY created_at DESC LIMIT 20"
+            ), {"uid": str(user.id)})
+            return {
+                "payments": [
+                    {"id": str(r[0]), "amount": r[1], "currency": r[2], "status": r[3],
+                     "plan": r[4], "method": r[5],
+                     "paidAt": str(r[6]) if r[6] else None, "createdAt": str(r[7]) if r[7] else None}
+                    for r in result.fetchall()
+                ]
+            }
+        except Exception as e:
+            print(f"Payment history error: {e}")
+            return {"payments": []}
+
 
 # ═══════════════════════════════════════════════════════════
 # Mutation
@@ -1842,9 +1879,40 @@ class Mutation:
                 raise Exception("Invalid email or password")
             if not user.password:
                 raise Exception("This account uses Google sign-in. Please log in with Google.")
+
+            # ── Account lockout enforcement (escalating) ──────────
+            MAX_FAILED = 5
+            BASE_LOCKOUT_MINUTES = 15  # First lockout: 15 min
+            MAX_LOCKOUT_MINUTES = 1440  # Cap at 24 hours
+
+            # Check if account is currently locked
+            if user.locked_until and user.locked_until > datetime.utcnow():
+                remaining = int((user.locked_until - datetime.utcnow()).total_seconds() / 60) + 1
+                await _log_activity(db, str(user.id), "login_locked", info, success=False)
+                raise Exception(f"Account temporarily locked. Try again in {remaining} minute{'s' if remaining != 1 else ''}.")
+
             if not verify_password(password, user.password):
+                # Increment failed attempts
+                user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+                if user.failed_login_attempts >= MAX_FAILED:
+                    # Escalating lockout: 15 → 30 → 60 → 120 → ... (capped at 24h)
+                    lockout_count = user.failed_login_attempts // MAX_FAILED  # How many times threshold hit
+                    lockout_minutes = min(BASE_LOCKOUT_MINUTES * (2 ** (lockout_count - 1)), MAX_LOCKOUT_MINUTES)
+                    user.locked_until = datetime.utcnow() + timedelta(minutes=lockout_minutes)
+                    await db.commit()
+                    await _log_activity(db, str(user.id), "account_locked", info, success=False)
+                    raise Exception(f"Too many failed attempts. Account locked for {lockout_minutes} minutes.")
+                await db.commit()
                 await _log_activity(db, str(user.id), "login_failed", info, success=False)
-                raise Exception("Invalid email or password")
+                attempts_left = MAX_FAILED - (user.failed_login_attempts % MAX_FAILED)
+                if attempts_left == MAX_FAILED:
+                    attempts_left = MAX_FAILED  # Edge case: just after lockout expires
+                raise Exception(f"Invalid email or password. {attempts_left} attempt{'s' if attempts_left != 1 else ''} remaining.")
+
+            # ── Successful login — full reset ─────────────────────
+            if user.failed_login_attempts and user.failed_login_attempts > 0:
+                user.failed_login_attempts = 0
+                user.locked_until = None
 
             access_token = create_access_token({"sub": str(user.id)})
 
@@ -1855,7 +1923,8 @@ class Mutation:
                 ip_address = (info.context.request.client.host if info.context.request.client else None)
                 await store_refresh_token(db, str(user.id), refresh_hash, family_id, device_info, ip_address)
             except Exception as e:
-                print(f"[LOGIN] Could not store refresh token: {e}")
+                # Log visibly — refresh token won't work but login still proceeds
+                print(f"⚠️  [LOGIN] Could not store refresh token (user will need to re-login sooner): {e}")
 
             is_production = os.getenv("ENV", "development") == "production"
             info.context.response.set_cookie(
@@ -1950,9 +2019,10 @@ class Mutation:
                     )).scalars().first()
                     if referrer:
                         referrer.referral_count = (referrer.referral_count or 0) + 1
-                        if referrer.referral_count >= 5 and referrer.subscription_tier == "free":
-                            referrer.subscription_tier = "standard"
-                            referrer.subscription_expires_at = datetime.utcnow() + timedelta(days=90)
+                        # Subscription auto-upgrade disabled — referral rewards are now badges/flair only
+                        # if referrer.referral_count >= 5 and referrer.subscription_tier == "free":
+                        #     referrer.subscription_tier = "standard"
+                        #     referrer.subscription_expires_at = datetime.utcnow() + timedelta(days=90)
                         await db.commit()
             except Exception as e:
                 print(f"Referral tracking error: {e}")
@@ -2280,7 +2350,7 @@ class Mutation:
         return SuccessResponse(success=True, message="Removed from watchlist")
 
     @strawberry.mutation
-    async def updateWatchProgress(self, info: strawberry.Info, movieId: str, contentType: str, currentTime: int, duration: int) -> SuccessResponse:
+    async def updateWatchProgress(self, info: strawberry.Info, movieId: str, currentTime: int, duration: int, contentType: str = "movie") -> SuccessResponse:
         user = await info.context.user
         if not user:
             raise Exception("Not authenticated")
@@ -2649,116 +2719,78 @@ class Mutation:
         await db.commit()
         return SuccessResponse(success=True, message="User deleted")
 
+    # ── Subscription mutations — TEMPORARILY DISABLED ──────────────────
+    # Paystack subscription flow is disabled until payment infrastructure is ready.
+    # Uncomment the blocks below and remove the stubs to re-enable.
+
     @strawberry.mutation
     async def initializeSubscription(self, info: strawberry.Info, plan: str, billing: str = "monthly") -> strawberry.scalars.JSON:
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        # Email verification gate — prevents unverified accounts from subscribing
-        if not getattr(user, "email_verified", False):
-            raise Exception("Please verify your email address before subscribing. Check your inbox for a verification link.")
-        from app.core.paystack import initialize_transaction, PLAN_AMOUNTS
-        import uuid as uuid_mod
-        plan_key = f"{plan}_{billing}"
-        amount = PLAN_AMOUNTS.get(plan_key)
-        if not amount:
-            raise Exception(f"Invalid plan: {plan} ({billing})")
-        reference = f"clipx_{plan}_{str(uuid_mod.uuid4())[:8]}"
-        result = await initialize_transaction(
-            email=user.email, amount=amount, plan=plan_key, reference=reference,
-            metadata={
-                "user_id": str(user.id), "plan": plan, "billing": billing,
-                "custom_fields": [
-                    {"display_name": "Plan", "variable_name": "plan", "value": plan.capitalize()},
-                    {"display_name": "Billing", "variable_name": "billing", "value": billing.capitalize()},
-                ]
-            }
-        )
-        if not result.get("status"):
-            raise Exception(result.get("error", "Failed to initialize payment"))
-        return {"authorizationUrl": result["authorization_url"], "accessCode": result["access_code"], "reference": result["reference"]}
+        raise Exception("Subscriptions are coming soon. Stay tuned!")
+        # -- ORIGINAL CODE (commented out) --
+        # user = await info.context.user
+        # if not user:
+        #     raise Exception("Not authenticated")
+        # if not getattr(user, "email_verified", False):
+        #     raise Exception("Please verify your email address before subscribing.")
+        # from app.core.paystack import initialize_transaction, PLAN_AMOUNTS
+        # import uuid as uuid_mod
+        # plan_key = f"{plan}_{billing}"
+        # amount = PLAN_AMOUNTS.get(plan_key)
+        # if not amount:
+        #     raise Exception(f"Invalid plan: {plan} ({billing})")
+        # reference = f"clipx_{plan}_{str(uuid_mod.uuid4())[:8]}"
+        # result = await initialize_transaction(
+        #     email=user.email, amount=amount, plan=plan_key, reference=reference,
+        #     metadata={"user_id": str(user.id), "plan": plan, "billing": billing,
+        #         "custom_fields": [
+        #             {"display_name": "Plan", "variable_name": "plan", "value": plan.capitalize()},
+        #             {"display_name": "Billing", "variable_name": "billing", "value": billing.capitalize()},
+        #         ]}
+        # )
+        # if not result.get("status"):
+        #     raise Exception(result.get("error", "Failed to initialize payment"))
+        # return {"authorizationUrl": result["authorization_url"], "accessCode": result["access_code"], "reference": result["reference"]}
 
     @strawberry.mutation
     async def verifyPayment(self, info: strawberry.Info, reference: str) -> SuccessResponse:
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        from app.core.paystack import verify_transaction
-        result = await verify_transaction(reference)
-        if not result.get("status"):
-            raise Exception(result.get("error", "Payment verification failed"))
-        metadata = result.get("metadata", {})
-        plan = metadata.get("plan", "standard")
-        billing = metadata.get("billing", "monthly")
-        db = await info.context.get_db()
-        user_obj = (await db.execute(select(DbUser).where(DbUser.id == user.id))).scalars().first()
-        if user_obj:
-            user_obj.subscription_tier = plan
-            user_obj.subscription_expires_at = datetime.utcnow() + timedelta(days=365 if billing == "yearly" else 30)
-            user_obj.paystack_customer_code = result.get("customer_code")
-            await db.commit()
-            try:
-                from app.core.email_service import send_subscription_email
-                send_subscription_email(user_obj.email, user_obj.name or "", plan, "activated")
-            except Exception:
-                pass
-        return SuccessResponse(success=True, message=f"Payment successful! You're now on the {plan.capitalize()} plan.")
+        raise Exception("Subscriptions are coming soon. Stay tuned!")
+        # -- ORIGINAL CODE (commented out) --
+        # user = await info.context.user
+        # if not user:
+        #     raise Exception("Not authenticated")
+        # from app.core.paystack import verify_transaction
+        # result = await verify_transaction(reference)
+        # if not result.get("status"):
+        #     raise Exception(result.get("error", "Payment verification failed"))
+        # metadata = result.get("metadata", {})
+        # plan = metadata.get("plan", "standard")
+        # billing = metadata.get("billing", "monthly")
+        # db = await info.context.get_db()
+        # user_obj = (await db.execute(select(DbUser).where(DbUser.id == user.id))).scalars().first()
+        # if user_obj:
+        #     user_obj.subscription_tier = plan
+        #     user_obj.subscription_expires_at = datetime.utcnow() + timedelta(days=365 if billing == "yearly" else 30)
+        #     user_obj.paystack_customer_code = result.get("customer_code")
+        #     await db.commit()
+        # return SuccessResponse(success=True, message="Payment verified")
 
     @strawberry.mutation
     async def cancelSubscription(self, info: strawberry.Info) -> SuccessResponse:
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        db = await info.context.get_db()
-        user_obj = (await db.execute(select(DbUser).where(DbUser.id == user.id))).scalars().first()
-        if not user_obj or user_obj.subscription_tier == "free":
-            raise Exception("No active subscription to cancel")
-        old_plan = user_obj.subscription_tier
-        user_obj.subscription_tier = "free"
-        user_obj.subscription_expires_at = None
-        await db.commit()
-        try:
-            from app.core.email_service import send_subscription_email
-            send_subscription_email(user_obj.email, user_obj.name or "", old_plan, "cancelled")
-        except Exception:
-            pass
-        return SuccessResponse(success=True, message="Subscription cancelled successfully")
+        raise Exception("Subscriptions are coming soon. Stay tuned!")
+        # -- ORIGINAL CODE (commented out) --
+        # user = await info.context.user
+        # if not user:
+        #     raise Exception("Not authenticated")
+        # db = await info.context.get_db()
+        # user_obj = (await db.execute(select(DbUser).where(DbUser.id == user.id))).scalars().first()
+        # if not user_obj or user_obj.subscription_tier == "free":
+        #     raise Exception("No active subscription to cancel")
+        # old_plan = user_obj.subscription_tier
+        # user_obj.subscription_tier = "free"
+        # user_obj.subscription_expires_at = None
+        # await db.commit()
+        # return SuccessResponse(success=True, message="Subscription cancelled successfully")
 
-    @strawberry.mutation
-    async def mySubscription(self, info: strawberry.Info) -> strawberry.scalars.JSON:
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        return {
-            "tier": getattr(user, "subscription_tier", "free") or "free",
-            "expiresAt": str(user.subscription_expires_at) if getattr(user, "subscription_expires_at", None) else None,
-            "emailVerified": getattr(user, "email_verified", False),
-            "referralCount": getattr(user, "referral_count", 0) or 0,
-        }
-
-    @strawberry.mutation
-    async def myPaymentHistory(self, info: strawberry.Info) -> strawberry.scalars.JSON:
-        user = await info.context.user
-        if not user:
-            raise Exception("Not authenticated")
-        db = await info.context.get_db()
-        from sqlalchemy import text
-        try:
-            result = await db.execute(text(
-                "SELECT id, amount, currency, status, plan, payment_method, paid_at, created_at "
-                "FROM payment_history WHERE user_id = :uid ORDER BY created_at DESC LIMIT 20"
-            ), {"uid": str(user.id)})
-            return {
-                "payments": [
-                    {"id": str(r[0]), "amount": r[1], "currency": r[2], "status": r[3],
-                     "plan": r[4], "method": r[5],
-                     "paidAt": str(r[6]) if r[6] else None, "createdAt": str(r[7]) if r[7] else None}
-                    for r in result.fetchall()
-                ]
-            }
-        except Exception as e:
-            print(f"Payment history error: {e}")
-            return {"payments": []}
 
     @strawberry.mutation
     async def applyPromoCode(self, info: strawberry.Info, code: str) -> PromoCodeResult:

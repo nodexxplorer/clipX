@@ -15,6 +15,7 @@ const authFetchLink = createHttpLink({
 
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest', // CSRF protection
             ...(options?.headers as Record<string, string> || {}),
             ...(token ? { authorization: `Bearer ${token}` } : {}),
         };

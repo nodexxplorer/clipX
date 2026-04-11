@@ -141,7 +141,7 @@ export function useChat(room = 'global') {
                 reconnectAttempts.current += 1;
                 clearTimeout(reconnectTimer.current);
                 reconnectTimer.current = setTimeout(() => {
-                    if (mountedRef.current && getToken()) connect();
+                    if (mountedRef.current && user) connect();
                 }, delay);
             };
 
@@ -162,7 +162,7 @@ export function useChat(room = 'global') {
         mountedRef.current = true;
         // Delay initial connection to avoid competing with auth initialization
         const initTimer = setTimeout(() => {
-            if (user && getToken()) connect();
+            if (user) connect();
         }, 500);
 
         return () => {

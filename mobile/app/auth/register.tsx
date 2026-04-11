@@ -135,10 +135,10 @@ export default function RegisterScreen() {
                         Min 8 characters · at least one letter and one number
                     </Text>
 
-                    {/* Free trial banner */}
+                    {/* Welcome banner */}
                     <View style={styles.freeBanner}>
                         <Ionicons name="sparkles" size={16} color={colors.primary} />
-                        <Text style={styles.freeText}>1 month free trial on your first subscription!</Text>
+                        <Text style={styles.freeText}>Unlimited streaming — all content, no limits!</Text>
                     </View>
 
                     {/* Register Button */}

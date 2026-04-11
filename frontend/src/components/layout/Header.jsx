@@ -48,7 +48,7 @@ export default function Header() {
   const handleMarkAsRead = (id) => {
     markAsRead({
       variables: { id },
-      optimisticResponse: { markNotificationRead: { success: true, message: 'read' } },
+      optimisticResponse: { markNotificationRead: { __typename: 'SuccessResponse', success: true, message: 'read' } },
       update: (cache) => {
         const data = cache.readQuery({ query: GET_NOTIFICATIONS });
         if (data) {
@@ -65,7 +65,7 @@ export default function Header() {
 
   const handleMarkAllRead = () => {
     markAllRead({
-      optimisticResponse: { markAllNotificationsRead: { success: true, message: 'done' } },
+      optimisticResponse: { markAllNotificationsRead: { __typename: 'SuccessResponse', success: true, message: 'done' } },
       update: (cache) => {
         const data = cache.readQuery({ query: GET_NOTIFICATIONS });
         if (data) {
@@ -82,7 +82,7 @@ export default function Header() {
     e.stopPropagation();
     deleteNotification({
       variables: { id },
-      optimisticResponse: { deleteNotification: { success: true, message: 'deleted' } },
+      optimisticResponse: { deleteNotification: { __typename: 'SuccessResponse', success: true, message: 'deleted' } },
       update: (cache) => {
         const data = cache.readQuery({ query: GET_NOTIFICATIONS });
         if (data) {
@@ -91,7 +91,8 @@ export default function Header() {
             data: { notifications: data.notifications.filter(n => n.id !== id) }
           });
         }
-      }
+      },
+      refetchQueries: [{ query: GET_NOTIFICATIONS }],
     });
   };
 

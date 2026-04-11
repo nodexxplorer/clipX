@@ -60,3 +60,27 @@ export const UPDATE_REPORT_STATUS = gql`
     }
   }
 `;
+
+export const EXPORT_REVENUE_CSV = gql`
+  query ExportRevenueCsv($days: Int) {
+    revenueExportCsv(days: $days)
+  }
+`;
+
+export const ADMIN_SET_MOVIE_TIMESTAMPS = gql`
+  mutation AdminSetMovieTimestamps($movieId: ID!, $introStart: Float, $introEnd: Float, $creditsStart: Float, $recapEnd: Float) {
+    adminSetMovieTimestamps(movieId: $movieId, introStart: $introStart, introEnd: $introEnd, creditsStart: $creditsStart, recapEnd: $recapEnd) {
+      success
+      message
+    }
+  }
+`;
+
+export const LOG_SEARCH = gql`
+  mutation LogSearch($query: String!, $resultCount: Int) {
+    logSearch(query: $query, resultCount: $resultCount) {
+      success
+      message
+    }
+  }
+`;

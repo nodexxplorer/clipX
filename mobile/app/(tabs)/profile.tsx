@@ -34,7 +34,7 @@ export default function ProfileScreen() {
             <View style={styles.authContainer}>
                 <Ionicons name="person-circle-outline" size={72} color={colors.textMuted} />
                 <Text style={styles.authTitle}>Your Account</Text>
-                <Text style={styles.authSub}>Sign in to access your profile, settings, and subscription</Text>
+                <Text style={styles.authSub}>Sign in to access your profile and settings</Text>
                 <Pressable style={styles.signInBtn} onPress={() => router.push('/auth/login')}>
                     <Text style={styles.signInBtnText}>Sign In</Text>
                 </Pressable>
@@ -59,7 +59,7 @@ export default function ProfileScreen() {
             title: 'Account',
             items: [
                 { icon: 'person-outline', label: 'Edit Profile', sub: user.email, onPress: () => { } },
-                { icon: tier.icon, label: 'Subscription', sub: `${tier.label} Plan`, onPress: () => router.push('/subscription'), badge: tier.label, color: tier.color },
+                // { icon: tier.icon, label: 'Subscription', sub: `${tier.label} Plan`, onPress: () => router.push('/subscription'), badge: tier.label, color: tier.color },
                 { icon: 'grid-outline', label: 'Dashboard', sub: 'Stats & activity', onPress: () => router.push('/dashboard') },
                 { icon: 'shield-checkmark-outline', label: 'Security & Privacy', sub: '2FA, password, activity', onPress: () => router.push('/security') },
             ],

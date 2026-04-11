@@ -527,9 +527,33 @@ export default function WatchPage() {
     }
   }, []);
 
+  // ---------- Shared Audio Amplification Init ----------
+  // Ensures Web Audio GainNode exists for >100% volume boost.
+  // Safe to call multiple times — only creates the pipeline once.
+  const ensureAudioAmplification = useCallback(() => {
+    if (audioContextRef.current || !videoRef.current) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      audioContextRef.current = ctx;
+      const source = ctx.createMediaElementSource(videoRef.current);
+      const gainNode = ctx.createGain();
+      source.connect(gainNode);
+      gainNode.connect(ctx.destination);
+      gainNodeRef.current = gainNode;
+      mediaSourceRef.current = source;
+      if (ctx.state === 'suspended') ctx.resume();
+    } catch (err) {
+      console.warn('Audio amplification failed:', err);
+    }
+  }, []);
+
   const adjustVolume = useCallback((delta) => {
     setVolume(prevVolume => {
       const newVolume = Math.max(0, Math.min(2, prevVolume + delta));
+      // Init amplification if needed
+      if (newVolume > 1) ensureAudioAmplification();
       if (videoRef.current) {
         if (gainNodeRef.current) {
           gainNodeRef.current.gain.value = newVolume;
@@ -545,7 +569,7 @@ export default function WatchPage() {
       volumeOSDTimer.current = setTimeout(() => setVolumeOSD(false), 1200);
       return newVolume;
     });
-  }, []);
+  }, [ensureAudioAmplification]);
 
   // ---------- Next Episode / Season Autoplay ----------
   const isSeries = movie?.seasons?.length > 0 || movie?.isSeries || (movie?.type?.toLowerCase() === 'series') || (movie?.type?.toLowerCase() === 'tv');
@@ -1361,22 +1385,7 @@ export default function WatchPage() {
                           setIsMuted(v === 0);
                           
                           // Init Audio Amplification if over 100%
-                          if (v > 1 && !audioContextRef.current && videoRef.current) {
-                            try {
-                              const AudioContext = window.AudioContext || window.webkitAudioContext;
-                              const ctx = new AudioContext();
-                              audioContextRef.current = ctx;
-                              const source = ctx.createMediaElementSource(videoRef.current);
-                              const gainNode = ctx.createGain();
-                              source.connect(gainNode);
-                              gainNode.connect(ctx.destination);
-                              gainNodeRef.current = gainNode;
-                              mediaSourceRef.current = source;
-                              if (ctx.state === 'suspended') ctx.resume();
-                            } catch (err) {
-                              console.warn('Audio amplification failed:', err);
-                            }
-                          }
+                          if (v > 1) ensureAudioAmplification();
                           
                           if (videoRef.current) {
                             if (gainNodeRef.current) {

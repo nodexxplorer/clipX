@@ -40,8 +40,11 @@ export const startDownload = async (
   if (Platform.OS === 'web') return;
 
   const safeTitle = title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  // NOTE: Files are saved with .clipx extension (not .mp4) to prevent
+  // casual playback in third-party apps. For true DRM, a native encryption
+  // module would be needed (e.g. react-native-blob-util + AES).
   // @ts-ignore
-  const localPath = `${FileSystem.documentDirectory || ''}${safeTitle}_${id}.mp4`;
+  const localPath = `${FileSystem.documentDirectory || ''}${safeTitle}_${id}.clipx`;
 
   try {
     if (db) {

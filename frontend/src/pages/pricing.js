@@ -148,7 +148,7 @@ const faqs = [
     },
     {
         q: 'How do referral rewards work?',
-        a: 'Refer 5 friends who sign up and your account is automatically upgraded to Standard tier for free as a promotional reward!',
+        a: 'Refer friends who sign up and earn community badges, profile flair, and leaderboard recognition!',
     },
 ];
 
@@ -306,39 +306,7 @@ export default function PricingPage() {
                     })}
                 </div>
 
-                {/* Referral Promo Banner */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    className="max-w-4xl mx-auto mb-24"
-                >
-                    <div className="relative overflow-hidden bg-gradient-to-br from-primary-600/20 to-purple-600/20 border border-primary-500/20 rounded-2xl p-8 md:p-12">
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/10 rounded-full blur-3xl -mr-32 -mt-32" />
-                        <div className="relative flex flex-col md:flex-row items-center gap-8">
-                            <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <FiUsers className="w-5 h-5 text-primary-400" />
-                                    <span className="text-primary-400 font-bold text-sm uppercase tracking-wider">Referral Reward</span>
-                                </div>
-                                <h3 className="text-2xl md:text-3xl font-black text-white mb-3">
-                                    Refer 5 Friends, Get Standard Free!
-                                </h3>
-                                <p className="text-gray-400 leading-relaxed">
-                                    Share your unique referral link. When 5 friends sign up through your link,
-                                    your account is automatically upgraded to the Standard tier — completely free.
-                                </p>
-                            </div>
-                            <Link
-                                href={isAuthenticated ? '/profile' : '/auth/register'}
-                                className="flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-primary-600 to-purple-600 text-white font-bold rounded-xl hover:from-primary-500 hover:to-purple-500 transition-all shadow-lg shadow-primary-600/20 whitespace-nowrap"
-                            >
-                                {isAuthenticated ? 'Get My Referral Link' : 'Sign Up to Start'}
-                                <FiArrowRight className="w-5 h-5" />
-                            </Link>
-                        </div>
-                    </div>
-                </motion.div>
+                {/* Referral Promo Banner — subscription disabled */}
 
                 {/* FAQ Section */}
                 <div className="max-w-3xl mx-auto mb-16">
