@@ -4,7 +4,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { useMutation, gql } from '@apollo/client';
+import { gql} from '@apollo/client';
+import { useMutation } from '@apollo/client/react';
 import Link from 'next/link';
 
 const VERIFY_EMAIL = gql`
