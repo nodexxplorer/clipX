@@ -4,7 +4,7 @@ import { useMutation } from '@apollo/client/react';
 import { useRouter } from 'next/router';
 import AdminLayout from '../../../components/admin/layout/AdminLayout';
 import MovieForm from '../../../components/admin/movies/MovieForm';
-import { ADMIN_CREATE_MOVIE } from '../../../graphql/mutations/adminMutations';
+import { ADMIN_DELETE_MOVIE } from '../../../graphql/mutations/adminMutations';
 import toast from 'react-hot-toast';
 
 export default function CreateMovie() {
