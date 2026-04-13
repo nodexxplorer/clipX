@@ -13,7 +13,7 @@ import { useQuery } from '@apollo/client/react';
 
 import { colors, spacing, radius, fontSize, fontWeight } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
-import { GET_DASHBOARD } from '@/lib/graphql';
+import { GET_DASHBOARD, GET_UNREAD_NOTIFICATION_COUNT } from '@/lib/graphql';
 import type { DashboardData } from '@/types';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
@@ -45,6 +45,14 @@ function FloatingTabBar({ state, descriptors, navigation }: any) {
     skip: !user,
     fetchPolicy: 'cache-first',
   });
+
+  // Notification badge count
+  const { data: notifData } = useQuery<{ unreadNotificationCount: number }>(GET_UNREAD_NOTIFICATION_COUNT, {
+    skip: !user,
+    fetchPolicy: 'cache-and-network',
+    pollInterval: 60000, // refresh every 60s
+  });
+  const unreadCount = notifData?.unreadNotificationCount || 0;
 
   const handleFABPress = useCallback(() => {
     const continueWatching = dashData?.dashboardData?.continueWatching;
@@ -106,7 +114,14 @@ function FloatingTabBar({ state, descriptors, navigation }: any) {
                 onLongPress={onLongPress}
                 style={styles.tabItem}
               >
-                <Ionicons name={iconName} size={22} color={iconColor} />
+                <View>
+                  <Ionicons name={iconName} size={22} color={iconColor} />
+                  {tabDef.name === 'profile' && unreadCount > 0 && (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+                    </View>
+                  )}
+                </View>
                 {isFocused && (
                   <Text style={styles.tabLabel}>{tabDef.title}</Text>
                 )}
@@ -200,5 +215,26 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 12,
     elevation: 12,
+  },
+
+  // Notification badge
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#ef4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: colors.surface,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: fontWeight.black,
   },
 });

@@ -8,14 +8,31 @@
     "scheme": "clipx",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "updates": {
+      "enabled": true,
+      "fallbackToCacheTimeout": 3000,
+      "url": "https://u.expo.dev/clipx",
+      "checkAutomatically": "ON_LOAD"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.clipx",
+      "associatedDomains": [
+        "applinks:clipx.app",
+        "webcredentials:clipx.app"
+      ],
       "infoPlist": {
         "UIBackgroundModes": [
           "audio",
-          "fetch"
-        ]
+          "fetch",
+          "remote-notification"
+        ],
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false
+        }
       }
     },
     "android": {
@@ -24,11 +41,36 @@
         "backgroundColor": "#000000"
       },
       "package": "com.anonymous.clipx",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "clipx.app",
+              "pathPrefix": "/watch"
+            },
+            {
+              "scheme": "https",
+              "host": "clipx.app",
+              "pathPrefix": "/movies"
+            },
+            {
+              "scheme": "clipx",
+              "host": "*"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.RECORD_AUDIO",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.VIBRATE"
       ]
     },
     "web": {
@@ -62,7 +104,9 @@
         }
       ],
       "expo-secure-store",
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-haptics",
+      "expo-updates"
     ],
     "experiments": {
       "typedRoutes": true

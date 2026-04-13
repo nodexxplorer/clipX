@@ -1,0 +1,173 @@
+# docker-compose.production.yml
+# ═══════════════════════════════════════════════════════════════════════════
+# Zero-downtime Blue/Green Deployment Configuration (Section 17)
+# ═══════════════════════════════════════════════════════════════════════════
+# Usage:
+#   docker compose -f docker-compose.production.yml up -d --no-deps --build api
+#   docker compose -f docker-compose.production.yml up -d --scale api=2
+
+version: "3.9"
+
+services:
+  # ─── Reverse Proxy (Nginx) ──────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - clipx-net
+
+  # ─── Backend API (FastAPI + Strawberry) ─────────────────────────────────
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - JWT_SECRET=${JWT_SECRET}
+      - APP_VERSION=${APP_VERSION:-2.0.0}
+    expose:
+      - "8000"
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 30s
+        order: start-first      # Start new container before stopping old one
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - clipx-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ─── Frontend (Next.js) ─────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    expose:
+      - "3000"
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 15s
+        order: start-first
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    networks:
+      - clipx-net
+
+  # ─── PostgreSQL ─────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: clipx
+      POSTGRES_USER: ${POSTGRES_USER:-clipx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clipx"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - clipx-net
+
+  # ─── Redis ──────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - clipx-net
+
+  # ─── Postgres Backup CRON (Section 17) ──────────────────────────────────
+  db-backup:
+    image: postgres:16-alpine
+    volumes:
+      - ./backups:/backups
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-clipx}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: clipx
+    entrypoint: |
+      sh -c '
+        while true; do
+          echo "[$(date)] Starting backup..."
+          pg_dump -Fc > /backups/clipx_$(date +%Y%m%d_%H%M%S).dump
+          # Keep only last 7 days of backups
+          find /backups -name "clipx_*.dump" -mtime +7 -delete
+          echo "[$(date)] Backup complete. Next in 24h."
+          sleep 86400
+        done
+      '
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - clipx-net
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  clipx-net:
+    driver: bridge

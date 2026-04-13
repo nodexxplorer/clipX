@@ -44,6 +44,11 @@ def _send_email(to_email: str, subject: str, html_body: str) -> bool:
         print(f"✅ Email sent to {to_email}: {subject}")
         return True
     except Exception as e:
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_exception(e)
+        except Exception:
+            pass
         print(f"❌ Email failed to {to_email}: {e}")
         return False
 

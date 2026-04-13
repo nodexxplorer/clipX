@@ -12,6 +12,14 @@ import asyncio
 import time
 from collections import OrderedDict
 
+def _sentry_capture(e: Exception):
+    """Safely forward exception to Sentry without crashing if SDK is absent."""
+    try:
+        import sentry_sdk
+        sentry_sdk.capture_exception(e)
+    except Exception:
+        pass
+
 class SearchCache:
     """LRU cache with TTL for search results."""
     def __init__(self, max_size=200, ttl=300):
@@ -83,11 +91,13 @@ class MovieService:
                         db_item.detail_path = item.detailPath
             except Exception as e:
                 # Savepoint rollback already happened; just log
+                _sentry_capture(e)
                 print(f"Sync skip {item.title}: {e}")
         
         try:
             await db.commit()
         except Exception as e:
+            _sentry_capture(e)
             print(f"Error committing synced items: {e}")
             try:
                 await db.rollback()
@@ -152,7 +162,8 @@ class MovieService:
         try:
             hot = await self.provider.get_hot_content()
             items = hot.movies
-        except:
+        except Exception as _e:
+            _sentry_capture(_e)
              # Fallback to search if hot fails
              res = await self.provider.search("", page=page, sub_type="MOVIES")
              items = res.items
@@ -176,7 +187,8 @@ class MovieService:
         try:
             hot = await self.provider.get_hot_content()
             items = hot.tv_series
-        except:
+        except Exception as _e:
+            _sentry_capture(_e)
              res = await self.provider.search("", page=page, sub_type="TV_SERIES")
              items = res.items
 
@@ -224,9 +236,11 @@ class MovieService:
             else:
                 raw_details = await self.provider.get_details(movie_id)
         except PydanticValidationError as e:
+            _sentry_capture(e)
             print(f"Pydantic validation error for movie {movie_id}: {e}")
             return None
         except Exception as e:
+            _sentry_capture(e)
             print(f"Error fetching details for movie {movie_id}: {e}")
             return None
             
@@ -264,6 +278,26 @@ class MovieService:
                     episodes=episodes
                 ))
 
+        # Pull trailer_url from DB if stored (admin-set or previously synced)
+        db_trailer_url = None
+        if db:
+            try:
+                res = await db.execute(select(DbMovie).where(DbMovie.moviebox_id == str(subject.subjectId)))
+                db_movie = res.scalars().first()
+                if db_movie and db_movie.trailer_url:
+                    db_trailer_url = db_movie.trailer_url
+            except Exception:
+                pass
+
+        # Normalize trailer URL: if it's a raw YouTube ID, convert to full URL
+        if db_trailer_url:
+            import re
+            # Check if it's a bare YouTube ID (11 chars, alphanumeric + dash/underscore)
+            if re.match(r'^[\w-]{11}$', db_trailer_url):
+                db_trailer_url = f"https://www.youtube.com/watch?v={db_trailer_url}"
+            elif 'youtube.com' not in db_trailer_url and 'youtu.be' not in db_trailer_url and not db_trailer_url.startswith('http'):
+                db_trailer_url = f"https://www.youtube.com/watch?v={db_trailer_url}"
+
         return MovieDetails(
             id=subject.subjectId,
             title=subject.title,
@@ -275,6 +309,7 @@ class MovieService:
             genres=subject.genre,
             duration=parse_duration(subject.duration),
             country=subject.countryName,
+            trailer_url=db_trailer_url,
             seasons=seasons if seasons else None
         )
 
@@ -299,6 +334,7 @@ class MovieService:
         try:
             await self.provider.search(movie_id, sub_type="ALL")
         except Exception as e:
+            _sentry_capture(e)
             print(f"Preload cache search failed for {movie_id}: {e}")
 
     async def get_stream_links(self, movie_id: str, season: int = 0, episode: int = 1, db: Optional[Any] = None) -> ContentStreamResponse:
@@ -310,6 +346,7 @@ class MovieService:
         try:
             raw_downloads = await self.provider.get_download_links(movie_id, season=season, episode=episode)
         except Exception as e:
+            _sentry_capture(e)
             print(f"Failed to fetch subtitles: {e}")
             raw_downloads = None
 

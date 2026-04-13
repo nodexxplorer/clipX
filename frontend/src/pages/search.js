@@ -1,5 +1,5 @@
 // src/pages/search.js
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { useQuery } from '@apollo/client/react';
 import Head from 'next/head';
@@ -9,8 +9,9 @@ import SearchBar from '@/components/common/SearchBar';
 import MovieCard from '@/components/movies/MovieCard';
 import { LoadingSpinner, EmptyState, MovieCardSkeleton } from '@/components/common/LoadingSpinner';
 import { SEARCH_MOVIES } from '@/graphql/queries/movieQueries';
+import { GET_TRENDING_SEARCHES } from '@/graphql/queries/adminQueries';
 import ContentRating from '@/components/common/ContentRating';
-import { FiSearch, FiDatabase, FiChevronLeft, FiFilter, FiX, FiChevronDown, FiCalendar } from 'react-icons/fi';
+import { FiSearch, FiDatabase, FiChevronLeft, FiFilter, FiX, FiChevronDown, FiCalendar, FiClock, FiTrendingUp, FiTrash2 } from 'react-icons/fi';
 
 const SORT_OPTIONS = [
   { value: 'relevance', label: 'Relevance' },
@@ -39,12 +40,50 @@ export default function SearchPage() {
   const [yearMin, setYearMin] = useState(1970);
   const [yearMax, setYearMax] = useState(new Date().getFullYear());
   const [showSortMenu, setShowSortMenu] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(20);
+  const [searchHistory, setSearchHistory] = useState([]);
+  const [showTrending, setShowTrending] = useState(false);
 
   const { loading, data } = useQuery(SEARCH_MOVIES, {
     variables: { query: q || '', limit: 50 },
     skip: !q,
     fetchPolicy: 'cache-first',
   });
+
+  // Trending searches query
+  const { data: trendingData } = useQuery(GET_TRENDING_SEARCHES, {
+    variables: { limit: 8 },
+    fetchPolicy: 'cache-first',
+  });
+  const trendingSearches = trendingData?.trendingSearches || [];
+
+  // Load search history from localStorage
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('clipx_search_history') || '[]');
+      setSearchHistory(saved.slice(0, 10));
+    } catch { setSearchHistory([]); }
+  }, []);
+
+  // Save search to history when q changes
+  useEffect(() => {
+    if (q && q.trim()) {
+      setSearchHistory(prev => {
+        const updated = [q, ...prev.filter(h => h !== q)].slice(0, 10);
+        try { localStorage.setItem('clipx_search_history', JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+    }
+  }, [q]);
+
+  const clearSearchHistory = useCallback(() => {
+    setSearchHistory([]);
+    try { localStorage.removeItem('clipx_search_history'); } catch {}
+  }, []);
+
+  const handleHistoryClick = useCallback((term) => {
+    router.push({ pathname: '/search', query: { q: term } });
+  }, [router]);
 
   const rawResults = data?.searchMovies?.items || [];
 
@@ -107,6 +146,14 @@ export default function SearchPage() {
 
     return items;
   }, [rawResults, selectedGenres, minRating, sortBy]);
+
+  // Reset visible count when filters/query change
+  useEffect(() => {
+    setVisibleCount(20);
+  }, [q, selectedGenres, minRating, sortBy]);
+
+  const visibleResults = filteredResults.slice(0, visibleCount);
+  const hasMore = visibleCount < filteredResults.length;
 
   const toggleGenre = (genre) => {
     setSelectedGenres(prev =>
@@ -341,14 +388,65 @@ export default function SearchPage() {
             )}
           </AnimatePresence>
 
+          {/* Search History Chiplets */}
+          {searchHistory.length > 0 && !q && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-8">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2 text-gray-400 text-sm font-bold">
+                  <FiClock className="w-4 h-4" />
+                  Recent Searches
+                </div>
+                <button
+                  onClick={clearSearchHistory} id="clear-search-history"
+                  className="flex items-center gap-1 text-xs text-gray-600 hover:text-red-400 transition-colors"
+                >
+                  <FiTrash2 className="w-3 h-3" /> Clear
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {searchHistory.map((term, i) => (
+                  <button
+                    key={i} onClick={() => handleHistoryClick(term)}
+                    className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-full text-sm text-gray-300 hover:bg-primary-500/10 hover:border-primary-500/30 hover:text-primary-400 transition-all"
+                  >
+                    {term}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Trending Searches Panel */}
+          {!q && trendingSearches.length > 0 && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="mb-8">
+              <div className="flex items-center gap-2 text-gray-400 text-sm font-bold mb-3">
+                <FiTrendingUp className="w-4 h-4 text-primary-400" />
+                Trending Searches
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {trendingSearches.map((item, i) => (
+                  <button
+                    key={i} onClick={() => router.push({ pathname: '/search', query: { q: item.query } })}
+                    className="group flex items-center gap-3 p-3 bg-white/[0.03] border border-white/5 rounded-xl hover:border-primary-500/20 hover:bg-primary-500/5 transition-all text-left"
+                  >
+                    <span className="text-2xl font-black text-gray-700 group-hover:text-primary-500/50 transition-colors">{i + 1}</span>
+                    <span className="text-sm text-gray-300 font-medium truncate group-hover:text-white transition-colors">{item.query}</span>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
           {/* Results Content */}
           <AnimatePresence mode="wait">
             {!q ? (
-              <EmptyState
-                icon={FiSearch}
-                title="Start searching"
-                message="Enter a movie title, actor, or director to find what you're looking for"
-              />
+              !searchHistory.length && !trendingSearches.length && (
+                <EmptyState
+                  icon={FiSearch}
+                  title="Start searching"
+                  message="Enter a movie title, actor, or director to find what you're looking for"
+                />
+              )
             ) : (
               <motion.div
                 key="library"
@@ -373,7 +471,7 @@ export default function SearchPage() {
                       {hasActiveFilters && ` (filtered from ${rawResults.length})`}
                     </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                      {filteredResults.map((movie, index) => (
+                      {visibleResults.map((movie, index) => (
                         <motion.div
                           key={movie.id}
                           initial={{ opacity: 0, y: 20 }}
@@ -384,13 +482,43 @@ export default function SearchPage() {
                         </motion.div>
                       ))}
                     </div>
+                    {hasMore && (
+                      <div className="flex justify-center mt-10">
+                        <button
+                          onClick={() => setVisibleCount(prev => prev + 20)}
+                          className="px-8 py-3 bg-white/5 hover:bg-white/10 text-white font-bold text-sm rounded-xl border border-white/10 hover:border-primary-500/30 transition-all"
+                        >
+                          Load More ({filteredResults.length - visibleCount} remaining)
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  <EmptyState
-                    icon={FiDatabase}
-                    title={hasActiveFilters ? 'No results match your filters' : `No results for "${q}"`}
-                    message={hasActiveFilters ? 'Try adjusting your filters or search terms.' : "We couldn't find any content matching your search."}
-                  />
+                  /* Zero-Results Fallback with Trending Suggestions */
+                  <div>
+                    <EmptyState
+                      icon={FiDatabase}
+                      title={hasActiveFilters ? 'No results match your filters' : `No results for "${q}"`}
+                      message={hasActiveFilters ? 'Try adjusting your filters or search terms.' : "We couldn't find any content matching your search."}
+                    />
+                    {/* "You might also like" trending suggestions */}
+                    {!hasActiveFilters && trendingSearches.length > 0 && (
+                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-8">
+                        <p className="text-gray-400 text-sm font-bold mb-4 text-center">You might also like</p>
+                        <div className="flex flex-wrap justify-center gap-2">
+                          {trendingSearches.slice(0, 6).map((item, i) => (
+                            <button
+                              key={i}
+                              onClick={() => router.push({ pathname: '/search', query: { q: item.query } })}
+                              className="px-4 py-2 bg-white/5 text-gray-300 rounded-full text-sm hover:bg-primary-500/10 hover:text-primary-400 border border-white/10 hover:border-primary-500/30 transition-all"
+                            >
+                              {item.query}
+                            </button>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
                 )}
               </motion.div>
             )}

@@ -40,6 +40,11 @@ class NotificationService:
         try:
             await db.commit()
         except Exception as e:
+            try:
+                import sentry_sdk
+                sentry_sdk.capture_exception(e)
+            except Exception:
+                pass
             print(f"[Notification] Error creating: {e}")
             await db.rollback()
 

@@ -139,6 +139,12 @@ export const GET_NOTIFICATIONS = gql`
   }
 `;
 
+export const GET_UNREAD_NOTIFICATION_COUNT = gql`
+  query GetUnreadNotificationCount {
+    unreadNotificationCount
+  }
+`;
+
 // === Mutations ===
 export const LOGIN = gql`
   mutation Login($email: String!, $password: String!) {

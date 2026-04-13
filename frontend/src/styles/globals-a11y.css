@@ -1,0 +1,204 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   globals-a11y.css — WCAG Accessibility Enhancements (Section 16)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Skip Link ───────────────────────────────────────────────────────────── */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--primary-600, #0891b2);
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0 0 0.75rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  z-index: 99999;
+  transition: top 0.2s ease;
+  text-decoration: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.skip-link:focus {
+  top: 0;
+  outline: none;
+}
+
+/* ─── Focus Visible — Enhanced keyboard focus indicators ──────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--primary-500, #06b6d4);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Remove default outline on mouse click for aesthetic, keep for keyboard */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Enhanced focus ring for interactive elements */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--primary-400, #22d3ee);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.15);
+}
+
+/* ─── High Contrast Mode ──────────────────────────────────────────────────── */
+@media (prefers-contrast: more) {
+  :root {
+    --text-primary: #ffffff;
+    --text-secondary: #e5e5e5;
+    --text-muted: #cccccc;
+    --bg-primary: #000000;
+    --border-color: #666666;
+  }
+
+  body {
+    background-color: #000 !important;
+    color: #fff !important;
+  }
+
+  /* Increase contrast on borders */
+  .glass-card,
+  [class*="border-white/5"],
+  [class*="border-white/10"] {
+    border-color: rgba(255, 255, 255, 0.4) !important;
+  }
+
+  /* Stronger button contrast */
+  .btn-primary,
+  [class*="bg-primary"] {
+    background-color: #0891b2 !important;
+    color: #fff !important;
+    border: 2px solid #fff !important;
+  }
+
+  /* Stronger text contrast */
+  [class*="text-gray-400"],
+  [class*="text-gray-500"] {
+    color: #d4d4d4 !important;
+  }
+
+  [class*="text-gray-600"],
+  [class*="text-gray-700"] {
+    color: #a3a3a3 !important;
+  }
+
+  /* Ensure links are visible */
+  a {
+    text-decoration: underline !important;
+  }
+
+  /* Focus indicators are thicker */
+  *:focus-visible {
+    outline-width: 3px !important;
+    outline-offset: 3px !important;
+  }
+}
+
+/* ─── Reduced Motion ──────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── RTL Layout Support ──────────────────────────────────────────────────── */
+html[dir="rtl"] {
+  direction: rtl;
+}
+
+html[dir="rtl"] .flex-row {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .text-left {
+  text-align: right;
+}
+
+html[dir="rtl"] .text-right {
+  text-align: left;
+}
+
+html[dir="rtl"] .ml-auto {
+  margin-left: unset;
+  margin-right: auto;
+}
+
+html[dir="rtl"] .mr-auto {
+  margin-right: unset;
+  margin-left: auto;
+}
+
+/* Flip horizontal padding for RTL */
+html[dir="rtl"] .pl-4 {
+  padding-left: unset;
+  padding-right: 1rem;
+}
+
+html[dir="rtl"] .pr-4 {
+  padding-right: unset;
+  padding-left: 1rem;
+}
+
+/* Search input icon position flip */
+html[dir="rtl"] .search-icon-left {
+  left: unset;
+  right: 1rem;
+}
+
+html[dir="rtl"] .search-input-padded {
+  padding-left: 1rem;
+  padding-right: 3rem;
+}
+
+/* ─── Screen Reader Only ──────────────────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sr-only-focusable:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: inherit;
+  margin: inherit;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+/* ─── Forced Colors Mode (Windows High Contrast) ──────────────────────────── */
+@media (forced-colors: active) {
+  .btn-primary {
+    border: 2px solid ButtonText;
+  }
+
+  *:focus-visible {
+    outline: 2px solid Highlight !important;
+  }
+
+  img {
+    border: 1px solid ButtonText;
+  }
+}

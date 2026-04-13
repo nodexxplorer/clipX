@@ -27,24 +27,8 @@ const nextConfig = {
       {
         source: '/(.*)',
         headers: [
-          {
-            key: 'Content-Security-Policy',
-            value: [
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://apis.google.com https://accounts.google.com",
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' https://fonts.gstatic.com data:",
-              "img-src 'self' data: blob: https://image.tmdb.org https://i.ibb.co https://moviebox.ph https://pbcdnw.aoneroom.com https://placehold.co https://via.placeholder.com",
-              "media-src 'self' blob: http://localhost:8000 https://*.aoneroom.com https://*",
-              "connect-src 'self' http://localhost:8000 https://accounts.google.com https://api.paystack.co wss://*",
-              "frame-src 'self' https://accounts.google.com https://paystack.com https://checkout.paystack.com",
-              "object-src 'none'",
-              "base-uri 'self'",
-              "form-action 'self'",
-              "frame-ancestors 'none'",
-              "upgrade-insecure-requests",
-            ].join('; '),
-          },
+          // CSP is now handled by middleware.js with per-request nonces.
+          // See /middleware.js for the strict Content-Security-Policy.
           {
             key: 'X-Frame-Options',
             value: 'DENY',

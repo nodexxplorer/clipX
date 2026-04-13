@@ -114,6 +114,11 @@ class WatchPartyManager:
                     room.is_playing = state["isPlaying"]
                     await db.commit()
         except Exception as e:
+            try:
+                import sentry_sdk
+                sentry_sdk.capture_exception(e)
+            except Exception:
+                pass
             print(f"WatchParty DB sync error: {e}")
 
     async def broadcast_chat(self, room_code: str, user_info: dict, content: str):
@@ -194,6 +199,11 @@ async def websocket_watch_party(websocket: WebSocket, room_code: str):
                             "authenticated": True,
                         }
         except Exception as e:
+            try:
+                import sentry_sdk
+                sentry_sdk.capture_exception(e)
+            except Exception:
+                pass
             print(f"WatchParty auth fallback: {type(e).__name__}")
 
     # Verify room exists and is active
@@ -213,6 +223,11 @@ async def websocket_watch_party(websocket: WebSocket, room_code: str):
                 await websocket.close(code=4004, reason="Room not found or has ended")
                 return
     except Exception as e:
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_exception(e)
+        except Exception:
+            pass
         print(f"WatchParty room check error: {e}")
 
     await wp_manager.connect(websocket, room_code, user_info)
@@ -246,5 +261,10 @@ async def websocket_watch_party(websocket: WebSocket, room_code: str):
         wp_manager.disconnect(websocket, room_code)
         await wp_manager.broadcast_leave(room_code, user_info)
     except Exception as e:
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_exception(e)
+        except Exception:
+            pass
         print(f"WatchParty WS error: {e}")
         wp_manager.disconnect(websocket, room_code)

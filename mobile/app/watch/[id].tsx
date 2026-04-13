@@ -272,12 +272,34 @@ function PlayerView({
         },
     }), [volume, brightness, screenWidth, volumePct]);
 
-    // Handle tap (single tap = toggle controls, double tap = play/pause)
-    const handleTap = useCallback(() => {
+    // Double-tap seek feedback
+    const [seekFeedback, setSeekFeedback] = useState<{ side: 'left' | 'right'; label: string } | null>(null);
+    const seekFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Handle tap (single tap = toggle controls, double tap = seek ±10s)
+    const handleTap = useCallback((evt: any) => {
+        const tapX = evt?.nativeEvent?.locationX ?? screenWidth / 2;
         const now = Date.now();
         if (now - lastTapRef.current < 300) {
-            // Double tap → play/pause
-            togglePlayPause();
+            // Double tap → seek based on which half of the screen was tapped
+            const isRightSide = tapX > screenWidth / 2;
+            try {
+                if (player) {
+                    const seekAmount = isRightSide ? 10 : -10;
+                    player.currentTime = Math.max(0, Math.min(
+                        player.duration || 0,
+                        (player.currentTime || 0) + seekAmount
+                    ));
+                    setCurrentTime(Math.floor(player.currentTime));
+                }
+            } catch (e) { /* Player released */ }
+            // Show seek feedback overlay
+            setSeekFeedback({
+                side: isRightSide ? 'right' : 'left',
+                label: isRightSide ? '+10s' : '-10s',
+            });
+            if (seekFeedbackTimer.current) clearTimeout(seekFeedbackTimer.current);
+            seekFeedbackTimer.current = setTimeout(() => setSeekFeedback(null), 700);
             lastTapRef.current = 0;
         } else {
             // Single tap → toggle controls after short delay
@@ -288,7 +310,7 @@ function PlayerView({
                 }
             }, 300);
         }
-    }, [togglePlayPause]);
+    }, [togglePlayPause, player, screenWidth]);
 
     const progress = totalDuration > 0 ? currentTime / totalDuration : 0;
 
@@ -310,7 +332,7 @@ function PlayerView({
                 onTouchEnd={(e) => {
                     // Only handle tap if not a pan gesture
                     if (e.nativeEvent.changedTouches.length === 1) {
-                        handleTap();
+                        handleTap(e);
                     }
                 }}
             />
@@ -333,6 +355,18 @@ function PlayerView({
                             backgroundColor: gestureOverlay.type === 'volume' ? colors.primary : '#f59e0b',
                         }]} />
                     </View>
+                </View>
+            )}
+
+            {/* Double-tap seek feedback overlay */}
+            {seekFeedback && (
+                <View style={[styles.seekFeedback, seekFeedback.side === 'right' ? styles.seekFeedbackRight : styles.seekFeedbackLeft]}>
+                    <Ionicons
+                        name={seekFeedback.side === 'right' ? 'play-forward' : 'play-back'}
+                        size={28}
+                        color="#fff"
+                    />
+                    <Text style={styles.seekFeedbackText}>{seekFeedback.label}</Text>
                 </View>
             )}
 
@@ -636,6 +670,25 @@ const styles = StyleSheet.create({
     gestureBarFill: {
         height: '100%',
         borderRadius: 2,
+    },
+
+    // Double-tap seek feedback overlays
+    seekFeedback: {
+        position: 'absolute',
+        top: '30%', bottom: '30%',
+        width: 100,
+        alignItems: 'center', justifyContent: 'center',
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        borderRadius: 50,
+        zIndex: 250,
+        gap: 2,
+    },
+    seekFeedbackLeft: { left: 30 },
+    seekFeedbackRight: { right: 30 },
+    seekFeedbackText: {
+        color: '#fff',
+        fontSize: 13,
+        fontWeight: fontWeight.black,
     },
 
     // Error / loading screens

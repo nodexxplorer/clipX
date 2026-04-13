@@ -192,6 +192,11 @@ async def compute_yearly_stats():
                 print(f"  📊 Stats computed for {user.email}: {row.total_movies} movies, {row.total_watch_time}min")
 
             except Exception as e:
+                try:
+                    import sentry_sdk
+                    sentry_sdk.capture_exception(e)
+                except Exception:
+                    pass
                 print(f"  ⚠️  Stats computation failed for {user.email}: {e}")
 
         await db.commit()
@@ -237,16 +242,31 @@ async def run_all_tasks():
     try:
         await cleanup_expired_sessions()
     except Exception as e:
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_exception(e)
+        except Exception:
+            pass
         print(f"⚠️  Session cleanup skipped: {e}")
 
     try:
         await cleanup_expired_invites()
     except Exception as e:
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_exception(e)
+        except Exception:
+            pass
         print(f"⚠️  Invite cleanup skipped: {e}")
 
     try:
         await compute_yearly_stats()
     except Exception as e:
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_exception(e)
+        except Exception:
+            pass
         print(f"⚠️  Yearly stats skipped: {e}")
 
     print(f"{'='*50}\n")

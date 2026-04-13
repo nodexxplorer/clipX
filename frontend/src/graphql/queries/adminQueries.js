@@ -172,3 +172,90 @@ export const ADMIN_REVOKE_SESSION = gql`
     adminRevokeSession(sessionId: $sessionId) { success message }
   }
 `;
+
+// ─── System Health (Section 15) ──────────────────────────────────────────────
+export const GET_SYSTEM_HEALTH = gql`
+  query SystemHealth {
+    systemHealth {
+      status timestamp version
+      database movieProvider redis
+    }
+  }
+`;
+
+// ─── Feature Flags (Section 15) ──────────────────────────────────────────────
+export const GET_FEATURE_FLAGS = gql`
+  query FeatureFlags {
+    featureFlags {
+      id key label enabled description updatedAt updatedBy
+    }
+  }
+`;
+
+export const UPDATE_FEATURE_FLAG = gql`
+  mutation UpdateFeatureFlag($input: FeatureFlagInput!) {
+    updateFeatureFlag(input: $input) {
+      id key label enabled description updatedAt updatedBy
+    }
+  }
+`;
+
+// ─── Admin Audit Log (Section 15) ────────────────────────────────────────────
+export const GET_ADMIN_AUDIT_LOGS = gql`
+  query AdminAuditLogs($limit: Int) {
+    adminAuditLogs(limit: $limit) {
+      id adminId adminEmail action targetType targetId details ipAddress createdAt
+    }
+  }
+`;
+
+// ─── Trending Searches (Section 14) ──────────────────────────────────────────
+export const GET_TRENDING_SEARCHES = gql`
+  query TrendingSearches($limit: Int) {
+    trendingSearches(limit: $limit) {
+      query count
+    }
+  }
+`;
+
+// ─── Custom Lists / Letterboxd-style (Section 13) ────────────────────────────
+export const GET_MY_CUSTOM_LISTS = gql`
+  query MyCustomLists {
+    myCustomLists {
+      id userId name description isPublic
+      items { movieboxId title posterUrl addedAt }
+      createdAt updatedAt
+    }
+  }
+`;
+
+export const CREATE_CUSTOM_LIST = gql`
+  mutation CreateCustomList($input: CreateCustomListInput!) {
+    createCustomList(input: $input) {
+      id userId name description isPublic createdAt updatedAt
+    }
+  }
+`;
+
+export const ADD_TO_CUSTOM_LIST = gql`
+  mutation AddToCustomList($listId: String!, $movieboxId: String!, $title: String, $posterUrl: String) {
+    addToCustomList(listId: $listId, movieboxId: $movieboxId, title: $title, posterUrl: $posterUrl) {
+      success message
+    }
+  }
+`;
+
+// ─── Watch Party (Section 13) ────────────────────────────────────────────────
+export const SEND_WATCH_PARTY_INVITE = gql`
+  mutation SendWatchPartyInvite($roomCode: String!, $email: String!) {
+    sendWatchPartyInvite(roomCode: $roomCode, email: $email) { success message }
+  }
+`;
+
+export const WATCH_PARTY_HOST_ACTION = gql`
+  mutation WatchPartyHostAction($roomCode: String!, $action: String!, $targetUserId: String, $seekTime: Int) {
+    watchPartyHostAction(roomCode: $roomCode, action: $action, targetUserId: $targetUserId, seekTime: $seekTime) {
+      success message
+    }
+  }
+`;

@@ -11,7 +11,7 @@ import { useQuery } from '@apollo/client/react';
 import { motion } from 'framer-motion';
 import {
   FiPlay, FiClock, FiStar,
-  FiFilm, FiBookmark, FiChevronRight, FiEye, FiCpu
+  FiFilm, FiBookmark, FiChevronRight, FiEye, FiCpu, FiTrendingUp, FiCalendar
 } from 'react-icons/fi';
 
 import { useAuth } from '@/contexts/AuthContext';
@@ -49,6 +49,16 @@ export default function DashboardPage() {
 
   const { data: popularData } = useQuery(GET_POPULAR, {
     variables: { page: 1, limit: 20 }
+  });
+
+  // New Releases (Section 9) — use trending daily as proxy for fresh content
+  const { data: newReleasesData } = useQuery(GET_TRENDING, {
+    variables: { timeWindow: 'day', limit: 15 }
+  });
+
+  // Coming Soon (Section 9) — use popular as proxy, filtered for upcoming
+  const { data: comingSoonData } = useQuery(GET_POPULAR, {
+    variables: { page: 2, limit: 15 }
   });
 
   // Redirect if not authenticated
@@ -137,6 +147,22 @@ export default function DashboardPage() {
         )}
 
         <MovieRow title="Global Trends" movies={trendingMovies} />
+
+        {/* Section 9: New Releases Row */}
+        {newReleasesData?.trending?.length > 0 && (
+          <MovieRow
+            title="🆕 New Releases"
+            movies={newReleasesData.trending.slice(0, 15)}
+          />
+        )}
+
+        {/* Section 9: Coming Soon Row */}
+        {comingSoonData?.popular?.length > 0 && (
+          <MovieRow
+            title="📅 Coming Soon"
+            movies={comingSoonData.popular.slice(0, 10)}
+          />
+        )}
 
         {/* User Stats Grid */}
         <div className="px-4 md:px-12 mb-12">

@@ -6,7 +6,10 @@ from strawberry.fastapi import GraphQLRouter
 from app.api.graphql.context import get_context
 from app.core.config import settings
 import time
+import logging
 from collections import defaultdict
+
+logger = logging.getLogger("clipx")
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +175,88 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         return await call_next(request)
 
+
+# ---------------------------------------------------------------------------
+# HSTS / Security Headers — enforce HTTPS redirect on backend responses
+# ---------------------------------------------------------------------------
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    Injects Strict-Transport-Security and other security headers into
+    every backend response.  Browsers that receive HSTS will auto-upgrade
+    http→https for the specified max-age (2 years here).
+    """
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        # HSTS — 2 years, includeSubDomains, preload-eligible
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=63072000; includeSubDomains; preload"
+        )
+        # Prevent MIME-type sniffing
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        # Clickjacking protection
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        # Referrer policy
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
+        return response
+
+
+# ---------------------------------------------------------------------------
+# GraphQL Performance Timing — log slow queries (>500ms) with Sentry breadcrumb
+# ---------------------------------------------------------------------------
+class GraphQLTimingMiddleware(BaseHTTPMiddleware):
+    """
+    Measures GraphQL request duration and logs slow queries.
+    Any operation over 500ms is flagged for investigation.
+    """
+    SLOW_THRESHOLD_MS = 500  # milliseconds
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method != "POST" or "/graphql" not in request.url.path:
+            return await call_next(request)
+
+        # Extract the operation name for meaningful logging
+        operation_name = "unknown"
+        try:
+            body = await request.body()
+            import json as _json
+            data = _json.loads(body)
+            operation_name = data.get("operationName", "anonymous") or "anonymous"
+            # Re-inject the body so downstream handlers can read it
+            async def receive():
+                return {"type": "http.request", "body": body}
+            request._receive = receive
+        except Exception:
+            pass
+
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000
+
+        # Always set timing header for debugging
+        response.headers["X-Response-Time"] = f"{duration_ms:.0f}ms"
+
+        if duration_ms > self.SLOW_THRESHOLD_MS:
+            logger.warning(
+                f"[SLOW QUERY] {operation_name} took {duration_ms:.0f}ms "
+                f"(threshold: {self.SLOW_THRESHOLD_MS}ms)"
+            )
+            # Report to Sentry as a breadcrumb / performance event
+            try:
+                import sentry_sdk
+                sentry_sdk.add_breadcrumb(
+                    message=f"Slow GraphQL: {operation_name} ({duration_ms:.0f}ms)",
+                    category="performance",
+                    level="warning",
+                    data={"operation": operation_name, "duration_ms": round(duration_ms)},
+                )
+            except Exception:
+                pass
+
+        return response
+
+
 # ---------------------------------------------------------------------------
 # Input sanitization — strip dangerous HTML/script tags from GraphQL inputs
 # ---------------------------------------------------------------------------
@@ -234,6 +319,13 @@ async def _warmup_moviebox_session():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Initialize Sentry error tracking first
+    try:
+        from app.core.sentry import setup_sentry
+        setup_sentry()
+    except Exception as e:
+        print(f"[WARN] Sentry init failed (non-fatal): {e}")
+
     await _warmup_moviebox_session()
     yield
 
@@ -259,6 +351,12 @@ def get_app() -> FastAPI:
 
     # Rate limiting — MUST be added BEFORE CORS middleware
     app.add_middleware(RateLimitMiddleware, max_requests=30, window_seconds=60)
+
+    # Security headers (HSTS, X-Frame-Options, etc.)
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    # GraphQL performance timing — logs slow queries > 500ms
+    app.add_middleware(GraphQLTimingMiddleware)
 
     # Input sanitization — strip XSS patterns from GraphQL inputs
     app.add_middleware(InputSanitizationMiddleware)

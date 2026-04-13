@@ -4,9 +4,10 @@ import { useRouter } from 'next/router';
 import { motion } from 'framer-motion';
 import {
   FiUser, FiMail, FiCamera, FiEdit2, FiSave, FiLock,
-  FiTrash2, FiBell, FiMonitor, FiLogOut, FiCheck, FiX
+  FiTrash2, FiBell, FiMonitor, FiLogOut, FiCheck, FiX,
+  FiSmartphone, FiGlobe, FiXCircle
 } from 'react-icons/fi';
-import { useMutation } from '@apollo/client/react';
+import { useMutation, useQuery } from '@apollo/client/react';
 import { gql } from '@apollo/client';
 import { useAuth } from '@/contexts/AuthContext';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
@@ -19,6 +20,55 @@ const DELETE_ACCOUNT_MUTATION = gql`
     deleteAccount(password: $password) {
       success
       message
+    }
+  }
+`;
+
+const MY_SESSIONS = gql`
+  query MySessions {
+    mySessions {
+      id
+      deviceInfo
+      ipAddress
+      lastActive
+      isCurrent
+    }
+  }
+`;
+
+const REVOKE_SESSION = gql`
+  mutation RevokeSession($sessionId: String!) {
+    revokeSession(sessionId: $sessionId) {
+      success
+      message
+    }
+  }
+`;
+
+const MY_NOTIF_PREFS = gql`
+  query MyNotificationPreferences {
+    myNotificationPreferences {
+      newRelease
+      watchlist
+      recommendations
+      accountActivity
+      promotions
+      socialUpdates
+      downloadComplete
+    }
+  }
+`;
+
+const UPDATE_NOTIF_PREFS = gql`
+  mutation UpdateNotificationPreferences($input: NotificationPreferencesInput!) {
+    updateNotificationPreferences(input: $input) {
+      newRelease
+      watchlist
+      recommendations
+      accountActivity
+      promotions
+      socialUpdates
+      downloadComplete
     }
   }
 `;
@@ -609,6 +659,8 @@ export default function ProfilePage() {
                   </div>
 
 
+                  {/* Active Sessions */}
+                  <ActiveSessionsPanel />
 
                   {/* Login Activity */}
                   <LoginActivityLog />
@@ -631,37 +683,7 @@ export default function ProfilePage() {
 
               {/* Notifications Tab */}
               {activeTab === 'notifications' && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="bg-gray-800 rounded-xl p-6"
-                >
-                  <h2 className="text-xl font-semibold text-white mb-6">Notification Settings</h2>
-
-                  <div className="space-y-6">
-                    <ToggleSetting
-                      label="Email notifications"
-                      description="Receive updates about new releases and recommendations"
-                      checked={preferences.emailNotifications}
-                      onChange={(val) => setPreferences({ ...preferences, emailNotifications: val })}
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleSavePreferences}
-                    disabled={isSaving}
-                    className="mt-6 flex items-center gap-2 px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-                  >
-                    {isSaving ? (
-                      <>
-                        <LoadingSpinner size="sm" />
-                        Saving...
-                      </>
-                    ) : (
-                      'Save Settings'
-                    )}
-                  </button>
-                </motion.div>
+                <NotificationPreferencesPanel />
               )}
             </div>
           </div>
@@ -791,5 +813,195 @@ function ToggleSetting({ label, description, checked, onChange }) {
           }`} />
       </button>
     </div>
+  );
+}
+
+// ─── Active Sessions Panel ────────────────────────────────────────────────────
+function ActiveSessionsPanel() {
+  const { data, loading, refetch } = useQuery(MY_SESSIONS, { fetchPolicy: 'network-only' });
+  const [revokeSession] = useMutation(REVOKE_SESSION);
+  const [revokingId, setRevokingId] = useState(null);
+
+  const sessions = data?.mySessions || [];
+
+  const parseDevice = (ua) => {
+    if (!ua) return { icon: FiGlobe, label: 'Unknown device' };
+    const lower = ua.toLowerCase();
+    if (lower.includes('mobile') || lower.includes('android') || lower.includes('iphone'))
+      return { icon: FiSmartphone, label: 'Mobile' };
+    if (lower.includes('windows')) return { icon: FiMonitor, label: 'Windows' };
+    if (lower.includes('mac')) return { icon: FiMonitor, label: 'Mac' };
+    if (lower.includes('linux')) return { icon: FiMonitor, label: 'Linux' };
+    return { icon: FiGlobe, label: 'Browser' };
+  };
+
+  const handleRevoke = async (sessionId) => {
+    setRevokingId(sessionId);
+    try {
+      await revokeSession({ variables: { sessionId } });
+      refetch();
+    } catch (e) {
+      console.error('Revoke failed:', e);
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch { return dateStr; }
+  };
+
+  return (
+    <div className="bg-gray-800 rounded-xl p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-semibold text-white">Active Sessions</h2>
+        <span className="text-xs text-gray-500">{sessions.length} active</span>
+      </div>
+      {loading ? (
+        <div className="flex justify-center py-6"><LoadingSpinner size="md" /></div>
+      ) : sessions.length === 0 ? (
+        <p className="text-gray-400 text-sm">No active sessions found.</p>
+      ) : (
+        <div className="space-y-3">
+          {sessions.map((s) => {
+            const device = parseDevice(s.deviceInfo);
+            const DeviceIcon = device.icon;
+            return (
+              <div
+                key={s.id}
+                className={`flex items-center justify-between p-4 rounded-xl border transition-colors ${
+                  s.isCurrent
+                    ? 'bg-primary-600/10 border-primary-500/30'
+                    : 'bg-gray-700/50 border-gray-600/30 hover:border-gray-500/50'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    s.isCurrent ? 'bg-primary-600/20 text-primary-400' : 'bg-gray-600/50 text-gray-400'
+                  }`}>
+                    <DeviceIcon className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-white font-medium text-sm truncate">{device.label}</p>
+                      {s.isCurrent && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider bg-primary-500/20 text-primary-400 px-2 py-0.5 rounded-full flex-shrink-0">
+                          Current
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-gray-500 text-xs truncate">
+                      {s.ipAddress || 'Unknown IP'} · {formatDate(s.lastActive)}
+                    </p>
+                  </div>
+                </div>
+                {!s.isCurrent && (
+                  <button
+                    onClick={() => handleRevoke(s.id)}
+                    disabled={revokingId === s.id}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-400 hover:text-white hover:bg-red-600/30 rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+                    title="Revoke this session"
+                  >
+                    {revokingId === s.id ? (
+                      <div className="w-3 h-3 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <FiXCircle className="w-3.5 h-3.5" />
+                    )}
+                    Revoke
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Notification Preferences Panel ───────────────────────────────────────────
+function NotificationPreferencesPanel() {
+  const { data, loading } = useQuery(MY_NOTIF_PREFS);
+  const [updatePrefs, { loading: saving }] = useMutation(UPDATE_NOTIF_PREFS);
+  const [prefs, setPrefs] = useState(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (data?.myNotificationPreferences) {
+      setPrefs({ ...data.myNotificationPreferences });
+    }
+  }, [data]);
+
+  const categories = [
+    { key: 'newRelease', label: 'New Releases', description: 'Get notified when new movies or episodes drop' },
+    { key: 'watchlist', label: 'Watchlist Updates', description: 'Alerts when watchlisted content becomes available' },
+    { key: 'recommendations', label: 'Recommendations', description: 'Personalised picks based on your taste' },
+    { key: 'accountActivity', label: 'Account Activity', description: 'Login alerts and security notifications' },
+    { key: 'socialUpdates', label: 'Social Updates', description: 'Watch party invites and friend activity' },
+    { key: 'downloadComplete', label: 'Downloads', description: 'Notify when offline downloads finish' },
+    { key: 'promotions', label: 'Promotions', description: 'Special offers and marketing emails' },
+  ];
+
+  const handleSave = async () => {
+    if (!prefs) return;
+    try {
+      const { data: result } = await updatePrefs({ variables: { input: prefs } });
+      if (result?.updateNotificationPreferences) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch (e) {
+      console.error('Failed to save notification prefs:', e);
+    }
+  };
+
+  if (loading || !prefs) {
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-gray-800 rounded-xl p-6">
+        <div className="flex justify-center py-8"><LoadingSpinner size="md" /></div>
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-gray-800 rounded-xl p-6">
+      <h2 className="text-xl font-semibold text-white mb-2">Notification Preferences</h2>
+      <p className="text-sm text-gray-400 mb-6">Choose which notifications you'd like to receive.</p>
+
+      <div className="space-y-5">
+        {categories.map(cat => (
+          <ToggleSetting
+            key={cat.key}
+            label={cat.label}
+            description={cat.description}
+            checked={prefs[cat.key] ?? true}
+            onChange={(val) => setPrefs(prev => ({ ...prev, [cat.key]: val }))}
+          />
+        ))}
+      </div>
+
+      <div className="flex items-center gap-3 mt-6">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-2 px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 font-medium"
+        >
+          {saving ? (
+            <><LoadingSpinner size="sm" /> Saving...</>
+          ) : (
+            'Save Preferences'
+          )}
+        </button>
+        {saved && (
+          <span className="text-green-400 text-sm font-medium flex items-center gap-1">
+            <FiCheck className="w-4 h-4" /> Saved
+          </span>
+        )}
+      </div>
+    </motion.div>
   );
 }

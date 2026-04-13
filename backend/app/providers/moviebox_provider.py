@@ -88,6 +88,11 @@ class MovieboxProvider:
                 self._item_cache[s_id] = candidate
                 return candidate
         except Exception as e:
+            try:
+                import sentry_sdk
+                sentry_sdk.capture_exception(e)
+            except Exception:
+                pass
             print(f"Provider search error for {s_id}: {e}")
             
         return None

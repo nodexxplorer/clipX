@@ -1,14 +1,29 @@
 // frontend/src/pages/admin/index.jsx
 import { useState } from 'react';
 import { useQuery } from '@apollo/client/react';
+import dynamic from 'next/dynamic';
 import AdminProtectedRoute from '@/pages/auth/AdminProtectedRoute';
 import AdminLayout from '@/components/admin/layout/AdminLayout';
-import StatsCards from '@/components/admin/dashboard/StatsCards';
-import UserGrowthChart from '@/components/admin/dashboard/UserGrowthChart';
-import TopMoviesTable from '@/components/admin/dashboard/TopMoviesTable';
-import RecentActivity from '@/components/admin/dashboard/RecentActivity';
 import { GET_DASHBOARD_STATS } from '@/graphql/queries/adminQueries';
 import { FiRefreshCw } from 'react-icons/fi';
+
+// Code splitting: lazy-load heavy dashboard components to shrink the main bundle
+const StatsCards = dynamic(() => import('@/components/admin/dashboard/StatsCards'), {
+  loading: () => <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">{[...Array(4)].map((_, i) => <div key={i} className="bg-white/[0.02] rounded-2xl p-6 animate-pulse h-32 border border-white/5" />)}</div>,
+  ssr: false
+});
+const UserGrowthChart = dynamic(() => import('@/components/admin/dashboard/UserGrowthChart'), {
+  loading: () => <div className="bg-white/[0.02] rounded-2xl p-6 animate-pulse h-64 border border-white/5" />,
+  ssr: false
+});
+const TopMoviesTable = dynamic(() => import('@/components/admin/dashboard/TopMoviesTable'), {
+  loading: () => <div className="bg-white/[0.02] rounded-2xl p-6 animate-pulse h-64 border border-white/5" />,
+  ssr: false
+});
+const RecentActivity = dynamic(() => import('@/components/admin/dashboard/RecentActivity'), {
+  loading: () => <div className="bg-white/[0.02] rounded-2xl p-6 animate-pulse h-48 border border-white/5" />,
+  ssr: false
+});
 
 export default function AdminDashboard() {
   const [dateRange, setDateRange] = useState({

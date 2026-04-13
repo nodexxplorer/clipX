@@ -133,11 +133,31 @@ const MovieCard = ({ movie, size = 'md', showWatchlistButton = false, isSeries =
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity duration-300" />
 
         {/* Top Badges */}
-        <div className="absolute top-2 left-2 flex flex-col gap-2">
+        <div className="absolute top-2 left-2 flex flex-col gap-1.5">
           {rating && (
             <div className="px-1.5 py-0.5 bg-yellow-500 text-black text-[10px] font-black rounded flex items-center gap-0.5">
               <FiStar className="fill-current" />
               {rating.toFixed(1)}
+            </div>
+          )}
+          {/* "New" badge — content added within last 30 days */}
+          {(() => {
+            const date = movie.releaseDate || movie.firstAirDate || movie.createdAt;
+            if (!date) return null;
+            const daysSince = (Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24);
+            if (daysSince <= 30 && daysSince >= 0) {
+              return (
+                <div className="px-1.5 py-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-[9px] font-black rounded uppercase tracking-wider">
+                  New
+                </div>
+              );
+            }
+            return null;
+          })()}
+          {/* Content rating badge */}
+          {movie.contentRating && (
+            <div className="px-1.5 py-0.5 bg-white/20 backdrop-blur-sm text-white text-[9px] font-black rounded border border-white/20">
+              {movie.contentRating}
             </div>
           )}
         </div>
@@ -148,10 +168,16 @@ const MovieCard = ({ movie, size = 'md', showWatchlistButton = false, isSeries =
             {movie.title}
           </h3>
 
-          <div className="flex items-center gap-2 text-[10px] text-gray-300 mb-2 font-bold uppercase tracking-tighter">
+          <div className="flex items-center gap-2 text-[10px] text-gray-300 mb-2 font-bold uppercase tracking-tighter flex-wrap">
             {movie.year && <span>{movie.year}</span>}
             <span className="w-1 h-1 bg-gray-500 rounded-full" />
             <span>{getMediaLabel()}</span>
+            {movie.runtime && (
+              <>
+                <span className="w-1 h-1 bg-gray-500 rounded-full" />
+                <span>{movie.runtime >= 60 ? `${Math.floor(movie.runtime / 60)}h ${movie.runtime % 60}m` : `${movie.runtime}m`}</span>
+              </>
+            )}
           </div>
 
           {/* Action buttons — Watch + Download + Heart */}

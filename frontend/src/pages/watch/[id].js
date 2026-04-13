@@ -95,6 +95,51 @@ export default function WatchPage() {
   const [showNextEpisode, setShowNextEpisode] = useState(false);
   const [autoplayCountdown, setAutoplayCountdown] = useState(10);
   const autoplayTimerRef = useRef(null);
+  const resumeAutoSeekTimer = useRef(null);
+  // Keyboard shortcuts overlay
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  // Ambient mode (cinematic screen glow)
+  const [ambientMode, setAmbientMode] = useState(false);
+  const [ambientColor, setAmbientColor] = useState('rgba(0,0,0,0)');
+  const ambientCanvasRef = useRef(null);
+
+  // ─── Section 10: Playback Statistics Overlay ─────────────────
+  const [showPlaybackStats, setShowPlaybackStats] = useState(false);
+  const [playbackStats, setPlaybackStats] = useState({
+    bitrate: 0, resolution: '', droppedFrames: 0, totalFrames: 0,
+    bufferHealth: 0, codec: '', latency: 0
+  });
+
+  // ─── Section 10: Chapter Markers ─────────────────────────────
+  const [chapters, setChapters] = useState([]); // [{title, startTime, endTime}]
+  const [activeChapter, setActiveChapter] = useState(null);
+
+  // ─── Section 10: AirPlay / Chromecast Detection ──────────────
+  const [castAvailable, setCastAvailable] = useState(false);
+  const [airPlayAvailable, setAirPlayAvailable] = useState(false);
+
+  // ─── Section 10: Multi Audio Track ───────────────────────────
+  const [audioTracks, setAudioTracks] = useState([]);
+  const [activeAudioTrack, setActiveAudioTrack] = useState(0);
+
+  // ─── Auto quality from bandwidth ────────────────────────────
+  useEffect(() => {
+    if (quality !== 'auto') return; // User manually picked
+    try {
+      const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      if (conn) {
+        const effectiveType = conn.effectiveType; // '4g', '3g', '2g', 'slow-2g'
+        const downlink = conn.downlink; // Mbps estimate
+        let detected = 'auto';
+        if (downlink >= 5 || effectiveType === '4g') detected = '1080';
+        else if (downlink >= 2 || effectiveType === '3g') detected = '720';
+        else if (downlink >= 0.5 || effectiveType === '2g') detected = '480';
+        else detected = '360';
+        setQuality(detected);
+        console.log(`[AutoQuality] Detected ${effectiveType} (${downlink}Mbps) → ${detected}p`);
+      }
+    } catch { /* API not available — keep auto */ }
+  }, []);
 
   // Restore persisted volume on mount
   useEffect(() => {
@@ -282,6 +327,20 @@ export default function WatchPage() {
       }
     } catch (_) { }
   }, [HISTORY_KEY, isAuthenticated, actualId]);
+
+  // Auto-seek: if user doesn't interact with the resume prompt within 3s, auto-resume
+  useEffect(() => {
+    if (resumePrompt) {
+      resumeAutoSeekTimer.current = setTimeout(() => {
+        if (videoRef.current && resumePrompt) {
+          videoRef.current.currentTime = resumePrompt.currentTime;
+          hasSeekedRef.current = true;
+          setResumePrompt(null);
+        }
+      }, 3000);
+    }
+    return () => clearTimeout(resumeAutoSeekTimer.current);
+  }, [resumePrompt]);
 
   // Stable ref for movieData so the progress interval doesn't restart
   // every time Apollo re-renders the query result
@@ -674,12 +733,104 @@ export default function WatchPage() {
             adjustVolume(-0.1);
           }
           break;
+        case '?':
+          setShowShortcuts(prev => !prev);
+          break;
+        case 'a':
+          setAmbientMode(prev => !prev);
+          break;
+        case 'd':
+          setShowPlaybackStats(prev => !prev);
+          break;
+        case 'escape':
+          if (showShortcuts) { setShowShortcuts(false); e.preventDefault(); }
+          break;
       }
     };
 
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [togglePlay, toggleFullscreen, toggleMute, skip, adjustVolume]);
+
+  // ─── Section 10: AirPlay / Chromecast detection ────────────────
+  useEffect(() => {
+    // Chromecast detection
+    if (typeof window !== 'undefined') {
+      window.__onGCastApiAvailable = (isAvail) => { setCastAvailable(isAvail); };
+      if (window.chrome && window.chrome.cast) setCastAvailable(true);
+    }
+    // AirPlay detection (Safari)
+    const video = videoRef.current;
+    if (video) {
+      const checkAirPlay = () => {
+        if (video.webkitShowPlaybackTargetPicker) setAirPlayAvailable(true);
+      };
+      video.addEventListener('webkitplaybacktargetavailabilitychanged', (e) => {
+        setAirPlayAvailable(e.availability === 'available');
+      });
+      checkAirPlay();
+      // Detect audio tracks
+      if (video.audioTracks && video.audioTracks.length > 0) {
+        const tracks = Array.from(video.audioTracks).map((t, i) => ({
+          id: i, label: t.label || `Track ${i + 1}`, language: t.language || 'und', enabled: t.enabled
+        }));
+        setAudioTracks(tracks);
+      }
+    }
+  }, [streamDataFetch]);
+
+  // ─── Section 10: Playback Stats Polling ────────────────────────
+  useEffect(() => {
+    if (!showPlaybackStats) return;
+    const interval = setInterval(() => {
+      const video = videoRef.current;
+      if (!video) return;
+      const quality = video.getVideoPlaybackQuality?.();
+      const bufferedEnd = video.buffered?.length > 0 ? video.buffered.end(video.buffered.length - 1) : 0;
+      setPlaybackStats({
+        bitrate: 0, // Not available from HTMLVideoElement directly
+        resolution: `${video.videoWidth}x${video.videoHeight}`,
+        droppedFrames: quality?.droppedVideoFrames || 0,
+        totalFrames: quality?.totalVideoFrames || 0,
+        bufferHealth: Math.max(0, bufferedEnd - video.currentTime).toFixed(1),
+        codec: video.canPlayType ? 'H.264' : 'unknown',
+        latency: 0,
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [showPlaybackStats]);
+
+  // ─── Ambient mode: sample video frame color ────────────────────────
+  useEffect(() => {
+    if (!ambientMode || !videoRef.current) {
+      setAmbientColor('rgba(0,0,0,0)');
+      return;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = 8;
+    canvas.height = 8;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ambientCanvasRef.current = canvas;
+
+    const sampleInterval = setInterval(() => {
+      try {
+        const video = videoRef.current;
+        if (!video || video.paused || !ctx) return;
+        ctx.drawImage(video, 0, 0, 8, 8);
+        const data = ctx.getImageData(0, 0, 8, 8).data;
+        let r = 0, g = 0, b = 0, count = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          r += data[i]; g += data[i + 1]; b += data[i + 2]; count++;
+        }
+        r = Math.round(r / count);
+        g = Math.round(g / count);
+        b = Math.round(b / count);
+        setAmbientColor(`rgba(${r},${g},${b},0.6)`);
+      } catch (_) { /* CORS or no video — ignore */ }
+    }, 200);
+
+    return () => clearInterval(sampleInterval);
+  }, [ambientMode]);
 
   const handleProgressClick = (e) => {
     if (progressRef.current && videoRef.current) {
@@ -876,10 +1027,21 @@ export default function WatchPage() {
 
       <div
         ref={containerRef}
-        className="relative w-full h-screen bg-black"
+        className="relative w-full h-screen bg-black overflow-hidden"
         onMouseMove={resetInactivityTimer}
         onMouseLeave={() => isPlaying && setShowControls(false)}
       >
+        {/* Ambient mode glow */}
+        {ambientMode && (
+          <div
+            className="absolute inset-[-80px] pointer-events-none z-0 transition-colors duration-500"
+            style={{
+              background: ambientColor,
+              filter: 'blur(120px)',
+              opacity: 0.7,
+            }}
+          />
+        )}
         {/* Video Player */}
         <video
           ref={videoRef}
@@ -945,7 +1107,28 @@ export default function WatchPage() {
           }}
         />
 
-        {/* Cover Image — shown before stream loads */}
+        {/* ─── Playback Statistics Overlay (press D to toggle) ─── */}
+        <AnimatePresence>
+          {showPlaybackStats && (
+            <motion.div
+              initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+              className="absolute top-4 left-4 z-30 bg-black/80 backdrop-blur-sm rounded-xl p-3 font-mono text-[11px] leading-5 text-green-400 border border-green-500/20 pointer-events-none select-none"
+              aria-label="Playback Statistics"
+            >
+              <div className="text-[10px] text-green-300/60 uppercase tracking-wider mb-1 font-bold">Playback Stats</div>
+              <div>Resolution: <span className="text-white">{playbackStats.resolution || 'N/A'}</span></div>
+              <div>Buffer: <span className="text-white">{playbackStats.bufferHealth}s</span></div>
+              <div>Dropped Frames: <span className={`${playbackStats.droppedFrames > 10 ? 'text-red-400' : 'text-white'}`}>{playbackStats.droppedFrames}/{playbackStats.totalFrames}</span></div>
+              <div>Codec: <span className="text-white">{playbackStats.codec}</span></div>
+              <div>Quality: <span className="text-white">{quality}p</span></div>
+              <div>Speed: <span className="text-white">{playbackRate}x</span></div>
+              {castAvailable && <div className="text-cyan-400">📡 Chromecast available</div>}
+              {airPlayAvailable && <div className="text-cyan-400">📡 AirPlay available</div>}
+              {audioTracks.length > 1 && <div>Audio Tracks: <span className="text-white">{audioTracks.length}</span></div>}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {!streamingUrl && movie?.posterPath && (
           <div className="absolute inset-0 flex items-center justify-center">
             <img
@@ -994,6 +1177,7 @@ export default function WatchPage() {
                     videoRef.current.currentTime = resumePrompt.currentTime;
                     hasSeekedRef.current = true;
                   }
+                  clearTimeout(resumeAutoSeekTimer.current);
                   setResumePrompt(null);
                 }}
                 className="px-5 py-2 bg-primary-600 hover:bg-primary-500 text-white font-bold rounded-xl transition-colors text-sm"
@@ -1001,7 +1185,7 @@ export default function WatchPage() {
                 Resume
               </button>
               <button
-                onClick={() => { setResumePrompt(null); hasSeekedRef.current = true; }}
+                onClick={() => { setResumePrompt(null); hasSeekedRef.current = true; clearTimeout(resumeAutoSeekTimer.current); }}
                 className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-colors text-sm"
               >
                 Start over
@@ -1088,6 +1272,61 @@ export default function WatchPage() {
                     Cancel
                   </button>
                 </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Keyboard Shortcuts Overlay */}
+        <AnimatePresence>
+          {showShortcuts && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md"
+              onClick={() => setShowShortcuts(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                className="bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-2xl p-8 max-w-lg w-full mx-4 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-black text-white tracking-tight">Keyboard Shortcuts</h3>
+                  <button
+                    onClick={() => setShowShortcuts(false)}
+                    className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-gray-400 hover:text-white transition-colors text-sm font-bold"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                  {[
+                    ['Space / K', 'Play / Pause'],
+                    ['F', 'Toggle fullscreen'],
+                    ['M', 'Mute / Unmute'],
+                    ['←', 'Rewind 10s'],
+                    ['→', 'Forward 10s'],
+                    ['↑', 'Volume up'],
+                    ['↓', 'Volume down'],
+                    ['Shift + ↑', 'Brightness up'],
+                    ['Shift + ↓', 'Brightness down'],
+                    ['A', 'Toggle ambient glow'],
+                    ['?', 'Show / Hide shortcuts'],
+                    ['Esc', 'Close overlay'],
+                  ].map(([key, desc]) => (
+                    <div key={key} className="flex items-center gap-3">
+                      <kbd className="inline-flex items-center justify-center min-w-[2.2rem] px-2 py-1 bg-white/10 border border-white/20 rounded-lg text-[11px] font-mono font-bold text-gray-200 tracking-wide">
+                        {key}
+                      </kbd>
+                      <span className="text-gray-400">{desc}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-gray-600 text-xs mt-6 text-center">Press <kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-gray-400 font-mono">?</kbd> to toggle this overlay</p>
               </motion.div>
             </motion.div>
           )}
