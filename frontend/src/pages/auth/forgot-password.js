@@ -9,7 +9,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { motion } from 'framer-motion';
 import { FiMail, FiArrowLeft, FiCheck, FiLock } from 'react-icons/fi';
-import { gql, useMutation } from '@apollo/client';
+import { gql } from '@apollo/client';
+import { useMutation } from '@apollo/client/react';
+
 
 const FORGOT_PASSWORD = gql`
   mutation ForgotPassword($email: String!) {
