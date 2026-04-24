@@ -84,3 +84,13 @@ export const LOG_SEARCH = gql`
     }
   }
 `;
+
+export const ADMIN_CREATE_MOVIE = gql`
+  mutation AdminCreateMovie($input: MovieInput!) {
+    adminCreateMovie(input: $input) {
+      id
+      title
+      posterUrl
+    }
+  }
+`;

@@ -1,4 +1,5 @@
 // frontend/src/pages/chat.js
+import Image from 'next/image';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import Head from 'next/head';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -126,7 +127,7 @@ export default function ChatPage() {
                     {/* Current user */}
                     <div className="p-3 border-t border-white/5 flex items-center gap-3">
                         {user.avatar ? (
-                            <img src={user.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
+                            <Image src={user.avatar || '/images/placeholder.jpg'} alt="" width={32} height={32} className="rounded-full object-cover" />
                         ) : (
                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white">
                                 {(user.name || 'U').charAt(0).toUpperCase()}
@@ -218,7 +219,7 @@ export default function ChatPage() {
                                         <div className="w-9 h-9 flex-shrink-0 mt-0.5">
                                             {showHeader ? (
                                                 msg.userAvatar ? (
-                                                    <img src={msg.userAvatar} alt="" className="w-9 h-9 rounded-full object-cover ring-2 ring-white/5" />
+                                                    <Image src={msg.userAvatar || '/images/placeholder.jpg'} alt="" width={36} height={36} className="rounded-full object-cover ring-2 ring-white/5" />
                                                 ) : (
                                                     <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-500 to-purple-500 flex items-center justify-center text-xs font-bold text-white ring-2 ring-white/5">
                                                         {(msg.userName || 'U').charAt(0).toUpperCase()}

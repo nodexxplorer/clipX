@@ -10,6 +10,23 @@
 !.yarn/releases
 !.yarn/versions
 
+frontend/eslint_errors.txt
+frontend/.next-build-log.txt
+pending_features.md
+verified_completed_features.md
+audit_report.md
+remotes.txt
+urls.txt 
+As a software developer with lots of years of experience rewrite the 
+
+AuthContext.js
+and 
+
+stream.js
+ with zero errors andd bugs
+thean make sure that after signup a user verfies his email and make the frontend sides responsible for streaming movies on the frontend folder use the correct backend route 
+
+
 # testing
 /coverage
 

@@ -1,11 +1,12 @@
-import React from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, ScrollView, Pressable, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, radius, fontSize, fontWeight } from '@/constants/theme';
+import { showImagePickerOptions, UploadResult } from '@/utils/profilePicture';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -26,8 +27,9 @@ const tierConfig = {
 
 export default function ProfileScreen() {
     const insets = useSafeAreaInsets();
-    const { user, isAuthenticated, logout } = useAuth();
+    const { user, isAuthenticated, logout, refreshUser } = useAuth();
     const router = useRouter();
+    const [uploading, setUploading] = useState(false);
 
     if (!isAuthenticated || !user) {
         return (
@@ -111,6 +113,31 @@ export default function ProfileScreen() {
                     <View style={[styles.tierBadge, { backgroundColor: tier.color }]}>
                         <Ionicons name={tier.icon} size={10} color="#fff" />
                     </View>
+                    {/* Profile Picture Change Button (Section 11) */}
+                    <Pressable
+                        style={styles.avatarEditBtn}
+                        onPress={() => {
+                            showImagePickerOptions(
+                                () => setUploading(true),
+                                (result: UploadResult) => {
+                                    setUploading(false);
+                                    if (result.success) {
+                                        Alert.alert('Success', 'Profile picture updated!');
+                                        refreshUser?.();
+                                    } else {
+                                        Alert.alert('Upload Failed', result.error || 'Please try again.');
+                                    }
+                                }
+                            );
+                        }}
+                        disabled={uploading}
+                    >
+                        {uploading ? (
+                            <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                            <Ionicons name="camera" size={14} color="#fff" />
+                        )}
+                    </Pressable>
                 </View>
                 <Text style={styles.userName}>{user.name}</Text>
                 <Text style={styles.userEmail}>{user.email}</Text>
@@ -182,6 +209,7 @@ const styles = StyleSheet.create({
     avatarPlaceholder: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.surfaceLight, justifyContent: 'center', alignItems: 'center' },
     avatarInitial: { color: colors.text, fontSize: 32, fontWeight: fontWeight.bold },
     tierBadge: { position: 'absolute', bottom: 0, right: -2, width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: colors.background },
+    avatarEditBtn: { position: 'absolute', bottom: -4, left: -4, width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: colors.background },
     userName: { color: colors.text, fontSize: fontSize.xxl, fontWeight: fontWeight.black, marginTop: spacing.md },
     userEmail: { color: colors.textMuted, fontSize: fontSize.sm, marginTop: 2 },
 

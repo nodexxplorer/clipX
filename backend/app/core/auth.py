@@ -3,9 +3,12 @@ from typing import Optional, Tuple
 from jose import jwt
 from passlib.context import CryptContext
 import os
+import logging
 import uuid
 import hashlib
 from dotenv import load_dotenv
+
+logger = logging.getLogger("clipx")
 
 load_dotenv()
 
@@ -150,7 +153,15 @@ async def rotate_refresh_token(db, old_token: str, device_info: str = None, ip_a
             WHERE family_id = :fid
         """), {"fid": family_id})
         await db.commit()
-        print(f"🚨 Refresh token theft detected for user {user_id}! All tokens in family {family_id} revoked.")
+        logger.critical(f"Refresh token theft detected for user {user_id}! All tokens in family {family_id} revoked.")
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_message(
+                f"Refresh token theft detected for user {user_id}",
+                level="error",
+            )
+        except Exception:
+            pass
         return None, None
     
     # Revoke old token
@@ -178,3 +189,66 @@ async def revoke_all_user_tokens(db, user_id: str):
         WHERE user_id = :uid AND is_revoked = FALSE
     """), {"uid": user_id})
     await db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════
+# FastAPI Dependency — reusable auth guard for REST endpoints
+# ═══════════════════════════════════════════════════════════════
+
+async def get_current_user(request=None, *, _request=None):
+    """
+    FastAPI Depends() callable.
+    Extracts the JWT from cookie ('auth_token') or Authorization header,
+    decodes it, fetches the User row, and returns the ORM object.
+    Raises HTTPException(401) on any failure.
+
+    Usage:
+        from app.core.auth import get_current_user
+        @router.get("/protected")
+        async def protected(user=Depends(get_current_user)):
+            ...
+    """
+    from fastapi import Request as _Req
+    # Support being called as Depends(get_current_user) where FastAPI
+    # injects `request` via the parameter name.
+    # We also accept an explicit _request kwarg for manual calls.
+    req = request or _request
+
+    from fastapi import HTTPException
+
+    if req is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    # Extract token from cookie or Authorization header
+    token = None
+    if hasattr(req, "cookies"):
+        token = req.cookies.get("auth_token")
+    auth_header = req.headers.get("authorization", "")
+    if not token and auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    payload = decode_access_token(token)
+    if not payload or "sub" not in payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    user_id_str = payload["sub"]
+    try:
+        user_uuid = uuid.UUID(user_id_str)
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=401, detail="Malformed token")
+
+    from app.core.database import AsyncSessionLocal
+    from app.models.database import User
+    from sqlalchemy.future import select
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(User).where(User.id == user_uuid))
+        user = result.scalars().first()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return user

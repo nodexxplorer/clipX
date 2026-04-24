@@ -2,6 +2,7 @@
  * Downloads Page — manage downloaded content for offline viewing
  */
 
+import Image from 'next/image';
 import { useState } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
@@ -158,7 +159,7 @@ export default function DownloadsPage() {
                                 >
                                     {/* Poster */}
                                     <div className="relative w-16 h-24 bg-gray-800 rounded-lg overflow-hidden flex-shrink-0">
-                                        <img src={dl.poster} alt={dl.title} className="w-full h-full object-cover" />
+                                        <Image src={dl.poster || '/images/placeholder.jpg'} alt={dl.title} fill className="object-cover" />
                                         {dl.status === 'completed' && (
                                             <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <FiPlay className="w-6 h-6 text-white" />

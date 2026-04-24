@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/settings/index.jsx
+import Image from 'next/image';
 import { useState } from 'react';
 import AdminLayout from '@/components/admin/layout/AdminLayout';
 import { useAuth } from '@/contexts/AuthContext';
@@ -71,7 +72,7 @@ export default function AdminSettings() {
               <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Admin Account</h2>
               <div className="flex items-center gap-4 p-4 bg-white/[0.02] rounded-xl border border-white/5">
                 {user?.avatar ? (
-                  <img src={user.avatar} className="w-14 h-14 rounded-xl object-cover" alt="" />
+                  <Image src={user.avatar || '/images/placeholder.jpg'} alt="" width={56} height={56} className="rounded-xl object-cover" />
                 ) : (
                   <div className="w-14 h-14 bg-gradient-to-br from-primary-500 to-purple-600 rounded-xl flex items-center justify-center text-xl font-bold text-white">
                     {user?.name?.[0]?.toUpperCase() || 'A'}

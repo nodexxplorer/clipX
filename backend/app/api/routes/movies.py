@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
+from app.core.auth import get_current_user
 from app.services.movie_service import movie_service
 from app.models.responses import (
     SearchResponse, TrendingResponse, MovieDetails, 
@@ -40,7 +41,7 @@ async def get_movie(movie_id: str, db: AsyncSession = Depends(get_db)):
     return details
 
 @router.get("/movie/{movie_id}/stream", response_model=ContentStreamResponse)
-async def get_stream(movie_id: str, season: int = 0, episode: int = 1, db: AsyncSession = Depends(get_db)):
+async def get_stream(movie_id: str, season: int = 0, episode: int = 1, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
     try:
         data = await movie_service.get_stream_links(movie_id, season=season, episode=episode, db=db)
         # Obfuscate stream URLs — replace raw CDN URLs with signed proxy tokens
@@ -62,7 +63,7 @@ async def get_stream(movie_id: str, season: int = 0, episode: int = 1, db: Async
                             raw_url = qs['url'][0]
 
                     if raw_url.startswith('http'):
-                        token = create_stream_token(raw_url)
+                        token = create_stream_token(raw_url, user_id=str(user.id))
                         # Replace with proxy URL — frontend will call /api/proxy/stream?token=xxx
                         link.url = f'/api/proxy/stream?token={token}'
         return data
@@ -70,7 +71,7 @@ async def get_stream(movie_id: str, season: int = 0, episode: int = 1, db: Async
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/movie/{movie_id}/download", response_model=ContentDownloadResponse)
-async def get_download(movie_id: str, season: int = 0, episode: int = 1, db: AsyncSession = Depends(get_db)):
+async def get_download(movie_id: str, season: int = 0, episode: int = 1, db: AsyncSession = Depends(get_db), user=Depends(get_current_user)):
     try:
         return await movie_service.get_download_links(movie_id, season=season, episode=episode, db=db)
     except Exception as e:

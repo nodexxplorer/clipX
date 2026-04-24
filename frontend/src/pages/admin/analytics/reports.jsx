@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/analytics/reports.jsx
+import Image from 'next/image';
 import { useState } from 'react';
 import { useQuery } from '@apollo/client/react';
 import AdminProtectedRoute from '@/pages/auth/AdminProtectedRoute';
@@ -126,7 +127,7 @@ export default function AnalyticsReportsPage() {
                                                         <td className="px-3 py-2">
                                                             <div className="flex items-center gap-3">
                                                                 {t.movie?.posterUrl ? (
-                                                                    <img src={t.movie.posterUrl} alt="" className="w-8 h-12 object-cover rounded-md ring-1 ring-white/5" />
+                                                                    <div className="relative w-8 h-12"><Image src={t.movie.posterUrl || '/images/placeholder.jpg'} alt="" fill className="object-cover rounded-md ring-1 ring-white/5" /></div>
                                                                 ) : (
                                                                     <div className="w-8 h-12 rounded-md bg-white/5 flex items-center justify-center">
                                                                         <FiFilm className="w-4 h-4 text-gray-600" />

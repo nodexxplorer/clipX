@@ -3,6 +3,7 @@
  * Displays user reviews with rating stars and allows authenticated users to submit reviews
  */
 
+import Image from 'next/image';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiStar, FiSend, FiUser } from 'react-icons/fi';
@@ -164,7 +165,7 @@ export default function MovieReviews({ movieId }) {
                         <div className="flex items-center gap-3 mb-4">
                             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden">
                                 {user?.avatar ? (
-                                    <img src={user.avatar} alt="" className="w-full h-full object-cover" />
+                                    <Image src={user.avatar || '/images/placeholder.jpg'} alt="" width={40} height={40} className="object-cover" />
                                 ) : (
                                     user?.name?.charAt(0) || <FiUser />
                                 )}
@@ -228,7 +229,7 @@ export default function MovieReviews({ movieId }) {
                             <div className="flex items-start gap-3">
                                 <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-500/40 to-purple-600/40 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 overflow-hidden">
                                     {review.userAvatar ? (
-                                        <img src={review.userAvatar} alt="" className="w-full h-full object-cover" />
+                                        <Image src={review.userAvatar || '/images/placeholder.jpg'} alt="" width={40} height={40} className="object-cover" />
                                     ) : (
                                         review.userName?.charAt(0) || '?'
                                     )}

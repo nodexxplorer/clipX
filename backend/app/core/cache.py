@@ -1,7 +1,10 @@
 import json
+import logging
 from typing import Any, Optional
 import redis.asyncio as aioredis
 from app.core.config import settings
+
+logger = logging.getLogger("clipx")
 
 
 class RedisCache:
@@ -25,9 +28,9 @@ class RedisCache:
             self._redis = aioredis.from_url(self.redis_url, decode_responses=True)
             await self._redis.ping()
             self._enabled = True
-            print("[CACHE] Redis connected successfully")
+            logger.info("[CACHE] Redis connected successfully")
         except Exception as e:
-            print(f"[CACHE] Redis unavailable, falling back to no-cache mode: {e}")
+            logger.warning(f"[CACHE] Redis unavailable, falling back to no-cache mode: {e}")
             self._redis = None
             self._enabled = False
         return self._enabled
@@ -39,7 +42,7 @@ class RedisCache:
             data = await self._redis.get(key)
             return json.loads(data) if data else None
         except Exception as e:
-            print(f"[CACHE] Error reading {key}: {e}")
+            logger.exception(f"[CACHE] Error reading {key}")
             return None
 
     async def set(self, key: str, value: Any, expire: int = 300) -> None:
@@ -48,7 +51,7 @@ class RedisCache:
         try:
             await self._redis.setex(key, expire, json.dumps(value))
         except Exception as e:
-            print(f"[CACHE] Error writing {key}: {e}")
+            logger.exception(f"[CACHE] Error writing {key}")
 
 
 cache = RedisCache()

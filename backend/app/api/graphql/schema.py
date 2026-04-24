@@ -1,4 +1,7 @@
 # pyright: reportCallIssue=false, reportArgumentType=false, reportGeneralTypeIssues=false, reportReturnType=false
+import logging
+
+logger = logging.getLogger("clipx")
 import strawberry
 import asyncio
 from typing import List, Optional, Any
@@ -194,6 +197,14 @@ class MoviePagination:
     totalCount: int
     hasMore: bool
     currentPage: int
+
+@strawberry.type
+class SearchResults:
+    items: List[Movie]
+    totalResults: int
+    page: int
+    totalPages: int
+
 
 @strawberry.input
 class MovieFilter:
@@ -455,7 +466,7 @@ async def _log_activity(db, user_id, action: str, info=None, success: bool = Tru
         await db.commit()
     except Exception as e:
         _sentry_capture(e)
-        print(f"Log activity error: {e}")
+        logger.exception("Log activity error")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -622,6 +633,20 @@ class SeoMetadataInput:
     metaDescription: Optional[str] = None
     ogImage: Optional[str] = None
 
+@strawberry.input
+class MovieInput:
+    title: str
+    overview: Optional[str] = None
+    posterUrl: Optional[str] = None
+    backdropUrl: Optional[str] = None
+    trailerUrl: Optional[str] = None
+    releaseDate: Optional[str] = None
+    runtime: Optional[int] = None
+    rating: Optional[float] = None
+    genres: Optional[List[str]] = None
+    tagline: Optional[str] = None
+    contentType: str = "movie"
+
 @strawberry.type
 class RevenueGoal:
     id: strawberry.ID
@@ -740,7 +765,7 @@ class Query:
                 data = await movie_service.get_movies(page=page)
         except Exception as e:
             _sentry_capture(e)
-            print(f"movies query error: {e}")
+            logger.exception("movies query error")
             return {"movies": [], "total": 0, "hasMore": False}
 
         results = data.results if hasattr(data, "results") else []
@@ -802,10 +827,19 @@ class Query:
             .order_by(desc(DbReview.created_at))
         )
         reviews = result.scalars().all()
+        if not reviews:
+            return []
+
+        # Batch-fetch all review authors in ONE query (N+1 fix)
+        author_ids = list({r.user_id for r in reviews})
+        user_result = await db.execute(
+            select(DbUser).where(DbUser.id.in_(author_ids))
+        )
+        user_map = {u.id: u for u in user_result.scalars().all()}
+
         out = []
         for r in reviews:
-            user_result = await db.execute(select(DbUser).where(DbUser.id == r.user_id))
-            u = user_result.scalars().first()
+            u = user_map.get(r.user_id)
             out.append(Review(
                 id=str(r.id), content=r.content, rating=r.rating,
                 userName=u.name if u else "User", userAvatar=u.avatar if u else None,
@@ -830,33 +864,45 @@ class Query:
                 .offset(offset).limit(limit)
             )
             history_rows = history_result.scalars().all()
+            if not history_rows:
+                return []
+
+            # Batch-fetch all moviebox_ids from local DB in TWO queries (N+1 fix)
+            all_mids = list({str(h.moviebox_id) for h in history_rows})
+
+            movie_result = await db.execute(
+                select(DbMovie).where(DbMovie.moviebox_id.in_(all_mids))
+            )
+            movie_map = {m.moviebox_id: m for m in movie_result.scalars().all()}
+
+            series_result = await db.execute(
+                select(DbSeries).where(DbSeries.moviebox_id.in_(all_mids))
+            )
+            series_map = {s.moviebox_id: s for s in series_result.scalars().all()}
+
+            # Only fetch from API for items not in local DB (rare after first view)
+            missing_mids = [mid for mid in all_mids if mid not in movie_map and mid not in series_map]
+            api_map = {}
+            if missing_mids:
+                api_results = await asyncio.gather(
+                    *[movie_service.get_details(mid, db=db) for mid in missing_mids[:5]],
+                    return_exceptions=True
+                )
+                for mid, result in zip(missing_mids[:5], api_results):
+                    if not isinstance(result, Exception) and result:
+                        api_map[mid] = result
+
             for h in history_rows:
-                title, poster = None, None
                 mid = str(h.moviebox_id)
+                title, poster = None, None
 
-                # 1. Try local DB lookup first (fast)
-                movie_res = await db.execute(select(DbMovie).where(DbMovie.moviebox_id == mid))
-                movie_db = movie_res.scalars().first()
-                if movie_db:
-                    title, poster = movie_db.title, movie_db.poster_url
+                if mid in movie_map:
+                    title, poster = movie_map[mid].title, movie_map[mid].poster_url
+                elif mid in series_map:
+                    title, poster = series_map[mid].title, series_map[mid].poster_url
+                elif mid in api_map:
+                    title, poster = api_map[mid].title, api_map[mid].poster_url
                 else:
-                    series_res = await db.execute(select(DbSeries).where(DbSeries.moviebox_id == mid))
-                    series_db = series_res.scalars().first()
-                    if series_db:
-                        title, poster = series_db.title, series_db.poster_url
-
-                # 2. If local lookup failed, try the movie service API
-                if not title:
-                    try:
-                        details = await movie_service.get_details(mid, db=db)
-                        if details:
-                            title = details.title
-                            poster = details.poster_url
-                    except Exception:
-                        pass
-
-                # 3. Fallback: use moviebox_id as crude title
-                if not title:
                     title = f"Content #{mid[:8]}"
 
                 progress = (h.current_time / h.duration * 100) if h.duration and h.duration > 0 else 0
@@ -869,7 +915,7 @@ class Query:
                 ))
         except Exception as e:
             _sentry_capture(e)
-            print(f"Watch history error: {e}")
+            logger.exception("Watch history error")
         return items
 
     @strawberry.field
@@ -931,7 +977,7 @@ class Query:
                     ))
             except Exception as e:
                 _sentry_capture(e)
-                print(f"[dashboardStats] topMovies error: {e}")
+                logger.exception("[dashboardStats] topMovies error")
 
             # ── Genre Distribution (from movie_views table) ──────
             genre_dist = []
@@ -952,7 +998,7 @@ class Query:
                     ))
             except Exception as e:
                 _sentry_capture(e)
-                print(f"[dashboardStats] genreDistribution error: {e}")
+                logger.exception("[dashboardStats] genreDistribution error")
 
             return AdminDashboardStats(
                 totalUsers=row.total_users or 0,
@@ -976,7 +1022,7 @@ class Query:
             )
         except Exception as e:
             _sentry_capture(e)
-            print(f"[dashboardStats] Error: {e}")
+            logger.exception("[dashboardStats] Error")
             return AdminDashboardStats(
                 totalUsers=0, totalMovies=0, totalGenres=14, activeUsers=0,
                 newUsersToday=0, newUsersThisWeek=0, totalDownloads=0,
@@ -991,11 +1037,14 @@ class Query:
             return None
         db = await info.context.get_db()
 
-        watchlist_query = await db.execute(select(DbWatchlist).where(DbWatchlist.user_id == user.id))
+        # ── Watchlist (only need first 10 for UI) ─────────────────
+        watchlist_query = await db.execute(
+            select(DbWatchlist).where(DbWatchlist.user_id == user.id).limit(10)
+        )
         watchlist_items = watchlist_query.scalars().all()
         watchlist_movies = []
         if watchlist_items:
-            movie_ids = [item.moviebox_id for item in watchlist_items][:10]
+            movie_ids = [item.moviebox_id for item in watchlist_items]
             details_list = await asyncio.gather(*[movie_service.get_details(mid, db=db) for mid in movie_ids])
             for details in details_list:
                 if not details:
@@ -1009,21 +1058,40 @@ class Query:
                     runtime=details.duration or 0
                 ))
 
+        # ── Aggregate stats via SQL (avoids fetching ALL history rows) ──
+        from sqlalchemy import func, text
+        current_month = datetime.utcnow().month
+        current_year = datetime.utcnow().year
+        month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        stats_result = await db.execute(text("""
+            SELECT
+                COUNT(*) AS total_watched,
+                COALESCE(SUM(current_time), 0) AS total_seconds,
+                COALESCE(SUM(CASE WHEN updated_at >= :month_start THEN current_time ELSE 0 END), 0) AS monthly_seconds
+            FROM history
+            WHERE user_id = :uid
+        """), {"uid": str(user.id), "month_start": month_start})
+        stats_row = stats_result.one()
+
+        watchlist_count_result = await db.execute(text(
+            "SELECT COUNT(*) AS cnt FROM watchlist WHERE user_id = :uid"
+        ), {"uid": str(user.id)})
+        watchlist_count = watchlist_count_result.scalar() or 0
+
+        reviews_count_result = await db.execute(text(
+            "SELECT COUNT(*) AS cnt FROM reviews WHERE user_id = :uid"
+        ), {"uid": str(user.id)})
+        reviews_count = reviews_count_result.scalar() or 0
+
+        # ── Recent history (only 10 rows for UI cards) ────────────
         history_query = await db.execute(
-            select(DbHistory).where(DbHistory.user_id == user.id).order_by(DbHistory.updated_at.desc())
+            select(DbHistory).where(DbHistory.user_id == user.id)
+            .order_by(DbHistory.updated_at.desc()).limit(10)
         )
         history_items = history_query.scalars().all()
-        all_reviews = (await db.execute(select(DbReview).where(DbReview.user_id == user.id))).scalars().all()
 
         recent, continue_watching = [], []
-        total_time_seconds = monthly_time_seconds = 0
-        current_month, current_year = datetime.utcnow().month, datetime.utcnow().year
-
-        # Accumulate time stats from ALL history items (no network calls)
-        for item in history_items:
-            total_time_seconds += (item.current_time or 0)
-            if item.updated_at and item.updated_at.month == current_month and item.updated_at.year == current_year:
-                monthly_time_seconds += (item.current_time or 0)
 
         # ── N+1 fix: batch-fetch details for the first 10 items concurrently ──
         items_needing_details = history_items[:10]  # only need first 10 for recent + continue
@@ -1057,11 +1125,11 @@ class Query:
             recentlyViewed=recent,
             continueWatching=continue_watching,
             stats=UserDashboardStats(
-                watchlistCount=len(watchlist_items),
-                moviesWatched=len(history_items),
-                totalWatchTime=total_time_seconds // 60,
-                monthlyWatchTime=monthly_time_seconds // 60,
-                reviewsWritten=len(all_reviews)
+                watchlistCount=watchlist_count,
+                moviesWatched=int(stats_row.total_watched),
+                totalWatchTime=int(stats_row.total_seconds) // 60,
+                monthlyWatchTime=int(stats_row.monthly_seconds) // 60,
+                reviewsWritten=reviews_count
             )
         )
 
@@ -1305,8 +1373,9 @@ class Query:
                         if str(item.id) not in seen_ids:
                             candidates.append(item)
                             seen_ids.add(str(item.id))
-                except Exception:
-                    pass
+                except Exception as e:
+                    _sentry_capture(e)
+                    logger.warning(f"Title search fallback failed in similarMovies: {e}")
 
             # If we have a secondary genre, pull more candidates
             if len(candidates) < limit * 2 and len(details.genres or []) > 1:
@@ -1318,8 +1387,9 @@ class Query:
                         if str(item.id) not in seen_ids:
                             candidates.append(item)
                             seen_ids.add(str(item.id))
-                except Exception:
-                    pass
+                except Exception as e:
+                    _sentry_capture(e)
+                    logger.warning(f"Secondary genre search failed in similarMovies: {e}")
 
             # Filter out the source movie
             candidates = [c for c in candidates if str(c.id) != str(movieId)]
@@ -1345,7 +1415,7 @@ class Query:
             ][:limit]
         except Exception as e:
             _sentry_capture(e)
-            print(f"similarMovies error: {e}")
+            logger.exception("similarMovies error")
             try:
                 fallback = await movie_service.get_trending(db=db)
                 return [
@@ -1461,7 +1531,8 @@ class Query:
                 return raw_url
             return None
         except Exception as e:
-            print(f"Error fetching streaming URL: {e}")
+            _sentry_capture(e)
+            logger.exception("Error fetching streaming URL")
             return None
 
 
@@ -1654,7 +1725,8 @@ class Query:
                 for r in result.fetchall()
             ]
         except Exception as e:
-            print(f"Login activity query error: {e}")
+            _sentry_capture(e)
+            logger.exception("Login activity query error")
             return []
 
     # ─── Admin: Login activity (all users) ────────────────────────────────────
@@ -1686,7 +1758,8 @@ class Query:
                     for r in result.fetchall()
                 ]
             except Exception as e:
-                print(f"[adminLoginActivity] Error: {e}")
+                _sentry_capture(e)
+                logger.exception("adminLoginActivity error")
                 return []
 
     # ─── Admin: Active sessions ───────────────────────────────────────────────
@@ -1719,7 +1792,8 @@ class Query:
                     for r in rows
                 ]
             except Exception as e:
-                print(f"[adminActiveSessions] Error: {e}")
+                _sentry_capture(e)
+                logger.exception("adminActiveSessions error")
                 return []
 
     # ─── Admin: Revenue stats ─────────────────────────────────────────────────
@@ -1770,8 +1844,8 @@ class Query:
                             failed_payments.append(entry)
                         else:
                             recent_payments.append(entry)
-                except Exception:
-                    pass  # table may not exist yet
+                except Exception as e:
+                    logger.debug(f"payment_history table query skipped: {e}")
 
                 # Growth: monthly user count over last 6 months
                 growth = []
@@ -1785,8 +1859,8 @@ class Query:
                     """))
                     for r in gr.fetchall():
                         growth.append({"month": r[0], "value": r[1]})
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"User growth query failed: {e}")
 
                 return {
                     "mrr": mrr, "arr": arr,
@@ -1801,7 +1875,8 @@ class Query:
                     ]
                 }
             except Exception as e:
-                print(f"[revenueStats] Error: {e}")
+                _sentry_capture(e)
+                logger.exception("revenueStats error")
                 return {"mrr": 0, "arr": 0, "totalSubscribers": 0, "churnRate": 0,
                         "tiers": {"free": 0, "standard": 0, "pro": 0}, "growth": [],
                         "recentPayments": [], "failedPayments": [], "methodBreakdown": []}
@@ -1868,7 +1943,8 @@ class Query:
                     "featuredCount": int(c[2] or 0) if c else 0,
                 }
             except Exception as e:
-                print(f"[adminAllReviews] Error: {e}")
+                _sentry_capture(e)
+                logger.exception("adminAllReviews error")
                 return {"reviews": [], "totalCount": 0, "flaggedCount": 0, "featuredCount": 0}
 
     # ─── Admin: Content list (movies + series) ────────────────────────────────
@@ -1915,7 +1991,8 @@ class Query:
                     })
                 return items
             except Exception as e:
-                print(f"[adminContentList] Error: {e}")
+                _sentry_capture(e)
+                logger.exception("adminContentList error")
                 return []
 
     @strawberry.field
@@ -1933,7 +2010,8 @@ class Query:
                     isEligible=remaining > 0, isActive=remaining > 0
                 )
         except Exception as e:
-            print(f"Premium stats error: {e}")
+            _sentry_capture(e)
+            logger.exception("Premium stats error")
             return PremiumSignupStats()
 
     # ── Subtitles ──────────────────────────────────────────
@@ -1958,7 +2036,8 @@ class Query:
                     createdAt=str(r.created_at) if r.created_at else None,
                 ) for r in rows]
         except Exception as e:
-            print(f"[subtitlesForContent] {e}")
+            _sentry_capture(e)
+            logger.exception("[subtitlesForContent] error")
             return []
 
     # ── Notification Preferences ───────────────────────────
@@ -2009,7 +2088,8 @@ class Query:
                     premiumConversions=premium, referrals=entries,
                 )
         except Exception as e:
-            print(f"[adminReferralDashboard] {e}")
+            _sentry_capture(e)
+            logger.exception("[adminReferralDashboard] error")
             return ReferralDashboard()
 
     # ── User-facing session management ─────────────────────
@@ -2030,7 +2110,7 @@ class Query:
                 import hashlib
                 current_token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
         except Exception:
-            pass
+            pass  # Non-critical: session matching is best-effort
 
         try:
             async with AsyncSessionLocal() as db:
@@ -2053,7 +2133,8 @@ class Query:
                     for r in rows
                 ]
         except Exception as e:
-            print(f"[mySessions] Error: {e}")
+            _sentry_capture(e)
+            logger.exception("[mySessions] error")
             return []
 
     # ── Revenue CSV export (admin) ─────────────────────────
@@ -2091,7 +2172,8 @@ class Query:
                     ])
                 return output.getvalue()
         except Exception as e:
-            print(f"[revenueExportCsv] Error: {e}")
+            _sentry_capture(e)
+            logger.exception("[revenueExportCsv] error")
             return "Error generating CSV: " + str(e)
 
     # ── Subscription & Payment queries (read-only, belong in Query) ────
@@ -2128,7 +2210,8 @@ class Query:
                 ]
             }
         except Exception as e:
-            print(f"Payment history error: {e}")
+            _sentry_capture(e)
+            logger.exception("Payment history error")
             return {"payments": []}
 
     # ═══════════════════════════════════════════════════════════
@@ -2490,7 +2573,7 @@ class Mutation:
                 result = await db.execute(select(DbUser).where(DbUser.email == email))
                 user = result.scalars().first()
             except Exception as e:
-                print(f"[LOGIN] DB error: {type(e).__name__}: {e}")
+                logger.exception("[LOGIN] DB error")
                 _sentry_capture(e)
                 raise Exception("Login service temporarily unavailable. Please try again.")
 
@@ -2544,17 +2627,18 @@ class Mutation:
                 await store_refresh_token(db, str(user.id), refresh_hash, family_id, device_info, ip_address)
             except Exception as e:
                 # Log visibly — refresh token won't work but login still proceeds
-                print(f"⚠️  [LOGIN] Could not store refresh token (user will need to re-login sooner): {e}")
+                logger.exception("[LOGIN] Could not store refresh token (user will need to re-login sooner)")
                 _sentry_capture(e)
 
             is_production = os.getenv("ENV", "development") == "production"
+            _same_site = "lax"  # Modern browsers reject samesite="none" without secure=True
             info.context.response.set_cookie(
                 key="auth_token", value=access_token, httponly=True,
-                secure=is_production, samesite="lax", max_age=60 * 15, path="/"
+                secure=is_production, samesite=_same_site, max_age=60 * 15, path="/"
             )
             info.context.response.set_cookie(
                 key="refresh_token", value=raw_refresh, httponly=True,
-                secure=is_production, samesite="lax",
+                secure=is_production, samesite=_same_site,
                 max_age=60 * 60 * 24 * 30, path="/api/auth/refresh"
             )
 
@@ -2579,7 +2663,8 @@ class Mutation:
                     notif_type="security", action_url="/profile#security"
                 )
             except Exception as e:
-                print(f"Login notification error: {e}")
+                _sentry_capture(e)
+                logger.warning(f"Login notification error: {e}")
 
             return AuthResponse(
                 token=access_token,
@@ -2608,9 +2693,10 @@ class Mutation:
                     await db.refresh(existing_user)
                     token = create_access_token({"sub": str(existing_user.id)})
                     is_production = os.getenv("ENV", "development") == "production"
+                    _same_site = "lax"
                     info.context.response.set_cookie(
                         key="auth_token", value=token, httponly=True,
-                        secure=is_production, samesite="lax", max_age=60 * 15, path="/"
+                        secure=is_production, samesite=_same_site, max_age=60 * 15, path="/"
                     )
                     return AuthResponse(token="", user=create_user_response(existing_user))
                 raise Exception("An account with this email already exists")
@@ -2627,7 +2713,8 @@ class Mutation:
                 from app.core.email_service import send_verification_email
                 send_verification_email(str(new_user.id), new_user.email, new_user.name or "")
             except Exception as e:
-                print(f"Verification email error: {e}")
+                _sentry_capture(e)
+                logger.warning(f"Verification email error: {e}")
 
             try:
                 if input.referralCode:
@@ -2646,13 +2733,15 @@ class Mutation:
                         #     referrer.subscription_expires_at = datetime.utcnow() + timedelta(days=90)
                         await db.commit()
             except Exception as e:
-                print(f"Referral tracking error: {e}")
+                _sentry_capture(e)
+                logger.warning(f"Referral tracking error: {e}")
 
             token = create_access_token({"sub": str(new_user.id)})
             is_production = os.getenv("ENV", "development") == "production"
+            _same_site = "lax"
             info.context.response.set_cookie(
                 key="auth_token", value=token, httponly=True,
-                secure=is_production, samesite="lax", max_age=60 * 15, path="/"
+                secure=is_production, samesite=_same_site, max_age=60 * 15, path="/"
             )
             return AuthResponse(token="", user=create_user_response(new_user))
 
@@ -2672,7 +2761,10 @@ class Mutation:
             if not client_id:
                 raise Exception("Google Client ID not configured.")
 
-            idinfo = id_token.verify_oauth2_token(idToken, google_requests.Request(session=session), client_id)
+            idinfo = id_token.verify_oauth2_token(
+                idToken, google_requests.Request(session=session), client_id,
+                clock_skew_in_seconds=300  # Tolerate up to 5 min clock drift
+            )
             email, name, avatar = idinfo['email'], idinfo.get('name'), idinfo.get('picture')
 
             db = await info.context.get_db()
@@ -2687,9 +2779,10 @@ class Mutation:
 
             token = create_access_token({"sub": str(user.id)})
             is_production = os.getenv("ENV", "development") == "production"
+            _same_site = "lax"
             info.context.response.set_cookie(
                 key="auth_token", value=token, httponly=True,
-                secure=is_production, samesite="lax", max_age=60 * 15, path="/"
+                secure=is_production, samesite=_same_site, max_age=60 * 15, path="/"
             )
             try:
                 if is_new_user:
@@ -2701,11 +2794,12 @@ class Mutation:
                         notif_type="system", action_url="/dashboard"
                     )
             except Exception as e:
-                print(f"Login notification error: {e}")
+                _sentry_capture(e)
+                logger.warning(f"Login notification error: {e}")
 
             return GoogleAuthResponse(token="", user=create_user_response(user), isNewUser=is_new_user)
         except Exception as e:
-            print(f"Google auth error: {e}")
+            logger.exception("Google auth error")
             _sentry_capture(e)
             raise Exception(f"Google authentication failed: {str(e)}")
 
@@ -2729,8 +2823,8 @@ class Mutation:
             db = await info.context.get_db()
             user.last_active = datetime.utcnow()
             await db.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[refreshToken] last_active update skipped: {e}")
         return AuthResponse(token=token, user=create_user_response(user))
 
     @strawberry.mutation
@@ -2750,7 +2844,8 @@ class Mutation:
             await pipe.execute()
             await r.aclose()
         except Exception as e:
-            print(f"[forgotPassword] Rate limit check skipped: {e}")
+            _sentry_capture(e)
+            logger.warning(f"[forgotPassword] Rate limit check skipped: {e}")
 
         db = await info.context.get_db()
         user = (await db.execute(select(DbUser).where(DbUser.email == email))).scalars().first()
@@ -2775,7 +2870,8 @@ class Mutation:
                 # Also create a JWT for the email link (carries user_id)
                 send_password_reset_email(str(user.id), user.email, user.name or "User")
             except Exception as e:
-                print(f"Failed to send reset email: {e}")
+                _sentry_capture(e)
+                logger.exception("Failed to send reset email")
         # Always return success to prevent email enumeration
         return SuccessResponse(success=True, message="If an account exists, a reset link was sent")
 
@@ -2808,7 +2904,8 @@ class Mutation:
         try:
             await revoke_all_user_tokens(db, str(user.id))
         except Exception as e:
-            print(f"[resetPassword] Failed to revoke tokens: {e}")
+            _sentry_capture(e)
+            logger.exception("[resetPassword] Failed to revoke tokens")
         # Notify user
         try:
             await notification_service.create(
@@ -2816,8 +2913,8 @@ class Mutation:
                 message="Your password was successfully changed. All sessions have been logged out.",
                 notif_type="system"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[resetPassword] notification skipped: {e}")
         await _log_activity(db, str(user.id), "password_reset", info, success=True)
         return SuccessResponse(success=True, message="Password reset successfully")
 
@@ -2910,7 +3007,7 @@ class Mutation:
                 sentry_sdk.capture_exception(e)
             except Exception:
                 pass
-            print(f"[deleteAccount] Cascade cleanup partial: {e}")
+            logger.exception("[deleteAccount] Cascade cleanup partial")
 
         # Clear auth cookies
         info.context.response.delete_cookie(key="auth_token", path="/")
@@ -2978,7 +3075,8 @@ class Mutation:
                 title = details.title if details else "Content"
                 await notification_service.notify_watchlist_add(db, str(user.id), title, str(movieId))
             except Exception as e:
-                print(f"Notification error (watchlist): {e}")
+                _sentry_capture(e)
+                logger.warning(f"Notification error (watchlist): {e}")
             return ToggleWatchlistResponse(added=True, message="Added to watchlist")
 
     @strawberry.mutation
@@ -2994,7 +3092,8 @@ class Mutation:
             title = details.title if details else "Content"
             await notification_service.notify_watchlist_add(db, str(user.id), title, str(movieId))
         except Exception as e:
-            print(f"Notification error (watchlist): {e}")
+            _sentry_capture(e)
+            logger.warning(f"Notification error (watchlist): {e}")
         return SuccessResponse(success=True)
 
     @strawberry.mutation
@@ -3063,7 +3162,8 @@ class Mutation:
                 if total_watched in [5, 10, 25, 50, 100]:
                     await notification_service.notify_watch_milestone(db, str(user.id), total_watched)
             except Exception as e:
-                print(f"Milestone check error: {e}")
+                _sentry_capture(e)
+                logger.warning(f"Milestone check error: {e}")
         return SuccessResponse(success=True)
 
     @strawberry.mutation
@@ -3089,7 +3189,8 @@ class Mutation:
         try:
             await notification_service.notify_review_posted(db, str(user.id))
         except Exception as e:
-            print(f"Notification error (review): {e}")
+            _sentry_capture(e)
+            logger.warning(f"Notification error (review): {e}")
         return SuccessResponse(success=True, message="Review added successfully")
 
     @strawberry.mutation
@@ -3183,8 +3284,9 @@ class Mutation:
                     message=f"A review was reported for: {reason}",
                     notif_type="report", action_url=f"/admin/reviews?report={reviewId}"
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            _sentry_capture(e)
+            logger.warning(f"Notification error (report): {e}")
         return SuccessResponse(success=True, message="Review reported. We'll review it shortly.")
 
     @strawberry.mutation
@@ -3277,7 +3379,8 @@ class Mutation:
                 try:
                     await notification_service.notify_report_status(db, str(report.user_id), status)
                 except Exception as e:
-                    print(f"Notification error (report): {e}")
+                    _sentry_capture(e)
+                    logger.warning(f"Notification error (report): {e}")
             return SuccessResponse(success=True, message="Status updated")
         return SuccessResponse(success=False, message="Report not found")
 
@@ -3351,6 +3454,54 @@ class Mutation:
             db.add(DbNotification(user_id=uid, title=title, message=message, type=notifType or "system"))
         await db.commit()
         return SuccessResponse(success=True, message=f"Notification sent to {len(user_ids)} users")
+
+    @strawberry.mutation
+    async def adminCreateMovie(self, info: strawberry.Info, input: MovieInput) -> Movie:
+        """Admin: create a new movie entry in the local database."""
+        user = await info.context.user
+        if not user or getattr(user, 'role', 'user') != 'admin':
+            raise Exception("Admin access required")
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        import uuid
+        try:
+            movie_id = str(uuid.uuid4())
+            async with AsyncSessionLocal() as db:
+                await db.execute(text("""
+                    INSERT INTO movies (id, title, overview, poster_url, backdrop_url, trailer_url,
+                                       release_date, runtime, rating, tagline, content_type, created_at)
+                    VALUES (:id, :title, :overview, :poster, :backdrop, :trailer,
+                            :release_date, :runtime, :rating, :tagline, :ctype, NOW())
+                """), {
+                    "id": movie_id, "title": input.title, "overview": input.overview,
+                    "poster": input.posterUrl, "backdrop": input.backdropUrl,
+                    "trailer": input.trailerUrl, "release_date": input.releaseDate,
+                    "runtime": input.runtime or 0, "rating": input.rating or 0.0,
+                    "tagline": input.tagline, "ctype": input.contentType or "movie",
+                })
+                # Insert genres if provided
+                if input.genres:
+                    for genre_name in input.genres:
+                        await db.execute(text("""
+                            INSERT INTO movie_genres (movie_id, genre_name)
+                            VALUES (:mid, :gn) ON CONFLICT DO NOTHING
+                        """), {"mid": movie_id, "gn": genre_name})
+                await db.commit()
+
+            year_str = input.releaseDate[:4] if input.releaseDate and len(input.releaseDate) >= 4 else ""
+            return Movie(
+                id=strawberry.ID(movie_id), title=input.title,
+                overview=input.overview or "", tagline=input.tagline or "",
+                posterUrl=input.posterUrl, backdropUrl=input.backdropUrl,
+                trailerUrl=input.trailerUrl, releaseDate=input.releaseDate or "",
+                year=year_str, runtime=input.runtime or 0,
+                rating=input.rating or 0.0, voteCount=0, popularity=0.0,
+                status="released", contentType=input.contentType or "movie",
+                genres=[Genre(id=strawberry.ID(g), name=g) for g in (input.genres or [])],
+            )
+        except Exception as e:
+            _sentry_capture(e)
+            raise Exception(f"Failed to create movie: {str(e)}")
 
     @strawberry.mutation
     async def adminUpdateUserRole(self, info: strawberry.Info, id: strawberry.ID, role: str) -> SuccessResponse:
@@ -3539,8 +3690,8 @@ class Mutation:
                 message=f"{user.name} joined your watch party",
                 notif_type="social", action_url=f"/watch-party/{roomCode}"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[watchParty] join notification skipped: {e}")
         import json
         return json.dumps({
             "roomId": str(room.id), "roomCode": room.room_code, "movieboxId": room.moviebox_id,
@@ -3787,7 +3938,8 @@ class Mutation:
                     return SuccessResponse(success=True, message="Session revoked")
                 return SuccessResponse(success=False, message="Session not found or already revoked")
         except Exception as e:
-            print(f"[revokeSession] Error: {e}")
+            _sentry_capture(e)
+            logger.exception("[revokeSession] Error")
             return SuccessResponse(success=False, message="Failed to revoke session")
 
     # ═══════════════════════════════════════════════════════════
@@ -3874,7 +4026,7 @@ class Mutation:
                 import hashlib
                 current_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
         except Exception:
-            pass
+            pass  # Non-critical: session matching is best-effort
 
         from app.core.database import AsyncSessionLocal
         from sqlalchemy import text
@@ -3969,7 +4121,8 @@ class Mutation:
                 })
                 await db.commit()
         except Exception as e:
-            print(f"[trackInteraction] Error: {e}")
+            _sentry_capture(e)
+            logger.warning(f"[trackInteraction] Error: {e}")
         return SuccessResponse(success=True, message="Interaction tracked")
 
     # ═══════════════════════════════════════════════════════════

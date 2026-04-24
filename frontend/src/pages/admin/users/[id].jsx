@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/users/[id].jsx
+import Image from 'next/image';
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import { useQuery, useMutation } from '@apollo/client/react';
@@ -94,7 +95,7 @@ export default function AdminUserDetail() {
                 <div className="bg-gradient-to-br from-white/[0.04] to-transparent rounded-2xl border border-white/5 p-6">
                     <div className="flex items-start gap-5">
                         {user.avatar ? (
-                            <img src={user.avatar} alt="" className="w-20 h-20 rounded-2xl object-cover ring-2 ring-white/10" />
+                            <Image src={user.avatar || '/images/placeholder.jpg'} alt="" width={80} height={80} className="rounded-2xl object-cover ring-2 ring-white/10" />
                         ) : (
                             <div className="w-20 h-20 bg-gradient-to-br from-primary-500 to-purple-600 rounded-2xl flex items-center justify-center text-2xl font-bold text-white">
                                 {fullName[0]?.toUpperCase()}

@@ -1,4 +1,7 @@
 from app.providers.moviebox_provider import MovieboxProvider
+import logging
+
+logger = logging.getLogger("clipx")
 from app.models.responses import (
     SearchResult, SearchResponse, ContentBase, TrendingResponse,
     MovieDetails, ContentStreamResponse, ContentDownloadResponse,
@@ -74,15 +77,17 @@ class MovieService:
                 db_item = result.scalars().first()
                 
                 if not db_item:
-                    db_item = model(
-                        moviebox_id=mid,
-                        title=item.title,
-                        detail_path=item.detailPath,
-                        subject_type=item.subjectType.value if hasattr(item.subjectType, 'value') else item.subjectType,
-                        poster_url=str(item.cover.url) if item.cover else None,
-                        rating=float(item.imdbRatingValue or 0),
-                        year=int(item.releaseDate.year) if item.releaseDate and item.releaseDate.year else None
-                    )
+                    kwargs = {
+                        "moviebox_id": mid,
+                        "title": item.title,
+                        "detail_path": item.detailPath,
+                        "subject_type": item.subjectType.value if hasattr(item.subjectType, 'value') else item.subjectType,
+                        "poster_url": str(item.cover.url) if item.cover else None,
+                        "rating": float(item.imdbRatingValue or 0),
+                    }
+                    if hasattr(model, 'year'):
+                        kwargs["year"] = int(item.releaseDate.year) if item.releaseDate and item.releaseDate.year else None
+                    db_item = model(**kwargs)
                     # Use savepoint so a duplicate key doesn't poison the whole session
                     async with db.begin_nested():
                         db.add(db_item)
@@ -92,17 +97,17 @@ class MovieService:
             except Exception as e:
                 # Savepoint rollback already happened; just log
                 _sentry_capture(e)
-                print(f"Sync skip {item.title}: {e}")
+                logger.warning(f"Sync skip {item.title}: {e}")
         
         try:
             await db.commit()
         except Exception as e:
             _sentry_capture(e)
-            print(f"Error committing synced items: {e}")
+            logger.exception(f"Error committing synced items")
             try:
                 await db.rollback()
-            except Exception:
-                pass
+            except Exception as rollback_err:
+                logger.debug(f"Rollback also failed: {rollback_err}")
 
     async def search_content(self, query: str, page: int = 1, db: Optional[Any] = None) -> SearchResponse:
         # Check cache first
@@ -164,9 +169,9 @@ class MovieService:
             items = hot.movies
         except Exception as _e:
             _sentry_capture(_e)
-             # Fallback to search if hot fails
-             res = await self.provider.search("", page=page, sub_type="MOVIES")
-             items = res.items
+            # Fallback to search if hot fails
+            res = await self.provider.search("", page=page, sub_type="MOVIES")
+            items = res.items
              
         await self._sync_items(items, db)
         return SearchResponse(
@@ -189,8 +194,8 @@ class MovieService:
             items = hot.tv_series
         except Exception as _e:
             _sentry_capture(_e)
-             res = await self.provider.search("", page=page, sub_type="TV_SERIES")
-             items = res.items
+            res = await self.provider.search("", page=page, sub_type="TV_SERIES")
+            items = res.items
 
         await self._sync_items(items, db)
         return SearchResponse(
@@ -228,7 +233,7 @@ class MovieService:
                     db_movie = res.scalars().first()
                 
                 if db_movie and db_movie.detail_path:
-                    print(f"Found detail_path in DB for {movie_id}: {db_movie.detail_path}")
+                    logger.debug(f"Found detail_path in DB for {movie_id}: {db_movie.detail_path}")
                     url = f"/detail/{db_movie.detail_path}?id={movie_id}"
                     raw_details = await self.provider.get_details(url, sub_type="TV_SERIES" if db_movie.subject_type == 2 else "MOVIES")
                 else:
@@ -237,11 +242,13 @@ class MovieService:
                 raw_details = await self.provider.get_details(movie_id)
         except PydanticValidationError as e:
             _sentry_capture(e)
-            print(f"Pydantic validation error for movie {movie_id}: {e}")
+            logger.warning(f"Pydantic validation error for movie {movie_id}: {e}")
             return None
         except Exception as e:
-            _sentry_capture(e)
-            print(f"Error fetching details for movie {movie_id}: {e}")
+            err_msg = str(e)
+            if err_msg.strip():
+                _sentry_capture(e)
+                logger.error(f"Error fetching details for movie {movie_id}: {err_msg}")
             return None
             
         if not raw_details:
@@ -286,8 +293,9 @@ class MovieService:
                 db_movie = res.scalars().first()
                 if db_movie and db_movie.trailer_url:
                     db_trailer_url = db_movie.trailer_url
-            except Exception:
-                pass
+            except Exception as e:
+                _sentry_capture(e)
+                logger.debug(f"Trailer URL lookup failed for {subject.subjectId}: {e}")
 
         # Normalize trailer URL: if it's a raw YouTube ID, convert to full URL
         if db_trailer_url:
@@ -335,7 +343,7 @@ class MovieService:
             await self.provider.search(movie_id, sub_type="ALL")
         except Exception as e:
             _sentry_capture(e)
-            print(f"Preload cache search failed for {movie_id}: {e}")
+            logger.warning(f"Preload cache search failed for {movie_id}: {e}")
 
     async def get_stream_links(self, movie_id: str, season: int = 0, episode: int = 1, db: Optional[Any] = None) -> ContentStreamResponse:
         await self._preload_cache(movie_id, db)
@@ -347,7 +355,7 @@ class MovieService:
             raw_downloads = await self.provider.get_download_links(movie_id, season=season, episode=episode)
         except Exception as e:
             _sentry_capture(e)
-            print(f"Failed to fetch subtitles: {e}")
+            logger.warning(f"Failed to fetch subtitles: {e}")
             raw_downloads = None
 
         

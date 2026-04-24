@@ -6,9 +6,6 @@ import { FiInfo } from 'react-icons/fi';
 
 const LAST_UPDATED = 'April 2026';
 
-// FIX: Updated to reflect the httpOnly cookie migration completed in April 2026.
-// The old `token` localStorage entry no longer exists. Auth is now handled via
-// two httpOnly cookies set by the backend and never readable by JavaScript.
 const COOKIES_TABLE = [
     {
         name: 'auth_token',

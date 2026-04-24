@@ -1,16 +1,15 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    // Skip server-side optimization for external images — the CDN
-    // (pbcdnw.aoneroom.com) responds too slowly and causes TimeoutError.
-    // Images are already optimized JPEGs from the CDN; no need to re-process.
     unoptimized: true,
     remotePatterns: [
       { protocol: 'https', hostname: 'image.tmdb.org' },
       { protocol: 'https', hostname: 'via.placeholder.com' },
       { protocol: 'https', hostname: 'placehold.co' },
       { protocol: 'https', hostname: 'moviebox.ph' },
-      { protocol: 'https', hostname: '*.aoneroom.com' },
+      { protocol: 'https', hostname: '**.aoneroom.com' },
+      { protocol: 'https', hostname: '.aoneroom.com' },
+      { protocol: 'https', hostname: 'aoneroom.com' },
       { protocol: 'https', hostname: 'pbcdnw.aoneroom.com' },
       { protocol: 'https', hostname: 'i.ibb.co' },
       { protocol: 'http', hostname: 'localhost' },
@@ -54,6 +53,20 @@ const nextConfig = {
             value: 'on',
           },
         ],
+      },
+    ];
+  },
+
+  async rewrites() {
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/graphql', '') || 'http://localhost:8000';
+    return [
+      {
+        source: '/graphql',
+        destination: `${backendUrl}/graphql`,
+      },
+      {
+        source: '/api/:path*',
+        destination: `${backendUrl}/api/:path*`,
       },
     ];
   },

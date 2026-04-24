@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/router';
 import { useQuery, useMutation } from '@apollo/client/react';
 import { motion } from 'framer-motion';
@@ -125,14 +126,14 @@ export default function AnimeDetailPage() {
             <div className="relative min-h-[70vh]">
                 {backdropUrl && (
                     <div className="absolute inset-0">
-                        <img src={backdropUrl} className="w-full h-full object-cover" />
+                        <Image src={backdropUrl} alt="" fill priority className="object-cover" />
                         <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/80 to-gray-900/40" />
                     </div>
                 )}
                 <div className="relative container mx-auto px-4 pt-32 pb-12">
                     <div className="flex flex-col md:flex-row gap-8">
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-shrink-0">
-                            <img src={posterUrl} className="w-64 rounded-xl shadow-2xl" />
+                            <Image src={posterUrl || '/images/placeholder.jpg'} alt="" width={256} height={384} className="w-64 rounded-xl shadow-2xl" />
                         </motion.div>
 
                         <div className="flex-1 text-white">

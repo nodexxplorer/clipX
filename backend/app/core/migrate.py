@@ -493,6 +493,21 @@ MIGRATIONS = [
     CREATE INDEX IF NOT EXISTS ix_movie_views_genre ON movie_views (genre);
     CREATE INDEX IF NOT EXISTS ix_movie_views_date ON movie_views (viewed_at);
     """,
+
+    # ═══════════════════════════════════════════════════════════
+    # Performance indexes — missing indexes that cause slow queries
+    # ═══════════════════════════════════════════════════════════
+    """
+    CREATE INDEX IF NOT EXISTS ix_notifications_user_id ON notifications (user_id);
+    CREATE INDEX IF NOT EXISTS ix_notifications_user_read ON notifications (user_id, is_read);
+    CREATE INDEX IF NOT EXISTS ix_history_user_updated ON history (user_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS ix_history_updated_at ON history (updated_at DESC);
+    CREATE INDEX IF NOT EXISTS ix_watchlist_user_id ON watchlist (user_id);
+    CREATE INDEX IF NOT EXISTS ix_recently_viewed_user_viewed ON recently_viewed (user_id, viewed_at DESC);
+    CREATE INDEX IF NOT EXISTS ix_reviews_user_id ON reviews (user_id);
+    CREATE INDEX IF NOT EXISTS ix_users_created_at ON users (created_at);
+    CREATE INDEX IF NOT EXISTS ix_users_email ON users (email);
+    """,
 ]
 
 

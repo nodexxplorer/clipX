@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/cast/index.jsx
+import Image from 'next/image';
 import { useState } from 'react';
 import { useQuery } from '@apollo/client/react';
 import AdminProtectedRoute from '@/pages/auth/AdminProtectedRoute';
@@ -55,7 +56,7 @@ export default function CastPage() {
                             {cast.map((person) => (
                                 <div key={person.id} className="bg-white/[0.02] border border-white/5 rounded-xl p-4 text-center hover:border-primary-500/20 transition-all">
                                     {person.profileImage ? (
-                                        <img src={person.profileImage} alt={person.name} className="w-16 h-16 rounded-full mx-auto object-cover ring-2 ring-white/10" />
+                                        <Image src={person.profileImage || '/images/placeholder.jpg'} alt={person.name} width={64} height={64} className="rounded-full mx-auto object-cover ring-2 ring-white/10" />
                                     ) : (
                                         <div className="w-16 h-16 rounded-full mx-auto bg-gradient-to-br from-primary-500/30 to-purple-500/30 flex items-center justify-center">
                                             <FiUser className="w-6 h-6 text-gray-400" />

@@ -1,4 +1,5 @@
 // frontend/src/pages/lists.js — Custom Lists (Letterboxd-style) (Section 13)
+import Image from 'next/image';
 import { useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -109,9 +110,9 @@ export default function CustomListsPage() {
                   <div className="h-24 bg-gradient-to-br from-primary-600/20 to-violet-600/20 relative overflow-hidden">
                     <div className="flex gap-0.5 absolute inset-0">
                       {(list.items || []).slice(0, 4).map((item, j) => (
-                        <div key={j} className="flex-1 h-full bg-gray-800">
+                        <div key={j} className="flex-1 h-full bg-gray-800 relative">
                           {item.posterUrl && (
-                            <img src={item.posterUrl} alt="" className="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity" />
+                            <Image src={item.posterUrl || '/images/placeholder.jpg'} alt="" fill className="object-cover opacity-60 group-hover:opacity-80 transition-opacity" />
                           )}
                         </div>
                       ))}

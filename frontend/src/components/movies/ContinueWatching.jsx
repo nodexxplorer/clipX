@@ -4,6 +4,7 @@
  * Uses the watch history query from the backend
  */
 
+import Image from 'next/image';
 import { useQuery } from '@apollo/client/react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -28,7 +29,7 @@ function ProgressCard({ item }) {
                 {/* Poster / Backdrop */}
                 <div className="relative h-40 bg-gradient-to-br from-gray-800 to-gray-900 overflow-hidden">
                     {item.posterUrl ? (
-                        <img src={item.posterUrl} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                        <Image src={item.posterUrl || '/images/placeholder.jpg'} alt={item.title} fill className="object-cover group-hover:scale-105 transition-transform" />
                     ) : (
                         <div className="w-full h-full flex items-center justify-center">
                             <FiPlay className="w-8 h-8 text-gray-600" />

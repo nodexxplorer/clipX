@@ -12,6 +12,9 @@ from app.core.email_service import send_subscription_email, send_grace_period_em
 from sqlalchemy.future import select
 from datetime import datetime, timedelta
 import json
+import logging
+
+logger = logging.getLogger("clipx")
 
 router = APIRouter()
 
@@ -35,7 +38,7 @@ async def paystack_webhook(request: Request):
     event_type = event.get("event", "")
     data = event.get("data", {})
 
-    print(f"📩 Paystack webhook: {event_type}")
+    logger.info(f"Paystack webhook: {event_type}")
 
     async with AsyncSessionLocal() as db:
         from app.models.database import User as DbUser
@@ -59,7 +62,7 @@ async def paystack_webhook(request: Request):
                     if hasattr(user, 'grace_period_end'):
                         user.grace_period_end = None
                     await db.commit()
-                    print(f"  ✅ User {user.email} upgraded to {plan}")
+                    logger.info(f"User {user.email} upgraded to {plan}")
 
                     # Send confirmation email
                     send_subscription_email(user.email, user.name or "", plan, "activated")
@@ -88,7 +91,7 @@ async def paystack_webhook(request: Request):
                 )
                 user = result.scalars().first()
                 if user:
-                    print(f"  ✅ Subscription created for {user.email}")
+                    logger.info(f"Subscription created for {user.email}")
 
         elif event_type == "subscription.disable":
             customer_code = data.get("customer", {}).get("customer_code")
@@ -103,7 +106,7 @@ async def paystack_webhook(request: Request):
                     if hasattr(user, 'grace_period_end'):
                         user.grace_period_end = None
                     await db.commit()
-                    print(f"  ✅ Subscription cancelled for {user.email}")
+                    logger.info(f"Subscription cancelled for {user.email}")
                     send_subscription_email(user.email, user.name or "", "free", "cancelled")
 
         elif event_type == "invoice.payment_failed":
@@ -122,7 +125,7 @@ async def paystack_webhook(request: Request):
                     if hasattr(user, 'grace_period_end'):
                         user.grace_period_end = grace_end
 
-                    print(f"  ⚠️  Payment failed for {user.email} — grace period until {grace_end_str}")
+                    logger.warning(f"Payment failed for {user.email} — grace period until {grace_end_str}")
 
                     # Send grace period email
                     send_grace_period_email(
@@ -176,6 +179,6 @@ async def paystack_webhook(request: Request):
                         due_date_str,
                         amount
                     )
-                    print(f"  📧 Renewal warning sent to {user.email}")
+                    logger.info(f"Renewal warning sent to {user.email}")
 
     return Response(status_code=200, content="OK")

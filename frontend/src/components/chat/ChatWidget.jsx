@@ -4,6 +4,7 @@
  * Opens a slide-up panel with real-time messaging.
  */
 
+import Image from 'next/image';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiMessageCircle, FiX, FiSend, FiUsers, FiSmile, FiChevronDown } from 'react-icons/fi';
@@ -43,12 +44,12 @@ export default function ChatWidget({ room = 'global' }) {
     } = useChat(room);
 
     // Auto-scroll to bottom when new messages arrive (if user is already at bottom)
+    // FIX #11: removed setUnreadCount from this effect — it was causing a
+    // cascading render loop because it ran on every messages.length change.
     useEffect(() => {
         if (!user) return;
         if (wasAtBottomRef.current) {
             messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-        } else if (isOpen) {
-            setUnreadCount(prev => prev + 1);
         }
     }, [messages.length, user]);
 
@@ -68,6 +69,7 @@ export default function ChatWidget({ room = 'global' }) {
     }, []);
 
     // Reset unread when opening
+    // FIX #11: isOpen is already in the dependency array — correct.
     useEffect(() => {
         if (isOpen) {
             setUnreadCount(0);
@@ -78,7 +80,9 @@ export default function ChatWidget({ room = 'global' }) {
         }
     }, [isOpen]);
 
-    // Track unread when closed
+    // Track unread when closed — this is the correct place to increment
+    // unread count: only when the panel is closed and a new message from
+    // another user arrives.
     useEffect(() => {
         if (!isOpen && messages.length > 0 && user) {
             const lastMsg = messages[messages.length - 1];
@@ -219,7 +223,7 @@ export default function ChatWidget({ room = 'global' }) {
                                             <div className="w-6 h-6 flex-shrink-0">
                                                 {showAvatar ? (
                                                     msg.userAvatar ? (
-                                                        <img src={msg.userAvatar} alt="" className="w-6 h-6 rounded-full object-cover" />
+                                                        <Image src={msg.userAvatar || '/images/placeholder.jpg'} alt="" width={24} height={24} className="rounded-full object-cover" />
                                                     ) : (
                                                         <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary-500 to-purple-500 flex items-center justify-center text-[9px] font-bold text-white">
                                                             {(msg.userName || 'U').charAt(0).toUpperCase()}

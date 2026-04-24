@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/movies/[id]/analytics.jsx
+import Image from 'next/image';
 import { useRouter } from 'next/router';
 import { useQuery } from '@apollo/client/react';
 import AdminProtectedRoute from '@/pages/auth/AdminProtectedRoute';
@@ -42,7 +43,7 @@ export default function MovieAnalyticsPage() {
                     ) : (
                         <>
                             <div className="flex items-center gap-5 bg-white/[0.02] border border-white/5 rounded-2xl p-5">
-                                {movie.posterUrl && <img src={movie.posterUrl} alt="" className="w-20 h-28 object-cover rounded-xl ring-1 ring-white/10" />}
+                                {movie.posterUrl && <div className="relative w-20 h-28"><Image src={movie.posterUrl} alt="" fill className="object-cover rounded-xl ring-1 ring-white/10" /></div>}
                                 <div>
                                     <p className="text-white font-black text-xl">{movie.title}</p>
                                     <p className="text-gray-500 text-sm mt-1">{movie.year} • {movie.runtime}min • {movie.genres?.map(g => g.name).join(', ')}</p>
@@ -80,7 +81,7 @@ export default function MovieAnalyticsPage() {
                                         {movie.cast.slice(0, 12).map((c) => (
                                             <div key={c.id} className="flex-shrink-0 text-center w-20">
                                                 {c.profileImage ? (
-                                                    <img src={c.profileImage} alt={c.name} className="w-14 h-14 rounded-full mx-auto object-cover ring-2 ring-white/10" />
+                                                    <Image src={c.profileImage || '/images/placeholder.jpg'} alt={c.name} width={56} height={56} className="rounded-full mx-auto object-cover ring-2 ring-white/10" />
                                                 ) : (
                                                     <div className="w-14 h-14 rounded-full mx-auto bg-gradient-to-br from-primary-500/30 to-purple-500/30 flex items-center justify-center text-white text-xs font-bold">
                                                         {c.name?.charAt(0)}

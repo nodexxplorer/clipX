@@ -1,9 +1,10 @@
 import httpx
 import urllib.parse
 import ipaddress
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from app.core.config import settings
+from app.core.auth import get_current_user
 
 router = APIRouter()
 
@@ -109,9 +110,17 @@ async def proxy_stream(request: Request, url: str = None, token: str = None):
     actual_url = url
     if token:
         from app.core.stream_token import resolve_stream_token
-        actual_url = resolve_stream_token(token)
-        if not actual_url:
+        result = resolve_stream_token(token)
+        if not result:
             raise HTTPException(status_code=403, detail="Invalid or expired stream token")
+        actual_url, token_user_id = result
+        # Token is HMAC-signed and time-limited — it IS authentication.
+        # Browser <video> elements don't send httpOnly cookies on cross-origin
+        # requests, so we rely on the cryptographic token instead.
+    else:
+        # Raw URL mode — require cookie-based auth
+        user = await get_current_user(request)
+        # user is guaranteed non-None (get_current_user raises 401 on failure)
     if not actual_url:
         raise HTTPException(status_code=400, detail="Missing url or token parameter")
 
@@ -171,11 +180,11 @@ async def proxy_stream(request: Request, url: str = None, token: str = None):
 
 
 @router.get("/download")
-async def proxy_download(url: str, request: Request, filename: str = None):
+async def proxy_download(url: str, request: Request, user=Depends(get_current_user), filename: str = None):
     # Validate URL first (SSRF protection)
     _validate_url(url)
 
-    response = await proxy_stream(request, url)
+    response = await proxy_stream(request, url=url)
 
     if response.status_code in [200, 206]:
         if not filename:
@@ -187,3 +196,4 @@ async def proxy_download(url: str, request: Request, filename: str = None):
         response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
 
     return response
+

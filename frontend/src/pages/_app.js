@@ -10,7 +10,7 @@ import { I18nProvider } from '@/lib/i18n';
 import ErrorBoundary from '@/components/common/ErrorBoundary';
 import OnboardingTour from '@/components/common/OnboardingTour';
 import WhatsNewPopup from '@/components/common/WhatsNewPopup';
-import CookieConsent from '@/components/common/CookieConsent';
+import CookieConsent from '@/components/CookieConsent';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { initWebVitals } from '@/lib/webVitals';
 import '@/styles/globals.css';
@@ -60,16 +60,11 @@ function MyApp({ Component, pageProps }) {
     </AuthProvider>
   );
 
-  // Wrap in GoogleOAuthProvider only on auth-related pages
-  if (isAuthRoute) {
-    return (
-      <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''}>
-        {content}
-      </GoogleOAuthProvider>
-    );
-  }
-
-  return content;
+  return (
+    <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ''}>
+      {content}
+    </GoogleOAuthProvider>
+  );
 }
 
 export default MyApp;

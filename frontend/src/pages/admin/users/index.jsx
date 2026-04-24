@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/users/index.jsx
+import Image from 'next/image';
 import { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import Link from 'next/link';
@@ -59,7 +60,7 @@ export default function AdminUsers() {
       cell: (row) => (
         <div className="flex items-center gap-3">
           {row.avatar ? (
-            <img src={row.avatar} alt="" className="w-9 h-9 rounded-xl object-cover ring-1 ring-white/5" />
+            <Image src={row.avatar || '/images/placeholder.jpg'} alt="" width={36} height={36} className="rounded-xl object-cover ring-1 ring-white/5" />
           ) : (
             <div className="w-9 h-9 bg-gradient-to-br from-primary-500 to-purple-600 rounded-xl flex items-center justify-center text-xs font-bold text-white ring-1 ring-white/5">
               {(row.firstName?.[0] || row.email?.[0] || '?').toUpperCase()}

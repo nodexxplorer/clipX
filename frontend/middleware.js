@@ -16,12 +16,12 @@ export function middleware(request) {
     // Build a strict CSP with the nonce replacing 'unsafe-inline' for scripts
     const csp = [
         `default-src 'self'`,
-        `script-src 'self' 'nonce-${nonce}' 'unsafe-eval' https://apis.google.com https://accounts.google.com`,
+        `script-src 'self' 'nonce-${nonce}' https://apis.google.com https://accounts.google.com`,
         `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
         `font-src 'self' https://fonts.gstatic.com data:`,
-        `img-src 'self' data: blob: https://image.tmdb.org https://i.ibb.co https://moviebox.ph https://pbcdnw.aoneroom.com https://placehold.co https://via.placeholder.com`,
-        `media-src 'self' blob: http://localhost:8000 https://*.aoneroom.com https://*`,
-        `connect-src 'self' http://localhost:8000 https://accounts.google.com https://api.paystack.co wss://*`,
+        `img-src 'self' data: blob: https://image.tmdb.org https://i.ibb.co https://moviebox.ph https://*.aoneroom.com https://placehold.co https://via.placeholder.com`,
+        `media-src 'self' blob: http://localhost:8000 https://*.aoneroom.com https://vod.aoneroom.com`,
+        `connect-src 'self' http://localhost:8000 https://accounts.google.com https://api.paystack.co https://*.aoneroom.com wss://*`,
         `frame-src 'self' https://accounts.google.com https://paystack.com https://checkout.paystack.com`,
         `object-src 'none'`,
         `base-uri 'self'`,

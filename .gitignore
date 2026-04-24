@@ -3,6 +3,45 @@
 .env.local
 .env.*.local
 
+frontend/eslint_errors.txt
+frontend/.next-build-log.txt
+pending_features.md
+verified_completed_features.md
+audit_report.md
+remotes.txt
+urls.txt
+
+
+i tried login and it bounced me back to the login page and my console is showing this
+[SLOW QUERY] Login took 33623ms (threshold: 500ms)
+INFO:     127.0.0.1:61135 - "POST /graphql HTTP/1.1" 200 OK
+[SLOW QUERY] GetCurrentUser took 852ms (threshold: 500ms)
+INFO:     127.0.0.1:63662 - "POST /graphql HTTP/1.1" 200 OK
+[SLOW QUERY] GetChatMessages took 3675ms (threshold: 500ms)
+[SLOW QUERY] GetCurrentUser took 1603ms (threshold: 500ms)    r Serieseriescore_exceptionsx\_transports\default.py", line 118,
+Sync skip Squid Game: 'year' is an invalid keyword argument forStep Id: 41
+The USER performed the following action:
+Getting status for command: 29e8fd11-53ce-493a-8014-e7fef2031522Step Id: 41
+Status: RUNNING
+Output delta since last status check:
+ POST /api/vitals 200 in 26ms (compile: 15ms, render: 10ms)
+ POST /api/vitals 200 in 15ms (compile: 5ms, render: 10ms))
+ POST /api/vitals 200 in 248ms (compile: 217ms, render: 32ms)Step Id: 42
+The USER performed the following action:
+Getting status for command: 38cb6348-7cd7-4c53-b9ba-d8bf11f68dafStep Id: 42
+Status: RUNNING
+Output delta since last status check:
+[SLOW QUERY] GetCurrentUser took 1603ms (threshold: 500ms)    uit)c367f02de3869b59 HTTP/1.1" 200 OK                           
+[SLOW QUERY] GetMovie took 7388ms (threshold: 500ms)reFoundatioStep Id: 43
+The USER performed the following action:    
+Command: cls
+CWD: c:\Users\Fortune\Desktop\ideas\clipX\mobileStep Id: 43
+
+
+i tried login and it bounced me back to the login page and my console is showing this
+
+
+
 # Python
 __pycache__/
 *.py[cod]

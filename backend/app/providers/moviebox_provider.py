@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import List, Optional, Any
 from moviebox_api.requests import Session
 from moviebox_api.core import Search, MovieDetails, Trending, TVSeriesDetails, HotMoviesAndTVSeries, Homepage
@@ -6,6 +7,8 @@ from moviebox_api.stream import StreamFilesDetail
 from moviebox_api.download import DownloadableMovieFilesDetail, DownloadableTVSeriesFilesDetail
 from moviebox_api.constants import SubjectType
 import os
+
+logger = logging.getLogger("clipx")
 
 # Subclass to fix the missing abstract method in moviebox-api
 class FixedStreamFilesDetail(StreamFilesDetail):
@@ -88,12 +91,14 @@ class MovieboxProvider:
                 self._item_cache[s_id] = candidate
                 return candidate
         except Exception as e:
-            try:
-                import sentry_sdk
-                sentry_sdk.capture_exception(e)
-            except Exception:
-                pass
-            print(f"Provider search error for {s_id}: {e}")
+            err_msg = str(e)
+            if "empty results" not in err_msg.lower():
+                try:
+                    import sentry_sdk
+                    sentry_sdk.capture_exception(e)
+                except Exception:
+                    pass
+                logger.warning(f"Provider search error for {s_id}: {e}")
             
         return None
 

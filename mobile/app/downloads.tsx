@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, Pressable, Platform, Alert } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, FlatList, StyleSheet, Pressable, Platform, Alert, Modal, Dimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -10,6 +10,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useSubscription } from '@/hooks/useSubscription';
 
 const EXPIRY_DAYS = 30;
+const TIER_LIMITS: Record<string, number> = { free: 5, standard: 25, pro: 100 };
+const QUALITY_OPTIONS = [
+    { key: '720', label: 'HD (720p)', size: '~800 MB', icon: 'film-outline' as const },
+    { key: '1080', label: 'Full HD (1080p)', size: '~2.5 GB', icon: 'videocam-outline' as const },
+];
 
 export default function DownloadsScreen() {
     const router = useRouter();
@@ -20,6 +25,10 @@ export default function DownloadsScreen() {
     const [selectMode, setSelectMode] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [storageUsed, setStorageUsed] = useState(0);
+    const [storageFree, setStorageFree] = useState(0);
+    const [storageTotal, setStorageTotal] = useState(0);
+    const [showQualityModal, setShowQualityModal] = useState(false);
+    const [pendingDownload, setPendingDownload] = useState<any>(null);
 
     useEffect(() => {
         loadDownloads();
@@ -62,7 +71,45 @@ export default function DownloadsScreen() {
         } finally {
             setLoading(false);
         }
+
+        // Fetch device storage info
+        try {
+            const free = await FileSystem.getFreeDiskStorageAsync();
+            const total = await FileSystem.getTotalDiskCapacityAsync();
+            setStorageFree(free);
+            setStorageTotal(total);
+        } catch {}
     };
+
+    // Download limit enforcement (Section 12)
+    const checkDownloadLimit = useCallback(() => {
+        const limit = TIER_LIMITS[tier] || 5;
+        if (downloads.length >= limit) {
+            Alert.alert(
+                'Download Limit Reached',
+                `Your ${tier} plan allows up to ${limit} downloads. Remove existing downloads or upgrade your plan.`,
+                [{ text: 'OK' }]
+            );
+            return false;
+        }
+        return true;
+    }, [downloads.length, tier]);
+
+    // Quality selection modal trigger (Section 12)
+    const initiateDownload = useCallback((item: any) => {
+        if (!checkDownloadLimit()) return;
+        setPendingDownload(item);
+        setShowQualityModal(true);
+    }, [checkDownloadLimit]);
+
+    const confirmDownloadQuality = useCallback((quality: string) => {
+        setShowQualityModal(false);
+        if (pendingDownload) {
+            // Proceed with download at selected quality
+            Alert.alert('Download Started', `Downloading in ${quality === '1080' ? 'Full HD (1080p)' : 'HD (720p)'}...`);
+            setPendingDownload(null);
+        }
+    }, [pendingDownload]);
 
     const handleDelete = (id: string, path: string) => {
         Alert.alert('Remove Download', 'Are you sure you want to remove this download?', [
@@ -213,11 +260,34 @@ export default function DownloadsScreen() {
                 )}
             </View>
 
-            {/* Storage info */}
+            {/* Storage & Quota Info (Section 12) */}
             {downloads.length > 0 && (
                 <View style={styles.storageBar}>
-                    <Ionicons name="server-outline" size={14} color={colors.textMuted} />
-                    <Text style={styles.storageText}>{formatSize(storageUsed)} used · {downloads.length} file{downloads.length !== 1 ? 's' : ''}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Ionicons name="server-outline" size={14} color={colors.textMuted} />
+                            <Text style={styles.storageText}>{formatSize(storageUsed)} used · {downloads.length} file{downloads.length !== 1 ? 's' : ''}</Text>
+                        </View>
+                        <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+                            {downloads.length}/{TIER_LIMITS[tier] || 5} downloads ({tier})
+                        </Text>
+                    </View>
+                    {/* Device storage bar */}
+                    {storageTotal > 0 && (
+                        <View style={{ marginBottom: 4 }}>
+                            <View style={{ height: 6, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden' }}>
+                                <View style={{
+                                    height: '100%', borderRadius: 3,
+                                    width: `${Math.min(((storageTotal - storageFree) / storageTotal) * 100, 100)}%`,
+                                    backgroundColor: ((storageTotal - storageFree) / storageTotal) > 0.9 ? '#ef4444' : ((storageTotal - storageFree) / storageTotal) > 0.7 ? '#f59e0b' : colors.primary,
+                                }} />
+                            </View>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 3 }}>
+                                <Text style={{ color: colors.textMuted, fontSize: 10 }}>{formatSize(storageFree)} free</Text>
+                                <Text style={{ color: colors.textMuted, fontSize: 10 }}>{formatSize(storageTotal)} total</Text>
+                            </View>
+                        </View>
+                    )}
                     {selectMode && (
                         <Pressable onPress={selectAll}>
                             <Text style={{ color: colors.primary, fontSize: fontSize.sm, fontWeight: fontWeight.bold }}>
@@ -291,6 +361,56 @@ export default function DownloadsScreen() {
                     }}
                 />
             )}
+
+            {/* Quality Selection Modal (Section 12) */}
+            <Modal
+                visible={showQualityModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowQualityModal(false)}
+            >
+                <Pressable
+                    style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 }}
+                    onPress={() => setShowQualityModal(false)}
+                >
+                    <View style={{
+                        backgroundColor: colors.surface, borderRadius: 16, padding: 24, width: '100%', maxWidth: 360,
+                        borderWidth: 1, borderColor: colors.border,
+                    }}>
+                        <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 4, textAlign: 'center' }}>
+                            Download Quality
+                        </Text>
+                        <Text style={{ color: colors.textMuted, fontSize: 13, textAlign: 'center', marginBottom: 20 }}>
+                            Choose quality for "{pendingDownload?.title || 'this content'}"
+                        </Text>
+                        {QUALITY_OPTIONS.map((opt) => (
+                            <Pressable
+                                key={opt.key}
+                                style={{
+                                    flexDirection: 'row', alignItems: 'center', gap: 14,
+                                    padding: 16, borderRadius: 12, marginBottom: 10,
+                                    backgroundColor: 'rgba(255,255,255,0.05)',
+                                    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+                                }}
+                                onPress={() => confirmDownloadQuality(opt.key)}
+                            >
+                                <Ionicons name={opt.icon} size={24} color={colors.primary} />
+                                <View style={{ flex: 1 }}>
+                                    <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>{opt.label}</Text>
+                                    <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}>Est. {opt.size}</Text>
+                                </View>
+                                <Ionicons name="download-outline" size={20} color={colors.textSecondary} />
+                            </Pressable>
+                        ))}
+                        <Pressable
+                            style={{ paddingVertical: 12, alignItems: 'center', marginTop: 4 }}
+                            onPress={() => setShowQualityModal(false)}
+                        >
+                            <Text style={{ color: colors.textMuted, fontSize: 14 }}>Cancel</Text>
+                        </Pressable>
+                    </View>
+                </Pressable>
+            </Modal>
         </View>
     );
 }

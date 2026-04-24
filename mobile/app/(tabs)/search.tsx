@@ -11,13 +11,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SEARCH_MOVIES, GET_TRENDING, GET_HOME_DATA } from '@/lib/graphql';
 import { colors, spacing, radius, fontSize, fontWeight, POSTER_ASPECT } from '@/constants/theme';
 import { getPosterUri } from '@/lib/utils';
+import { useCardDimensions } from '@/hooks/useResponsiveLayout';
 import type { Movie, Genre } from '@/types';
 
-const { width: SW } = Dimensions.get('window');
-const COLS   = 3;
-const GAP    = spacing.md;
-const CARD_W = (SW - spacing.xl * 2 - GAP * (COLS - 1)) / COLS;
-const CARD_H = CARD_W / POSTER_ASPECT;
+// Tablet-responsive grid dimensions (Section 18)
+const GAP = spacing.md;
 
 // ─── Static trending search terms ───────────────────────────────────────────
 // In production swap this for a real `trendingSearches` backend query.
@@ -38,16 +36,16 @@ const RATING_OPTIONS = ['All', '9+', '8+', '7+', '6+'];
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-function MovieCard({ movie }: { movie: Movie }) {
+function MovieCard({ movie, cardWidth, cardHeight }: { movie: Movie; cardWidth: number; cardHeight: number }) {
   const router = useRouter();
   return (
     <Pressable
       onPress={() => { Keyboard.dismiss(); router.push(`/movie/${movie.id}` as any); }}
-      style={styles.card}
+      style={{ width: cardWidth }}
     >
       <Image
         source={{ uri: getPosterUri(movie) }}
-        style={styles.poster}
+        style={{ width: cardWidth, height: cardHeight, borderRadius: radius.sm, backgroundColor: colors.surfaceLight }}
         contentFit="cover"
         transition={200}
       />
@@ -67,6 +65,7 @@ function MovieCard({ movie }: { movie: Movie }) {
 export default function SearchScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
+  const { cardWidth, cardHeight, gridColumns, contentPadding } = useCardDimensions(GAP);
   const params  = useLocalSearchParams<{ q?: string }>();
   const inputRef = useRef<TextInput>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -290,15 +289,16 @@ export default function SearchScreen() {
         {isSearching && <Text style={styles.resultCount}>{totalCount} found</Text>}
       </View>
 
-      {/* ── Grid ── */}
+      {/* ── Grid (Tablet-responsive via useCardDimensions) ── */}
       {results.length > 0 ? (
         <FlatList
+          key={`grid-${gridColumns}`}
           data={results}
-          numColumns={COLS}
+          numColumns={gridColumns}
           keyExtractor={m => m.id}
-          contentContainerStyle={styles.grid}
-          columnWrapperStyle={styles.gridRow}
-          renderItem={({ item }) => <MovieCard movie={item} />}
+          contentContainerStyle={{ paddingHorizontal: contentPadding, paddingBottom: 100 }}
+          columnWrapperStyle={{ gap: GAP, marginBottom: GAP }}
+          renderItem={({ item }) => <MovieCard movie={item} cardWidth={cardWidth} cardHeight={cardHeight} />}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         />

@@ -3,7 +3,7 @@
  * Provides offline caching, background sync queue, and offline progress tracking
  */
 
-const CACHE_NAME = 'clipx-v2';
+const CACHE_NAME = 'clipx-v3';
 const STATIC_ASSETS = [
     '/',
     '/offline',
@@ -75,8 +75,8 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // For static assets, use cache-first with network update
-    if (url.pathname.match(/\.(js|css|png|jpg|jpeg|webp|svg|ico|woff2?)$/)) {
+    // For static assets from same origin, use cache-first with network update
+    if (url.origin === self.location.origin && url.pathname.match(/\.(js|css|png|jpg|jpeg|webp|svg|ico|woff2?)$/)) {
         event.respondWith(
             caches.match(request).then((cached) => {
                 // Return cached immediately, but also update cache in background
@@ -93,6 +93,10 @@ self.addEventListener('fetch', (event) => {
         );
         return;
     }
+
+    // Skip cross-origin requests entirely — let the browser handle them directly
+    // This prevents CSP violations when the SW tries to fetch() external CDN images
+    if (url.origin !== self.location.origin) return;
 
     // For images (movie posters etc), cache-first
     if (url.pathname.match(/\.(jpg|jpeg|png|webp|gif|avif)$/) || url.hostname.includes('image.tmdb.org')) {

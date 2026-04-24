@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/content/featured.jsx
+import Image from 'next/image';
 import { useState } from 'react';
 import { useQuery } from '@apollo/client/react';
 import AdminProtectedRoute from '@/pages/auth/AdminProtectedRoute';
@@ -46,7 +47,7 @@ export default function FeaturedContentPage() {
                                         </div>
                                     )}
                                     {item.poster ? (
-                                        <img src={item.poster} alt={item.title} className="w-full aspect-[2/3] object-cover" />
+                                        <Image src={item.poster || '/images/placeholder.jpg'} alt={item.title} fill className="object-cover" />
                                     ) : (
                                         <div className="w-full aspect-[2/3] bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
                                             <FiFilm className="w-8 h-8 text-gray-600" />

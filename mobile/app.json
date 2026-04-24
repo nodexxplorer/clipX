@@ -105,7 +105,6 @@
       ],
       "expo-secure-store",
       "expo-sqlite",
-      "expo-haptics",
       "expo-updates"
     ],
     "experiments": {

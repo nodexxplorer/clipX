@@ -6,10 +6,13 @@ These are separate from GraphQL because they return binary file responses.
 
 import csv
 import io
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse
+
+logger = logging.getLogger("clipx")
 
 router = APIRouter()
 
@@ -76,7 +79,12 @@ async def export_revenue_csv(request: Request, days: int = 90):
             rows = result.fetchall()
         except Exception as e:
             # Table might not exist yet
-            print(f"[revenue export] Error: {e}")
+            logger.exception("[revenue export] Error")
+            try:
+                import sentry_sdk
+                sentry_sdk.capture_exception(e)
+            except Exception:
+                pass
             rows = []
 
     output = io.StringIO()
@@ -121,7 +129,12 @@ async def export_users_csv(request: Request):
             """))
             rows = result.fetchall()
         except Exception as e:
-            print(f"[users export] Error: {e}")
+            logger.exception("[users export] Error")
+            try:
+                import sentry_sdk
+                sentry_sdk.capture_exception(e)
+            except Exception:
+                pass
             rows = []
 
     output = io.StringIO()

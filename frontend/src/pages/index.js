@@ -5,6 +5,7 @@
  * Premium streaming landing with hero, trending, features, genres, and CTA
  */
 
+import Image from 'next/image';
 import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -53,12 +54,12 @@ const FEATURES = [
     desc: 'Save movies for offline viewing. Perfect for flights and commutes.',
     color: 'from-green-500 to-emerald-600',
   },
-  {
-    icon: FiShield,
-    title: 'Ad-Free & Secure',
-    desc: 'No pop-ups, no trackers. Just pure cinema in a secure environment.',
-    color: 'from-orange-500 to-red-600',
-  },
+  // {
+  //   icon: FiShield,
+  //   title: 'Ad-Free & Secure',
+  //   desc: 'No pop-ups, no trackers. Just pure cinema in a secure environment.',
+  //   color: 'from-orange-500 to-red-600',
+  // },
 ];
 
 export default function Home() {
@@ -323,9 +324,9 @@ function JoinBanner() {
               <div className="flex items-center gap-2 text-white/80 text-sm">
                 <FiSmartphone className="text-green-300" /> All Devices
               </div>
-              <div className="flex items-center gap-2 text-white/80 text-sm">
+              {/* <div className="flex items-center gap-2 text-white/80 text-sm">
                 <FiShield className="text-blue-300" /> No Ads
-              </div>
+              </div> */}
             </div>
           </div>
           <Link
@@ -509,7 +510,7 @@ function ReviewsSection() {
             >
               <div className="flex items-center gap-3">
                 {review.userAvatar ? (
-                  <img src={review.userAvatar} alt="" className="w-10 h-10 rounded-full object-cover ring-2 ring-white/10" />
+                  <Image src={review.userAvatar || '/images/placeholder.jpg'} alt="" width={40} height={40} className="rounded-full object-cover ring-2 ring-white/10" />
                 ) : (
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-purple-500 flex items-center justify-center text-sm font-bold text-white ring-2 ring-white/10">
                     {(review.userName || 'U').charAt(0).toUpperCase()}

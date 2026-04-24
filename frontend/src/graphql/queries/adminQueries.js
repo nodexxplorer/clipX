@@ -259,3 +259,85 @@ export const WATCH_PARTY_HOST_ACTION = gql`
     }
   }
 `;
+
+// ─── Section 15: Content Scheduling ──────────────────────────────────────────
+export const GET_CONTENT_SCHEDULE = gql`
+  query ContentSchedule($limit: Int) {
+    contentSchedule(limit: $limit) {
+      id movieboxId title publishAt status createdBy
+    }
+  }
+`;
+
+export const SCHEDULE_CONTENT = gql`
+  mutation ScheduleContent($movieboxId: String!, $title: String!, $publishAt: String!) {
+    scheduleContent(movieboxId: $movieboxId, title: $title, publishAt: $publishAt) {
+      success message
+    }
+  }
+`;
+
+// ─── Section 15: SEO Metadata ────────────────────────────────────────────────
+export const UPDATE_SEO_METADATA = gql`
+  mutation UpdateSeoMetadata($movieboxId: String!, $title: String, $description: String, $ogImage: String, $keywords: String) {
+    updateSeoMetadata(movieboxId: $movieboxId, title: $title, description: $description, ogImage: $ogImage, keywords: $keywords) {
+      success message
+    }
+  }
+`;
+
+// ─── Section 15: User Impersonation ──────────────────────────────────────────
+export const IMPERSONATE_USER = gql`
+  mutation ImpersonateUser($targetUserId: String!) {
+    impersonateUser(targetUserId: $targetUserId) {
+      success token expiresAt message
+    }
+  }
+`;
+
+// ─── Section 11: Email Preferences ───────────────────────────────────────────
+export const GET_EMAIL_PREFERENCES = gql`
+  query MyEmailPreferences {
+    myEmailPreferences {
+      marketing security newReleases watchlistUpdates weeklyDigest socialActivity accountAlerts
+    }
+  }
+`;
+
+export const UPDATE_EMAIL_PREFERENCES = gql`
+  mutation UpdateEmailPreferences(
+    $marketing: Boolean, $security: Boolean, $newReleases: Boolean,
+    $watchlistUpdates: Boolean, $weeklyDigest: Boolean,
+    $socialActivity: Boolean, $accountAlerts: Boolean
+  ) {
+    updateEmailPreferences(
+      marketing: $marketing, security: $security, newReleases: $newReleases,
+      watchlistUpdates: $watchlistUpdates, weeklyDigest: $weeklyDigest,
+      socialActivity: $socialActivity, accountAlerts: $accountAlerts
+    ) { success message }
+  }
+`;
+
+// ─── Section 12: Download Quota ──────────────────────────────────────────────
+export const GET_DOWNLOAD_QUOTA = gql`
+  query MyDownloadQuota {
+    myDownloadQuota { used limit tier remainingStorage }
+  }
+`;
+
+// ─── Section 14: Ranked Search with Composite Filters ────────────────────────
+export const SEARCH_MOVIES_RANKED = gql`
+  query SearchMoviesRanked($query: String!, $limit: Int, $minRating: Float, $yearMin: Int, $yearMax: Int, $genres: [String!]) {
+    searchMoviesRanked(query: $query, limit: $limit, minRating: $minRating, yearMin: $yearMin, yearMax: $yearMax, genres: $genres) {
+      items { id title posterUrl year rating genres { id name } }
+      totalResults page totalPages
+    }
+  }
+`;
+
+// ─── Section 13: New Episode Notification ────────────────────────────────────
+export const CHECK_NEW_EPISODES = gql`
+  mutation CheckNewEpisodes {
+    checkNewEpisodes { success message }
+  }
+`;

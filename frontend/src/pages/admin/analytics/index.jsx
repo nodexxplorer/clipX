@@ -1,4 +1,5 @@
 ﻿// frontend/src/pages/admin/analytics/index.jsx
+import Image from 'next/image';
 import { useState } from 'react';
 import { useQuery } from '@apollo/client/react';
 import AdminLayout from '@/components/admin/layout/AdminLayout';
@@ -122,7 +123,7 @@ export default function AdminAnalytics() {
                         {topMovies.length > 0 ? topMovies.map((item, i) => (
                             <div key={i} className="px-5 py-3.5 flex items-center gap-4 hover:bg-white/[0.02] transition-colors">
                                 <span className="text-xs font-black text-gray-600 w-5">{i + 1}</span>
-                                <img src={item.movie?.posterUrl || '/placeholder.jpg'} alt="" className="w-9 h-13 object-cover rounded-lg ring-1 ring-white/5" />
+                                <div className="relative w-9 h-13"><Image src={item.movie?.posterUrl || '/images/placeholder.jpg'} alt="" fill className="object-cover rounded-lg ring-1 ring-white/5" /></div>
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium text-white truncate">{item.movie?.title}</p>
                                 </div>

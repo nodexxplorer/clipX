@@ -14,6 +14,7 @@ export const LOGIN_MUTATION = gql`
         name
         avatar
         role
+        emailVerified
         createdAt
       }
     }
@@ -29,6 +30,7 @@ export const REGISTER_MUTATION = gql`
         email
         name
         avatar
+        emailVerified
         createdAt
       }
     }
@@ -90,6 +92,24 @@ export const LOGOUT_MUTATION = gql`
   mutation Logout {
     logout {
       success
+    }
+  }
+`;
+
+export const VERIFY_EMAIL_MUTATION = gql`
+  mutation VerifyEmail($token: String!) {
+    verifyEmail(token: $token) {
+      success
+      message
+    }
+  }
+`;
+
+export const RESEND_VERIFICATION_MUTATION = gql`
+  mutation ResendVerification {
+    resendVerification {
+      success
+      message
     }
   }
 `;
@@ -293,4 +313,4 @@ export const UNREGISTER_PUSH_TOKEN = gql`
     }
   }
 `;
-
+

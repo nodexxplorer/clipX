@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@apollo/client/react';
@@ -15,7 +15,13 @@ import type { Movie } from '@/types';
 export default function HistoryScreen() {
     const { isAuthenticated } = useAuth();
     const router = useRouter();
-    const { data, loading } = useQuery<any>(GET_DASHBOARD, { skip: !isAuthenticated });
+    const { data, loading, refetch } = useQuery<any>(GET_DASHBOARD, { skip: !isAuthenticated });
+    const [refreshing, setRefreshing] = useState(false);
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await refetch().catch(() => {});
+        setRefreshing(false);
+    }, [refetch]);
 
     const recentlyViewed: Movie[] = data?.dashboardData?.recentlyViewed || [];
 
@@ -52,6 +58,9 @@ export default function HistoryScreen() {
                     keyExtractor={(item) => item.id}
                     contentContainerStyle={styles.list}
                     showsVerticalScrollIndicator={false}
+                    refreshControl={
+                        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
+                    }
                     renderItem={({ item }) => (
                         <Pressable onPress={() => router.push(`/movie/${item.id}`)} style={styles.histItem}>
                             <Image source={{ uri: getPosterUri(item) }} style={styles.poster} contentFit="cover" />

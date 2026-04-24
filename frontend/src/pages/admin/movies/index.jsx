@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/movies/index.jsx
+import Image from 'next/image';
 import { useState } from 'react';
 import { useQuery, useMutation } from '@apollo/client/react';
 import Link from 'next/link';
@@ -43,7 +44,7 @@ export default function AdminMovies() {
       accessor: 'title',
       cell: (row) => (
         <div className="flex items-center gap-3">
-          <img src={row.posterUrl || '/placeholder.jpg'} alt="" className="w-10 h-14 object-cover rounded-lg ring-1 ring-white/5" />
+          <div className="relative w-10 h-14"><Image src={row.posterUrl || '/images/placeholder.jpg'} alt="" fill className="object-cover rounded-lg ring-1 ring-white/5" /></div>
           <div>
             <p className="text-white font-semibold text-sm">{row.title}</p>
             <p className="text-gray-500 text-xs">{row.year || '—'}</p>

@@ -12,8 +12,11 @@ Protocol (JSON over WS):
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict, List
 import json
+import logging
 import uuid
 from datetime import datetime
+
+logger = logging.getLogger("clipx")
 
 router = APIRouter()
 
@@ -119,7 +122,7 @@ class WatchPartyManager:
                 sentry_sdk.capture_exception(e)
             except Exception:
                 pass
-            print(f"WatchParty DB sync error: {e}")
+            logger.exception("WatchParty DB sync error")
 
     async def broadcast_chat(self, room_code: str, user_info: dict, content: str):
         await self._broadcast(room_code, {
@@ -204,7 +207,7 @@ async def websocket_watch_party(websocket: WebSocket, room_code: str):
                 sentry_sdk.capture_exception(e)
             except Exception:
                 pass
-            print(f"WatchParty auth fallback: {type(e).__name__}")
+            logger.warning(f"WatchParty auth fallback: {type(e).__name__}")
 
     # Verify room exists and is active
     try:
@@ -228,7 +231,7 @@ async def websocket_watch_party(websocket: WebSocket, room_code: str):
             sentry_sdk.capture_exception(e)
         except Exception:
             pass
-        print(f"WatchParty room check error: {e}")
+        logger.exception(f"WatchParty room check error")
 
     await wp_manager.connect(websocket, room_code, user_info)
 
@@ -266,5 +269,5 @@ async def websocket_watch_party(websocket: WebSocket, room_code: str):
             sentry_sdk.capture_exception(e)
         except Exception:
             pass
-        print(f"WatchParty WS error: {e}")
+        logger.exception("WatchParty WS error")
         wp_manager.disconnect(websocket, room_code)

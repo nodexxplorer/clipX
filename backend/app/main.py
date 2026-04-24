@@ -91,8 +91,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     if not cur:
                         pipe.expire(rk, self.AUTH_REFRESH_WIN)
                     await pipe.execute()
-                except Exception:
-                    pass  # fail open on Redis errors
+                except Exception as e:
+                    logger.exception("Redis error in auth refresh rate limit")
+                    return Response(
+                        content='{"detail":"Service temporarily unavailable"}',
+                        status_code=503, media_type="application/json",
+                        headers={"Retry-After": "30"}
+                    )
 
         # /graphql POST — global 30/min + login-specific 5/min
         if request.method == "POST" and path == "/graphql":
@@ -101,33 +106,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             from app.core.cache import cache
             redis_available = await cache._ensure_connected()
 
-            # ── Login-specific IP rate limit (5/min) ──────────────
-            # Peek at the body to detect login mutations
-            try:
-                body_bytes = await request.body()
-                body_str = body_bytes.decode("utf-8", errors="ignore")
-                is_login = '"login"' in body_str.lower() or 'mutation' in body_str.lower() and 'login' in body_str.lower()
-            except Exception:
-                body_bytes = b""
-                is_login = False
-
-            if is_login and redis_available and cache._redis:
-                try:
-                    login_key = f"rate_limit:login:{client_ip}"
-                    cur = await cache._redis.get(login_key)
-                    if cur and int(cur) >= self.LOGIN_MAX:
-                        return Response(
-                            content='{"errors":[{"message":"Too many login attempts. Please wait a minute."}]}',
-                            status_code=429, media_type="application/json",
-                            headers={"Retry-After": str(self.LOGIN_WIN)}
-                        )
-                    pipe = cache._redis.pipeline()
-                    pipe.incr(login_key)
-                    if not cur:
-                        pipe.expire(login_key, self.LOGIN_WIN)
-                    await pipe.execute()
-                except Exception:
-                    pass
+            # Removed body-reading login rate limit here because `await request.body()`
+            # inside BaseHTTPMiddleware consumes the ASGI stream and hangs GraphQL.
+            # The global 30/min limit below still protects the endpoint.
 
             # ── Global IP rate limit (30/min) ─────────────────────
             if redis_available and cache._redis:
@@ -147,31 +128,23 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                         pipe.expire(redis_key, self.window_seconds)
                     await pipe.execute()
                 except Exception as e:
-                    print(f"[RATE LIMIT] Redis error, falling back to in-memory: {e}")
-                    # fall through to in-memory below
-                    redis_available = False
+                    logger.exception("Redis error in global rate limit")
+                    return Response(
+                        content='{"errors":[{"message":"Service temporarily unavailable. Please try again."}]}',
+                        status_code=503,
+                        media_type="application/json",
+                        headers={"Retry-After": "30"}
+                    )
 
             if not redis_available:
-                now = time.time()
-                self._requests[client_ip] = [
-                    t for t in self._requests[client_ip]
-                    if now - t < self.window_seconds
-                ]
-                if len(self._requests[client_ip]) >= self.max_requests:
-                    return Response(
-                        content='{"errors":[{"message":"Too many requests. Please try again later."}]}',
-                        status_code=429,
-                        media_type="application/json",
-                        headers={"Retry-After": str(self.window_seconds)}
-                    )
-                self._requests[client_ip].append(now)
-
-                # Periodic cleanup
-                if len(self._requests) > 200:
-                    cutoff = now - self.window_seconds
-                    stale = [ip for ip, times in self._requests.items() if not times or times[-1] < cutoff]
-                    for ip in stale:
-                        del self._requests[ip]
+                # Redis is required for rate limiting — fail closed
+                logger.error("Redis unavailable — rate limiting cannot proceed, returning 503")
+                return Response(
+                    content='{"errors":[{"message":"Service temporarily unavailable. Please try again."}]}',
+                    status_code=503,
+                    media_type="application/json",
+                    headers={"Retry-After": "30"}
+                )
 
         return await call_next(request)
 
@@ -312,9 +285,9 @@ async def _warmup_moviebox_session():
     try:
         from app.services.movie_service import movie_service
         await movie_service.provider.session.ensure_cookies_are_assigned()
-        print("[OK] Moviebox session cookies pre-warmed successfully")
+        logger.info("Moviebox session cookies pre-warmed successfully")
     except Exception as e:
-        print(f"[WARN] Moviebox session warmup failed (non-fatal): {e}")
+        logger.warning(f"Moviebox session warmup failed (non-fatal): {e}")
 
 
 @asynccontextmanager
@@ -324,7 +297,7 @@ async def lifespan(app: FastAPI):
         from app.core.sentry import setup_sentry
         setup_sentry()
     except Exception as e:
-        print(f"[WARN] Sentry init failed (non-fatal): {e}")
+        logger.warning(f"Sentry init failed (non-fatal): {e}")
 
     await _warmup_moviebox_session()
     yield

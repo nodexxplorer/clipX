@@ -23,7 +23,13 @@ import json
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
-DRM_SECRET = os.getenv("DRM_SECRET_KEY", "")
+_DRM_SECRET_RAW = os.getenv("DRM_SECRET_KEY")
+if not _DRM_SECRET_RAW:
+    raise RuntimeError(
+        "DRM_SECRET_KEY environment variable is not set. "
+        "DRM signing requires it. Set it in your .env file."
+    )
+DRM_SECRET = _DRM_SECRET_RAW
 DRM_PROVIDER = os.getenv("DRM_PROVIDER", "none")  # none, widevine, fairplay
 
 
@@ -37,14 +43,11 @@ def generate_signed_url(stream_url: str, user_id: str, tier: str, expires_minute
     # Build token data
     token_data = f"{user_id}:{tier}:{stream_url}:{expires}"
     
-    if DRM_SECRET:
-        signature = hmac.new(
-            DRM_SECRET.encode("utf-8"),
-            token_data.encode("utf-8"),
-            hashlib.sha256
-        ).hexdigest()[:32]
-    else:
-        signature = hashlib.sha256(token_data.encode("utf-8")).hexdigest()[:32]
+    signature = hmac.new(
+        DRM_SECRET.encode("utf-8"),
+        token_data.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()[:32]
     
     # Append auth params to URL
     separator = "&" if "?" in stream_url else "?"
@@ -66,14 +69,11 @@ def verify_stream_token(url: str, token: str, user_id: str, tier: str) -> bool:
     base_url = url.split("?")[0]
     token_data = f"{user_id}:{tier}:{base_url}:{expires}"
     
-    if DRM_SECRET:
-        expected = hmac.new(
-            DRM_SECRET.encode("utf-8"),
-            token_data.encode("utf-8"),
-            hashlib.sha256
-        ).hexdigest()[:32]
-    else:
-        expected = hashlib.sha256(token_data.encode("utf-8")).hexdigest()[:32]
+    expected = hmac.new(
+        DRM_SECRET.encode("utf-8"),
+        token_data.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()[:32]
     
     return hmac.compare_digest(token, expected)
 
@@ -118,14 +118,11 @@ def _generate_license_token(user_id: str, tier: str) -> str:
     
     payload = json.dumps(data, sort_keys=True)
     
-    if DRM_SECRET:
-        sig = hmac.new(
-            DRM_SECRET.encode("utf-8"),
-            payload.encode("utf-8"),
-            hashlib.sha256
-        ).hexdigest()[:16]
-    else:
-        sig = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+    sig = hmac.new(
+        DRM_SECRET.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()[:16]
     
     import base64
     encoded = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("utf-8")

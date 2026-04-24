@@ -1,5 +1,6 @@
 
 import asyncio
+import logging
 from datetime import datetime, timedelta
 from sqlalchemy.future import select
 from app.core.database import AsyncSessionLocal
@@ -9,6 +10,7 @@ from app.core.email_service import (
     send_grace_period_email,
 )
 
+logger = logging.getLogger("clipx")
 
 async def enforce_grace_periods():
     """
@@ -39,13 +41,13 @@ async def enforce_grace_periods():
                 old_tier,
                 "expired"
             )
-            print(f"  ⬇️  Downgraded {user.email} from {old_tier} to free (grace period expired)")
+            logger.info(f"Downgraded {user.email} from {old_tier} to free (grace period expired)")
 
         if users:
             await db.commit()
-            print(f"✅ Grace period enforcement: {len(users)} user(s) downgraded")
+            logger.info(f"Grace period enforcement: {len(users)} user(s) downgraded")
         else:
-            print("✅ Grace period enforcement: no expired grace periods")
+            logger.info("Grace period enforcement: no expired grace periods")
 
 
 async def send_renewal_reminders():
@@ -86,9 +88,9 @@ async def send_renewal_reminders():
                 renewal_date,
                 amount
             )
-            print(f"  📧 Renewal reminder sent to {user.email} (renews {renewal_date})")
+            logger.info(f"Renewal reminder sent to {user.email} (renews {renewal_date})")
 
-        print(f"✅ Renewal reminders: {len(users)} email(s) sent")
+        logger.info(f"Renewal reminders: {len(users)} email(s) sent")
 
 
 async def cleanup_expired_sessions():
@@ -104,7 +106,7 @@ async def cleanup_expired_sessions():
             WHERE expires_at < NOW()
         """))
         await db.commit()
-        print(f"✅ Cleaned up expired refresh tokens")
+        logger.info("Cleaned up expired refresh tokens")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -189,7 +191,7 @@ async def compute_yearly_stats():
                     )
                     db.add(new_stats)
 
-                print(f"  📊 Stats computed for {user.email}: {row.total_movies} movies, {row.total_watch_time}min")
+                logger.info(f"Stats computed for {user.email}: {row.total_movies} movies, {row.total_watch_time}min")
 
             except Exception as e:
                 try:
@@ -197,10 +199,10 @@ async def compute_yearly_stats():
                     sentry_sdk.capture_exception(e)
                 except Exception:
                     pass
-                print(f"  ⚠️  Stats computation failed for {user.email}: {e}")
+                logger.warning(f"Stats computation failed for {user.email}: {e}")
 
         await db.commit()
-        print(f"✅ Yearly stats: computed for {len(users)} user(s)")
+        logger.info(f"Yearly stats: computed for {len(users)} user(s)")
 
 
 async def cleanup_expired_invites():
@@ -227,14 +229,14 @@ async def cleanup_expired_invites():
         """))
 
         await db.commit()
-        print(f"✅ Cleaned up expired invites and stale watch party rooms")
+        logger.info("Cleaned up expired invites and stale watch party rooms")
 
 
 async def run_all_tasks():
     """Run all scheduled tasks."""
-    print(f"\n{'='*50}")
-    print(f"🕐 Running scheduled tasks at {datetime.utcnow().isoformat()}")
-    print(f"{'='*50}")
+    logger.info(f"{'='*50}")
+    logger.info(f"Running scheduled tasks at {datetime.utcnow().isoformat()}")
+    logger.info(f"{'='*50}")
 
     await enforce_grace_periods()
     await send_renewal_reminders()
@@ -247,7 +249,7 @@ async def run_all_tasks():
             sentry_sdk.capture_exception(e)
         except Exception:
             pass
-        print(f"⚠️  Session cleanup skipped: {e}")
+        logger.warning(f"Session cleanup skipped: {e}")
 
     try:
         await cleanup_expired_invites()
@@ -257,7 +259,7 @@ async def run_all_tasks():
             sentry_sdk.capture_exception(e)
         except Exception:
             pass
-        print(f"⚠️  Invite cleanup skipped: {e}")
+        logger.warning(f"Invite cleanup skipped: {e}")
 
     try:
         await compute_yearly_stats()
@@ -267,9 +269,9 @@ async def run_all_tasks():
             sentry_sdk.capture_exception(e)
         except Exception:
             pass
-        print(f"⚠️  Yearly stats skipped: {e}")
+        logger.warning(f"Yearly stats skipped: {e}")
 
-    print(f"{'='*50}\n")
+    logger.info(f"{'='*50}")
 
 
 if __name__ == "__main__":

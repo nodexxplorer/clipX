@@ -1,6 +1,9 @@
 from app.models.database import Notification as DbNotification
 from typing import Optional, Any
 from datetime import datetime
+import logging
+
+logger = logging.getLogger("clipx")
 
 
 class NotificationService:
@@ -45,7 +48,7 @@ class NotificationService:
                 sentry_sdk.capture_exception(e)
             except Exception:
                 pass
-            print(f"[Notification] Error creating: {e}")
+            logger.exception("Error creating notification")
             await db.rollback()
 
     async def notify_watchlist_add(self, db: Any, user_id: str, movie_title: str, movie_id: str = None):

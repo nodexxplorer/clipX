@@ -1,22 +1,51 @@
 // src/graphql/client.js
 
-import { ApolloClient, InMemoryCache, createHttpLink, from } from '@apollo/client';
+import { ApolloClient, InMemoryCache, createHttpLink, from, Observable } from '@apollo/client';
 import { onError } from '@apollo/client/link/error';
 
 const httpLink = createHttpLink({
-  uri: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/graphql',
+  uri: '/api/graphql',  // Routed through our API proxy which forwards Set-Cookie headers
   credentials: 'include', // sends the httpOnly auth_token cookie automatically
   headers: {
     'X-Requested-With': 'XMLHttpRequest', // CSRF protection — required by backend middleware
   },
 });
 
-const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
+// ---------------------------------------------------------------------------
+// Token refresh state — shared across all concurrent operations
+// ---------------------------------------------------------------------------
+let _isRefreshing = false;
+let _pendingRefreshSubscribers = [];
+
+function subscribeToRefresh(callback) {
+  _pendingRefreshSubscribers.push(callback);
+}
+
+function onRefreshComplete(success) {
+  _pendingRefreshSubscribers.forEach((cb) => cb(success));
+  _pendingRefreshSubscribers = [];
+}
+
+
+async function attemptTokenRefresh() {
+  try {
+    const res = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      credentials: 'include',
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+
+const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) => {
   if (graphQLErrors) {
-    for (const { message, path, extensions } of graphQLErrors) {
+    for (const { message, extensions } of graphQLErrors) {
       if (process.env.NODE_ENV === 'development') {
         console.error(
-          `[GraphQL] op=${operation.operationName} path=${JSON.stringify(path)} msg="${message}"`
+          `[GraphQL] op=${operation.operationName} msg="${message}"`
         );
       }
 
@@ -32,8 +61,36 @@ const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
         msg.includes('jwt');
 
       if (isAuthFailure && typeof window !== 'undefined') {
-        // AuthContext listens for this event and calls logout()
-        window.dispatchEvent(new CustomEvent('clipx:session-expired'));
+        // Don't immediately log the user out — try refreshing first
+        return new Observable((observer) => {
+          const retryOrReject = (refreshSuccess) => {
+            if (refreshSuccess) {
+              // Retry the original operation with fresh cookies
+              const subscriber = forward(operation).subscribe({
+                next: observer.next.bind(observer),
+                error: observer.error.bind(observer),
+                complete: observer.complete.bind(observer),
+              });
+              return () => subscriber.unsubscribe();
+            } else {
+              // Refresh truly failed — session is gone
+              window.dispatchEvent(new CustomEvent('clipx:session-expired'));
+              observer.error(graphQLErrors[0]);
+            }
+          };
+
+          if (!_isRefreshing) {
+            _isRefreshing = true;
+            attemptTokenRefresh().then((success) => {
+              _isRefreshing = false;
+              onRefreshComplete(success);
+              retryOrReject(success);
+            });
+          } else {
+            // Another operation already triggered a refresh — wait for it
+            subscribeToRefresh(retryOrReject);
+          }
+        });
       }
     }
   }
@@ -63,14 +120,6 @@ const cache = new InMemoryCache({
   },
 });
 
-// ---------------------------------------------------------------------------
-// Client singleton
-//
-// SSR note: this is a client-side singleton. Cookie auth works correctly here
-// because each browser has its own cookie jar. If you add Next.js SSR pages
-// that need auth, create a per-request client using makeApolloClient(cookie)
-// and forward the Cookie header from the incoming SSR request.
-// ---------------------------------------------------------------------------
 const client = new ApolloClient({
   link: from([errorLink, httpLink]),
   cache,

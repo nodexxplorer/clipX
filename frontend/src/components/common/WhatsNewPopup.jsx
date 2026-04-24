@@ -18,11 +18,11 @@ const CHANGELOG_ITEMS = [
         color: 'text-purple-400 bg-purple-500/10',
     },
     {
-        icon: FiGift,
-        title: 'Subscription Plans',
-        description: 'Unlock Standard & Pro tiers with enhanced quality, downloads, and no ads.',
-        tag: 'New',
-        color: 'text-primary-400 bg-primary-500/10',
+        // icon: FiGift,
+        // title: 'Subscription Plans',
+        // description: 'Unlock Standard & Pro tiers with enhanced quality, downloads, and no ads.',
+        // tag: 'New',
+        // color: 'text-primary-400 bg-primary-500/10',
     },
     {
         icon: FiStar,

@@ -2,7 +2,13 @@
 
 # dependencies
 node_modules/
-
+frontend/eslint_errors.txt
+frontend/.next-build-log.txt
+pending_features.md
+verified_completed_features.md
+audit_report.md
+remotes.txt
+urls.txt 
 # Expo
 .expo/
 dist/

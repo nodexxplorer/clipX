@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/content/banners.jsx
+import Image from 'next/image';
 import { useState } from 'react';
 import AdminProtectedRoute from '@/pages/auth/AdminProtectedRoute';
 import AdminLayout from '@/components/admin/layout/AdminLayout';
@@ -43,9 +44,9 @@ export default function BannersPage() {
                                         <span className="text-[10px] text-gray-600 font-bold">#{idx + 1}</span>
                                     </div>
 
-                                    <div className="w-32 h-20 rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                    <div className="w-32 h-20 rounded-xl bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center flex-shrink-0 overflow-hidden relative">
                                         {banner.image ? (
-                                            <img src={banner.image} alt="" className="w-full h-full object-cover" />
+                                            <Image src={banner.image || '/images/placeholder.jpg'} alt="" fill className="object-cover" />
                                         ) : (
                                             <FiImage className="w-6 h-6 text-gray-600" />
                                         )}

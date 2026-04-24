@@ -23,16 +23,19 @@ _SECRET = _SECRET_RAW.encode("utf-8")
 _TOKEN_TTL = 7200  # 2 hours in seconds
 
 
-def create_stream_token(url: str) -> str:
+def create_stream_token(url: str, user_id: str = None) -> str:
     """
-    Create a signed, base64url-encoded token that embeds the stream URL and
-    an expiry timestamp. The full HMAC-SHA256 digest is used (32 bytes → 64
-    hex chars) rather than the previous truncated 16-char version.
+    Create a signed, base64url-encoded token that embeds the stream URL,
+    an expiry timestamp, and optionally the requesting user's ID.
+    The full HMAC-SHA256 digest is used (32 bytes → 64 hex chars)
+    rather than the previous truncated 16-char version.
     """
     payload = {
         "u":   url,
         "exp": int(time.time()) + _TOKEN_TTL,
     }
+    if user_id:
+        payload["uid"] = user_id
     data = base64.urlsafe_b64encode(
         json.dumps(payload, separators=(",", ":")).encode()
     ).decode()
@@ -40,9 +43,9 @@ def create_stream_token(url: str) -> str:
     return f"{data}.{sig}"
 
 
-def resolve_stream_token(token: str) -> str | None:
+def resolve_stream_token(token: str) -> tuple[str, str | None] | None:
     """
-    Validate the HMAC signature and expiry, then return the embedded URL.
+    Validate the HMAC signature and expiry, then return (url, user_id).
     Returns None on any failure (bad format, wrong signature, expired).
     The constant-time hmac.compare_digest prevents timing-based forgery.
     """
@@ -60,6 +63,6 @@ def resolve_stream_token(token: str) -> str | None:
         if payload.get("exp", 0) < time.time():
             return None
 
-        return payload.get("u")
+        return payload.get("u"), payload.get("uid")
     except Exception:
         return None

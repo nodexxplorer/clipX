@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/content/index.jsx
+import Image from 'next/image';
 import { useState } from 'react';
 import { useQuery } from '@apollo/client/react';
 import AdminProtectedRoute from '@/pages/auth/AdminProtectedRoute';
@@ -123,7 +124,7 @@ export default function ContentPage() {
                                                 <td className="px-5 py-3">
                                                     <div className="flex items-center gap-3">
                                                         {item.poster ? (
-                                                            <img src={item.poster} alt="" className="w-10 h-14 object-cover rounded-lg ring-1 ring-white/5" />
+                                                            <div className="relative w-10 h-14"><Image src={item.poster || '/images/placeholder.jpg'} alt="" fill className="object-cover rounded-lg ring-1 ring-white/5" /></div>
                                                         ) : (
                                                             <div className="w-10 h-14 rounded-lg bg-white/5 flex items-center justify-center text-lg">
                                                                 {typeIcons[item.type] || '🎬'}

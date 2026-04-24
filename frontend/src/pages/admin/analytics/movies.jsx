@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/analytics/movies.jsx
+import Image from 'next/image';
 import { useState } from 'react';
 import { useQuery } from '@apollo/client/react';
 import AdminProtectedRoute from '@/pages/auth/AdminProtectedRoute';
@@ -69,9 +70,9 @@ export default function MovieAnalyticsPage() {
                     ) : (
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                             {content.map((item) => (
-                                <div key={item.id} className="bg-white/[0.02] border border-white/5 rounded-xl overflow-hidden group hover:border-primary-500/30 transition-all">
+                                <div key={item.id} className="bg-white/[0.02] border border-white/5 rounded-xl overflow-hidden group hover:border-primary-500/30 transition-all relative">
                                     {item.poster ? (
-                                        <img src={item.poster} alt={item.title} className="w-full aspect-[2/3] object-cover" />
+                                        <Image src={item.poster || '/images/placeholder.jpg'} alt={item.title} fill className="object-cover" />
                                     ) : (
                                         <div className="w-full aspect-[2/3] bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
                                             <FiFilm className="w-8 h-8 text-gray-600" />

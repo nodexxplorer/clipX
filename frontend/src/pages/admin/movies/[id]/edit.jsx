@@ -1,4 +1,5 @@
 // frontend/src/pages/admin/movies/[id]/edit.jsx
+import Image from 'next/image';
 import { useRouter } from 'next/router';
 import { useQuery, useMutation } from '@apollo/client/react';
 import AdminProtectedRoute from '@/pages/auth/AdminProtectedRoute';
@@ -89,7 +90,7 @@ export default function EditMoviePage() {
                         <>
                             <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-6 space-y-5">
                                 <div className="flex items-center gap-4 mb-4">
-                                    {movie.posterUrl && <img src={movie.posterUrl} alt="" className="w-16 h-24 object-cover rounded-xl ring-1 ring-white/10" />}
+                                    {movie.posterUrl && <div className="relative w-16 h-24"><Image src={movie.posterUrl} alt="" fill className="object-cover rounded-xl ring-1 ring-white/10" /></div>}
                                     <div>
                                         <p className="text-white font-bold text-lg">{movie.title}</p>
                                         <p className="text-gray-500 text-xs">{movie.year} • {movie.runtime}min • Rating: {movie.rating}</p>

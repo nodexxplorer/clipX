@@ -218,11 +218,6 @@ export const GET_MOVIE_VIDEOS = gql`
 // Backwards-compatible aliases / convenience queries expected elsewhere
 export const GET_MOVIE_DETAILS = GET_MOVIE;
 
-export const GET_STREAMING_URL = gql`
-  query GetStreamingUrl($movieId: ID!, $season: Int, $episode: Int) {
-    streamingUrl(movieId: $movieId, season: $season, episode: $episode)
-  }
-`;
 
 // Get movies for watchlist check (lightweight)
 export const GET_MOVIES_LIGHT = gql`

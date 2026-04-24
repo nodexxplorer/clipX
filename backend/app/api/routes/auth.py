@@ -21,12 +21,13 @@ def _is_production() -> bool:
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
     """Apply both httpOnly cookies with consistent flags."""
     prod = _is_production()
+    same_site = "lax"
     response.set_cookie(
         key="auth_token",
         value=access_token,
         httponly=True,
         secure=prod,
-        samesite="lax",
+        samesite=same_site,
         max_age=60 * 15,           # 15 minutes
         path="/",
     )
@@ -35,7 +36,7 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         value=refresh_token,
         httponly=True,
         secure=prod,
-        samesite="lax",
+        samesite=same_site,
         max_age=60 * 60 * 24 * 30,  # 30 days
         path="/api/auth/refresh",   # scoped — only sent to this endpoint
     )
@@ -137,8 +138,11 @@ async def ws_ticket_endpoint(request: Request) -> JSONResponse:
     cookie), and receives a one-time ticket to pass as ?ticket= on the WS URL.
 
     The ticket is signed with HMAC-SHA256 and expires after 60 seconds.
+
+    Returns {"ticket": null} instead of 401 when not authenticated, since this
+    endpoint is only called by JavaScript (useChat.js) which already handles
+    the null case gracefully. This prevents noisy 401 entries in the access log.
     """
-    # Validate the auth_token cookie via context helpers
     from app.core.auth import decode_access_token
     from app.core.database import AsyncSessionLocal
     from app.models.database import User
@@ -147,23 +151,23 @@ async def ws_ticket_endpoint(request: Request) -> JSONResponse:
 
     token = request.cookies.get("auth_token")
     if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        return JSONResponse(content={"ticket": None})
 
     payload = decode_access_token(token)
     if not payload or "sub" not in payload:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        return JSONResponse(content={"ticket": None})
 
     try:
         user_id = _uuid.UUID(payload["sub"])
     except (ValueError, AttributeError):
-        raise HTTPException(status_code=401, detail="Malformed token")
+        return JSONResponse(content={"ticket": None})
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalars().first()
 
     if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+        return JSONResponse(content={"ticket": None})
 
     ticket_payload = {
         "user_id": str(user.id),
