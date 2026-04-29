@@ -76,10 +76,11 @@ class User:
     referralCount: int = 0
     preferences: UserPreferences = strawberry.field(default_factory=UserPreferences)
     stats: UserStats = strawberry.field(default_factory=UserStats)
+    _created_at_raw: strawberry.Private[Optional[str]] = None
 
     @strawberry.field
     def createdAt(self) -> str:
-        return str(datetime.now())
+        return self._created_at_raw or ""
 
 @strawberry.type
 class SuccessResponse:
@@ -444,7 +445,8 @@ def create_user_response(user_db: DbUser) -> User:
         subscriptionTier=getattr(user_db, 'subscription_tier', 'free') or 'free',
         emailVerified=getattr(user_db, 'email_verified', False) or False,
         referralCount=getattr(user_db, 'referral_count', 0) or 0,
-        preferences=get_user_preferences(user_db)
+        preferences=get_user_preferences(user_db),
+        _created_at_raw=str(user_db.created_at) if getattr(user_db, 'created_at', None) else None
     )
 
 async def _log_activity(db, user_id, action: str, info=None, success: bool = True):
@@ -946,59 +948,64 @@ class Query:
             avg_session_str = f"{avg_h}h {avg_m}m" if avg_h > 0 else f"{avg_m}m"
 
             thirty_days_ago = today_start - timedelta(days=30)
-            growth_rows = (await db.execute(
-                select(func.date(DbUser.created_at).label("day"), func.count(DbUser.id).label("cnt"))
-                .where(DbUser.created_at >= thirty_days_ago)
-                .group_by(func.date(DbUser.created_at))
-                .order_by(func.date(DbUser.created_at))
-            )).all()
 
-            recent_notifs = (await db.execute(
-                select(DbNotification).order_by(DbNotification.created_at.desc()).limit(20)
-            )).scalars().all()
+            # ── Run independent queries concurrently ──────────────
+            import asyncio
 
-            # ── Top Movies (from movie_views table) ──────────────
-            top_movies = []
-            try:
-                top_rows = (await db.execute(text("""
-                    SELECT moviebox_id, title, COUNT(*) AS view_count
-                    FROM movie_views
-                    WHERE viewed_at >= :week
-                    GROUP BY moviebox_id, title
-                    ORDER BY view_count DESC
-                    LIMIT 5
-                """), {"week": week_start})).fetchall()
-                for tr in top_rows:
-                    top_movies.append(TopMovieStat(
-                        title=tr.title or tr.moviebox_id,
-                        views=tr.view_count or 0,
-                        downloads=0,
-                        watchlistAdds=0,
-                    ))
-            except Exception as e:
-                _sentry_capture(e)
-                logger.exception("[dashboardStats] topMovies error")
+            async def _query_growth():
+                return (await db.execute(
+                    select(func.date(DbUser.created_at).label("day"), func.count(DbUser.id).label("cnt"))
+                    .where(DbUser.created_at >= thirty_days_ago)
+                    .group_by(func.date(DbUser.created_at))
+                    .order_by(func.date(DbUser.created_at))
+                )).all()
 
-            # ── Genre Distribution (from movie_views table) ──────
-            genre_dist = []
-            try:
-                genre_rows = (await db.execute(text("""
-                    SELECT genre, COUNT(*) AS view_count
-                    FROM movie_views
-                    WHERE genre IS NOT NULL AND genre != ''
-                    GROUP BY genre
-                    ORDER BY view_count DESC
-                    LIMIT 10
-                """))).fetchall()
-                for gr in genre_rows:
-                    genre_dist.append(GenreDistribution(
-                        genre=Genre(name=gr.genre, slug=gr.genre.lower().replace(" ", "-")),
-                        movieCount=0,
-                        viewCount=gr.view_count or 0,
-                    ))
-            except Exception as e:
-                _sentry_capture(e)
-                logger.exception("[dashboardStats] genreDistribution error")
+            async def _query_recent_notifs():
+                return (await db.execute(
+                    select(DbNotification).order_by(DbNotification.created_at.desc()).limit(20)
+                )).scalars().all()
+
+            async def _query_top_movies():
+                try:
+                    rows = (await db.execute(text("""
+                        SELECT moviebox_id, title, COUNT(*) AS view_count
+                        FROM movie_views
+                        WHERE viewed_at >= :week
+                        GROUP BY moviebox_id, title
+                        ORDER BY view_count DESC
+                        LIMIT 5
+                    """), {"week": week_start})).fetchall()
+                    return [
+                        TopMovieStat(title=tr.title or tr.moviebox_id, views=tr.view_count or 0, downloads=0, watchlistAdds=0)
+                        for tr in rows
+                    ]
+                except Exception as e:
+                    _sentry_capture(e)
+                    logger.exception("[dashboardStats] topMovies error")
+                    return []
+
+            async def _query_genre_dist():
+                try:
+                    rows = (await db.execute(text("""
+                        SELECT genre, COUNT(*) AS view_count
+                        FROM movie_views
+                        WHERE genre IS NOT NULL AND genre != ''
+                        GROUP BY genre
+                        ORDER BY view_count DESC
+                        LIMIT 10
+                    """))).fetchall()
+                    return [
+                        GenreDistribution(genre=Genre(name=gr.genre, slug=gr.genre.lower().replace(" ", "-")), movieCount=0, viewCount=gr.view_count or 0)
+                        for gr in rows
+                    ]
+                except Exception as e:
+                    _sentry_capture(e)
+                    logger.exception("[dashboardStats] genreDistribution error")
+                    return []
+
+            growth_rows, recent_notifs, top_movies, genre_dist = await asyncio.gather(
+                _query_growth(), _query_recent_notifs(), _query_top_movies(), _query_genre_dist()
+            )
 
             return AdminDashboardStats(
                 totalUsers=row.total_users or 0,
@@ -1634,7 +1641,7 @@ class Query:
                 id=str(u.id), email=u.email, username=u.email.split("@")[0],
                 firstName=name_parts[0] if name_parts else "",
                 lastName=name_parts[1] if len(name_parts) > 1 else "",
-                avatar=u.avatar, isActive=True, isBanned=False,
+                avatar=u.avatar, isActive=True, isBanned=getattr(u, 'is_banned', False) or False,
                 lastActive=str(last_hist) if last_hist else None,
                 createdAt=str(u.created_at) if u.created_at else None,
                 watchlistCount=wl_count, downloadCount=0
@@ -1656,7 +1663,7 @@ class Query:
             id=str(u.id), email=u.email, username=u.name,
             firstName=u.name.split(' ')[0] if u.name else '',
             lastName=' '.join(u.name.split(' ')[1:]) if u.name and ' ' in u.name else '',
-            avatar=u.avatar, isActive=True, isBanned=False,
+            avatar=u.avatar, isActive=True, isBanned=getattr(u, 'is_banned', False) or False,
             lastActive=str(u.created_at), createdAt=str(u.created_at),
             watchlistCount=wl_count, downloadCount=0
         )
@@ -2190,6 +2197,44 @@ class Query:
         }
 
     @strawberry.field
+    async def myFamilyPlan(self, info: strawberry.Info) -> Optional[strawberry.scalars.JSON]:
+        """Return the authenticated user's family plan with members."""
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        db = await info.context.get_db()
+        plan = (await db.execute(
+            select(DbFamilyPlan).where(DbFamilyPlan.parent_id == user.id)
+        )).scalars().first()
+        if not plan:
+            return None
+        members_rows = (await db.execute(
+            select(DbFamilyMember).where(DbFamilyMember.family_plan_id == plan.id)
+        )).scalars().all()
+        members = []
+        for m in members_rows:
+            member_user = (await db.execute(
+                select(DbUser).where(DbUser.id == m.user_id)
+            )).scalars().first()
+            members.append({
+                "id": str(m.id),
+                "userId": str(m.user_id),
+                "name": member_user.name if member_user else None,
+                "email": member_user.email if member_user else None,
+                "avatar": member_user.avatar if member_user else None,
+                "role": m.role,
+                "joinedAt": str(m.joined_at) if m.joined_at else "",
+            })
+        return {
+            "id": str(plan.id),
+            "inviteCode": plan.invite_code,
+            "memberSlots": plan.member_slots,
+            "isActive": plan.is_active,
+            "createdAt": str(plan.created_at) if plan.created_at else "",
+            "members": members,
+        }
+
+    @strawberry.field
     async def myPaymentHistory(self, info: strawberry.Info) -> strawberry.scalars.JSON:
         user = await info.context.user
         if not user:
@@ -2580,6 +2625,10 @@ class Mutation:
             if not user:
                 await _log_activity(db, None, "login_failed", info, success=False)
                 raise Exception("Invalid email or password")
+            # ── Ban enforcement ────────────────────────────────
+            if getattr(user, 'is_banned', False):
+                await _log_activity(db, str(user.id), "login_banned", info, success=False)
+                raise Exception("Account suspended. Contact support for assistance.")
             if not user.password:
                 raise Exception("This account uses Google sign-in. Please log in with Google.")
 
@@ -3046,6 +3095,25 @@ class Mutation:
             raise Exception("Not authenticated")
         if getattr(user, 'email_verified', False):
             return SuccessResponse(success=True, message="Email already verified")
+
+        # Rate limit: max 3 resends per hour per user (prevents inbox flooding)
+        try:
+            from app.core.cache import cache
+            redis_ok = await cache._ensure_connected()
+            if redis_ok and cache._redis:
+                rk = f"resend_verify:{user.id}"
+                cur = await cache._redis.get(rk)
+                if cur and int(cur) >= 3:
+                    # Return success to prevent enumeration — don't reveal rate limit
+                    return SuccessResponse(success=True, message="Verification email sent!")
+                pipe = cache._redis.pipeline()
+                pipe.incr(rk)
+                if not cur:
+                    pipe.expire(rk, 3600)  # 1 hour window
+                await pipe.execute()
+        except Exception as e:
+            logger.warning(f"Redis error in resend rate limit: {e}")
+
         try:
             from app.core.email_service import send_verification_email
             send_verification_email(str(user.id), user.email, user.name or "")
@@ -3539,6 +3607,11 @@ class Mutation:
 
     @strawberry.mutation
     async def initializeSubscription(self, info: strawberry.Info, plan: str, billing: str = "monthly") -> strawberry.scalars.JSON:
+        user = await info.context.user
+        if not user:
+            raise Exception("Not authenticated")
+        if not getattr(user, 'email_verified', False):
+            raise Exception("Please verify your email address before subscribing. A verification link has been sent to your inbox.")
         raise Exception("Subscriptions are coming soon. Stay tuned!")
         # -- ORIGINAL CODE (commented out) --
         # user = await info.context.user

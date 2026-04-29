@@ -111,3 +111,39 @@ export const removeDownload = async (id: string, localPath: string) => {
     console.error('Failed to remove download', error);
   }
 };
+
+/**
+ * Reconcile local download records with actual files on disk.
+ * - If a DB record exists but the file is missing → delete the stale DB row.
+ * - If a file exists and the record shows 'downloading' → mark as 'failed'
+ *   (partial download that was interrupted).
+ * Call this on app startup to keep the downloads list accurate.
+ */
+export const reconcileWithServer = async () => {
+  if (!db || Platform.OS === 'web') return;
+  try {
+    const allRows = await db.getAllAsync('SELECT * FROM downloads') as any[];
+    for (const row of allRows) {
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(row.localPath);
+        if (!fileInfo.exists) {
+          // File is gone — remove the stale DB record
+          await db.runAsync('DELETE FROM downloads WHERE id = ?', [row.id]);
+          console.log(`[Downloads] Cleaned stale record: ${row.title}`);
+        } else if (row.status === 'downloading') {
+          // App was killed mid-download — mark as failed so user can retry
+          await db.runAsync(
+            'UPDATE downloads SET status = ? WHERE id = ?',
+            ['failed', row.id]
+          );
+          console.log(`[Downloads] Marked interrupted download as failed: ${row.title}`);
+        }
+      } catch (fileErr) {
+        // If we can't check the file, remove the record to be safe
+        await db.runAsync('DELETE FROM downloads WHERE id = ?', [row.id]);
+      }
+    }
+  } catch (error) {
+    console.error('[Downloads] Reconciliation failed:', error);
+  }
+};

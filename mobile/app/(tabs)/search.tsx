@@ -42,12 +42,15 @@ function MovieCard({ movie, cardWidth, cardHeight }: { movie: Movie; cardWidth: 
     <Pressable
       onPress={() => { Keyboard.dismiss(); router.push(`/movie/${movie.id}` as any); }}
       style={{ width: cardWidth }}
+      accessibilityLabel={`View ${movie.title}`}
+      accessibilityRole="button"
     >
       <Image
         source={{ uri: getPosterUri(movie) }}
         style={{ width: cardWidth, height: cardHeight, borderRadius: radius.sm, backgroundColor: colors.surfaceLight }}
         contentFit="cover"
         transition={200}
+        accessibilityLabel={`${movie.title} poster`}
       />
       <Text style={styles.cardTitle} numberOfLines={1}>{movie.title}</Text>
       {movie.voteAverage ? (
@@ -301,6 +304,7 @@ export default function SearchScreen() {
           renderItem={({ item }) => <MovieCard movie={item} cardWidth={cardWidth} cardHeight={cardHeight} />}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews={true}
         />
       ) : isSearching && !searching ? (
         <View style={styles.empty}>

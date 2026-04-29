@@ -22,6 +22,8 @@ router = APIRouter()
 
 
 class WatchPartyManager:
+    MAX_PARTICIPANTS = 10  # Prevent memory exhaustion from unbounded connections
+
     def __init__(self):
         # room_code -> { "connections": [(ws, user_info)], "state": {...} }
         self._rooms: Dict[str, dict] = {}
@@ -40,6 +42,12 @@ class WatchPartyManager:
     async def connect(self, websocket: WebSocket, room_code: str, user_info: dict):
         await websocket.accept()
         self._ensure_room(room_code)
+
+        # Enforce participant cap
+        if len(self._rooms[room_code]["connections"]) >= self.MAX_PARTICIPANTS:
+            await websocket.close(code=4003, reason="Room is full")
+            return False
+
         self._rooms[room_code]["connections"].append((websocket, user_info))
 
         # Send current state to the new joiner
@@ -233,7 +241,9 @@ async def websocket_watch_party(websocket: WebSocket, room_code: str):
             pass
         logger.exception(f"WatchParty room check error")
 
-    await wp_manager.connect(websocket, room_code, user_info)
+    connected = await wp_manager.connect(websocket, room_code, user_info)
+    if connected is False:
+        return  # Room was full, connection already closed
 
     try:
         while True:

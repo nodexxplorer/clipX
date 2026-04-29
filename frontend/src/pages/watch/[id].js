@@ -93,6 +93,8 @@ export default function WatchPage() {
   const wasPlayingRef = useRef(false);
   const audioContextRef = useRef(null);
   const gainNodeRef = useRef(null);
+  const shortcutsModalRef = useRef(null);
+  const shortcutsTriggerRef = useRef(null);
 
   // ─── Player State ──────────────────────────────────────
   const [isMounted, setIsMounted] = useState(false);
@@ -128,6 +130,42 @@ export default function WatchPage() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [resumePrompt, setResumePrompt] = useState(null);
   const [shareCopied, setShareCopied] = useState(false);
+
+  // ─── Focus Trap for Shortcuts Modal (Fix 3: WCAG 2.4.3) ──
+  useEffect(() => {
+    if (!showShortcuts) return;
+    // Store trigger element to restore focus on close
+    shortcutsTriggerRef.current = document.activeElement;
+    // Move focus into modal
+    requestAnimationFrame(() => {
+      const modal = shortcutsModalRef.current;
+      if (modal) {
+        const firstFocusable = modal.querySelector('button, [href], input, [tabindex]:not([tabindex="-1"])');
+        firstFocusable?.focus();
+      }
+    });
+    // Trap Tab/Shift+Tab within the modal
+    const handleTrap = (e) => {
+      if (e.key !== 'Tab') return;
+      const modal = shortcutsModalRef.current;
+      if (!modal) return;
+      const focusable = modal.querySelectorAll('button, [href], input, [tabindex]:not([tabindex="-1"])');
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault(); last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleTrap);
+    return () => {
+      document.removeEventListener('keydown', handleTrap);
+      // Restore focus to trigger element
+      shortcutsTriggerRef.current?.focus();
+    };
+  }, [showShortcuts]);
   const [volumeOSD, setVolumeOSD] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
 
@@ -1064,15 +1102,19 @@ export default function WatchPage() {
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="absolute inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-md"
               onClick={() => setShowShortcuts(false)}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Keyboard Shortcuts"
             >
               <motion.div
+                ref={shortcutsModalRef}
                 initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
                 className="bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-2xl p-8 max-w-lg w-full mx-4 shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-xl font-black text-white tracking-tight">Keyboard Shortcuts</h3>
-                  <button onClick={() => setShowShortcuts(false)} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-gray-400 hover:text-white transition-colors text-sm font-bold">✕</button>
+                  <h3 id="shortcuts-title" className="text-xl font-black text-white tracking-tight">Keyboard Shortcuts</h3>
+                  <button onClick={() => setShowShortcuts(false)} aria-label="Close shortcuts dialog" className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-gray-400 hover:text-white transition-colors text-sm font-bold">✕</button>
                 </div>
                 <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
                   {[
@@ -1087,7 +1129,7 @@ export default function WatchPage() {
                     </div>
                   ))}
                 </div>
-                <p className="text-gray-600 text-xs mt-6 text-center">Press <kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-gray-400 font-mono">?</kbd> to toggle this overlay</p>
+                <p className="text-gray-400 text-xs mt-6 text-center">Press <kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-gray-400 font-mono">?</kbd> to toggle this overlay</p>
               </motion.div>
             </motion.div>
           )}
@@ -1231,7 +1273,7 @@ export default function WatchPage() {
               <div className="bg-gradient-to-b from-black/80 to-transparent px-6 py-8 transition-opacity">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    <Link href={`/movies/${id}`} className="w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hover:bg-primary-600 backdrop-blur-md text-white transition-all shadow-lg border border-white/10">
+                    <Link href={`/movies/${id}`} aria-label="Back to movie details" className="w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hover:bg-primary-600 backdrop-blur-md text-white transition-all shadow-lg border border-white/10">
                       <FiChevronLeft className="w-7 h-7 -ml-1" />
                     </Link>
                     <h1 className="text-white font-bold text-xl md:text-2xl drop-shadow-md tracking-tight">
@@ -1239,11 +1281,11 @@ export default function WatchPage() {
                     </h1>
                   </div>
                   <div className="flex items-center gap-3">
-                    <button onClick={handleShare} className="relative w-10 h-10 hidden sm:flex items-center justify-center rounded-full bg-black/20 hover:bg-white/20 backdrop-blur-md text-white transition-all border border-white/10">
+                    <button onClick={handleShare} aria-label="Share video" className="relative w-10 h-10 hidden sm:flex items-center justify-center rounded-full bg-black/20 hover:bg-white/20 backdrop-blur-md text-white transition-all border border-white/10">
                       <FiShare2 className="w-5 h-5" />
                       {shareCopied && <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-[10px] bg-green-500/90 text-white px-2 py-0.5 rounded-full whitespace-nowrap">Copied!</span>}
                     </button>
-                    <button className="w-10 h-10 hidden sm:flex items-center justify-center rounded-full bg-black/20 hover:bg-white/20 backdrop-blur-md text-white transition-all border border-white/10">
+                    <button aria-label="Download video" className="w-10 h-10 hidden sm:flex items-center justify-center rounded-full bg-black/20 hover:bg-white/20 backdrop-blur-md text-white transition-all border border-white/10">
                       <FiDownload className="w-5 h-5" />
                     </button>
                   </div>
@@ -1253,7 +1295,7 @@ export default function WatchPage() {
               {/* Center Play (when paused) */}
               {!isPlaying && (
                 <div className="flex items-center justify-center">
-                  <button onClick={togglePlay} className="w-20 h-20 bg-primary-600/90 rounded-full flex items-center justify-center hover:bg-primary-500 transition-colors">
+                  <button onClick={togglePlay} aria-label="Play video" className="w-20 h-20 bg-primary-600/90 rounded-full flex items-center justify-center hover:bg-primary-500 transition-colors">
                     <FiPlay className="w-10 h-10 text-white ml-1" />
                   </button>
                 </div>
@@ -1278,31 +1320,32 @@ export default function WatchPage() {
                 {/* Controls Row */}
                 <div className="flex items-center justify-between text-white">
                   <div className="flex items-center gap-5 sm:gap-8">
-                    <button onClick={togglePlay} className="hover:text-primary-400 hover:scale-110 transition-transform">
+                    <button onClick={togglePlay} aria-label={isPlaying ? 'Pause video' : 'Play video'} className="hover:text-primary-400 hover:scale-110 transition-transform">
                       {isPlaying ? <FiPause className="w-7 h-7" /> : <FiPlay className="w-7 h-7" />}
                     </button>
-                    <button onClick={() => skip(-10)} className="hover:text-primary-400 hover:scale-110 transition-transform">
+                    <button onClick={() => skip(-10)} aria-label="Rewind 10 seconds" className="hover:text-primary-400 hover:scale-110 transition-transform">
                       <FiSkipBack className="w-6 h-6" />
                     </button>
-                    <button onClick={() => skip(10)} className="hover:text-primary-400 hover:scale-110 transition-transform">
+                    <button onClick={() => skip(10)} aria-label="Forward 10 seconds" className="hover:text-primary-400 hover:scale-110 transition-transform">
                       <FiSkipForward className="w-6 h-6" />
                     </button>
 
                     {/* Volume */}
                     <div className="hidden sm:flex items-center gap-2 group">
-                      <button onClick={toggleMute} className="hover:text-primary-400 transition-colors">
+                      <button onClick={toggleMute} aria-label={isMuted ? 'Unmute' : 'Mute'} className="hover:text-primary-400 transition-colors">
                         {isMuted || volume === 0 ? <FiVolumeX className="w-6 h-6" /> : <FiVolume2 className="w-6 h-6" />}
                       </button>
                       <input type="range" min="0" max="2" step="0.05" value={isMuted ? 0 : volume}
-                        onChange={handleVolumeSlider} className="w-20 accent-primary-500 cursor-pointer" />
+                        onChange={handleVolumeSlider} role="slider" aria-label="Volume" aria-valuenow={Math.round((isMuted ? 0 : volume) * 100)} aria-valuemin={0} aria-valuemax={200} className="w-20 accent-primary-500 cursor-pointer" />
                       <span className="text-[10px] font-mono text-gray-400 w-7 text-right tabular-nums">{Math.round((isMuted ? 0 : volume) * 100)}%</span>
                     </div>
 
                     {/* Brightness */}
                     <div className="hidden md:flex items-center gap-3 group">
-                      <FiSun className="w-6 h-6 hover:text-yellow-400 transition-colors cursor-pointer" />
+                      <FiSun className="w-6 h-6 hover:text-yellow-400 transition-colors cursor-pointer" aria-hidden="true" />
                       <input type="range" min="0.5" max="1.5" step="0.1" value={brightness}
                         onChange={(e) => setBrightness(parseFloat(e.target.value))}
+                        role="slider" aria-label="Brightness" aria-valuenow={Math.round(brightness * 100)} aria-valuemin={50} aria-valuemax={150}
                         className="w-0 opacity-0 group-hover:w-20 group-hover:opacity-100 transition-all duration-300 accent-yellow-400 cursor-pointer" />
                     </div>
 
@@ -1317,6 +1360,7 @@ export default function WatchPage() {
                     <div className="relative">
                       <button
                         onClick={() => { setShowSubtitlesMenu(p => !p); setShowSettings(false); }}
+                        aria-label="Toggle subtitles menu"
                         className={`hover:text-primary-400 hover:scale-110 transition-transform ${activeSubtitle !== 'off' ? 'text-primary-500' : 'text-white'}`}
                       >
                         <FiMessageSquare className="w-6 h-6" />
@@ -1351,6 +1395,7 @@ export default function WatchPage() {
                     {/* Settings Toggle */}
                     <button
                       onClick={() => { setShowSettings(p => !p); setShowSubtitlesMenu(false); }}
+                      aria-label="Player settings"
                       className="hover:text-primary-400 hover:rotate-90 transition-all duration-300"
                     >
                       <FiSettings className="w-6 h-6" />
@@ -1376,7 +1421,7 @@ export default function WatchPage() {
                     )}
 
                     {/* Fullscreen */}
-                    <button onClick={toggleFullscreen} className="hover:text-primary-400 hover:scale-110 transition-transform">
+                    <button onClick={toggleFullscreen} aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'} className="hover:text-primary-400 hover:scale-110 transition-transform">
                       {isFullscreen ? <FiMinimize className="w-6 h-6" /> : <FiMaximize className="w-6 h-6" />}
                     </button>
                   </div>

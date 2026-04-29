@@ -168,8 +168,10 @@ function MovieCard({ movie }: { movie: Movie }) {
     <Pressable
       onPress={() => router.push(`/movie/${movie.id}`)}
       style={styles.card}
+      accessibilityLabel={`View ${movie.title}`}
+      accessibilityRole="button"
     >
-      <Image source={{ uri: getPosterUri(movie) ?? '' }} style={styles.cardPoster} contentFit="cover" transition={200} />
+      <Image source={{ uri: getPosterUri(movie) ?? '' }} style={styles.cardPoster} contentFit="cover" transition={200} accessibilityLabel={`${movie.title} poster`} />
       {movie.voteAverage ? (
         <View style={styles.cardRating}>
           <Ionicons name="star" size={8} color={colors.warning} />
@@ -288,8 +290,8 @@ function UpgradeBanner({ plan }: { plan: string }) {
 function ContinueCard({ movie, progress }: { movie: Movie; progress: number }) {
   const router = useRouter();
   return (
-    <Pressable style={styles.continueCard} onPress={() => router.push(`/watch/${movie.id}` as any)}>
-      <Image source={{ uri: getBackdropUri(movie) ?? '' }} style={styles.continueImage} contentFit="cover" />
+    <Pressable style={styles.continueCard} onPress={() => router.push(`/watch/${movie.id}` as any)} accessibilityLabel={`Continue watching ${movie.title}`} accessibilityRole="button">
+      <Image source={{ uri: getBackdropUri(movie) ?? '' }} style={styles.continueImage} contentFit="cover" accessible={false} />
       <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={styles.continueGradient} />
       <View style={styles.continueInfo}>
         <Text style={styles.continueTitle} numberOfLines={1}>{movie.title}</Text>
@@ -344,8 +346,8 @@ function WideRow({ title, movies, onSeeAll }: { title: string; movies: Movie[]; 
         keyExtractor={m => m.id}
         contentContainerStyle={styles.rowList}
         renderItem={({ item: movie }) => (
-          <Pressable style={styles.wideCard} onPress={() => router.push(`/movie/${movie.id}` as any)}>
-            <Image source={{ uri: getBackdropUri(movie) ?? '' }} style={styles.wideImage} contentFit="cover" />
+          <Pressable style={styles.wideCard} onPress={() => router.push(`/movie/${movie.id}` as any)} accessibilityLabel={`View ${movie.title}`} accessibilityRole="button">
+            <Image source={{ uri: getBackdropUri(movie) ?? '' }} style={styles.wideImage} contentFit="cover" accessible={false} />
             <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.wideGradient} />
             <View style={styles.wideContent}>
               <Text style={styles.wideTitle} numberOfLines={1}>{movie.title}</Text>

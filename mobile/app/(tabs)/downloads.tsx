@@ -114,6 +114,8 @@ export default function DownloadsTabScreen() {
           data={downloads}
           keyExtractor={(it) => it.id}
           contentContainerStyle={styles.listContent}
+          removeClippedSubviews={true}
+          getItemLayout={(_, index) => ({ length: 134, offset: 134 * index, index })}
           renderItem={({ item }) => (
             <Pressable style={styles.card} onPress={() => handlePlay(item)}>
               <Image source={{ uri: item.posterUrl }} style={styles.poster} contentFit="cover" />

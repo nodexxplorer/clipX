@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from typing import List, Optional, Any
 from moviebox_api.requests import Session
 from moviebox_api.core import Search, MovieDetails, Trending, TVSeriesDetails, HotMoviesAndTVSeries, Homepage
@@ -8,7 +9,50 @@ from moviebox_api.download import DownloadableMovieFilesDetail, DownloadableTVSe
 from moviebox_api.constants import SubjectType
 import os
 
+try:
+    from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+    HAS_TENACITY = True
+except ImportError:
+    HAS_TENACITY = False
+
 logger = logging.getLogger("clipx")
+
+
+# ---------------------------------------------------------------------------
+# Simple circuit breaker — opens after consecutive failures, recovers after timeout
+# ---------------------------------------------------------------------------
+class CircuitBreaker:
+    """
+    Track consecutive failures. After `threshold` failures, open the circuit
+    for `recovery_timeout` seconds. Subsequent calls raise immediately.
+    """
+    def __init__(self, threshold: int = 5, recovery_timeout: int = 30):
+        self.threshold = threshold
+        self.recovery_timeout = recovery_timeout
+        self._failures = 0
+        self._opened_at: Optional[float] = None
+
+    @property
+    def is_open(self) -> bool:
+        if self._opened_at is None:
+            return False
+        if time.time() - self._opened_at >= self.recovery_timeout:
+            # Half-open: allow one attempt
+            return False
+        return True
+
+    def record_success(self):
+        self._failures = 0
+        self._opened_at = None
+
+    def record_failure(self):
+        self._failures += 1
+        if self._failures >= self.threshold:
+            self._opened_at = time.time()
+            logger.warning(
+                f"Circuit breaker OPEN after {self._failures} consecutive failures. "
+                f"Will retry after {self.recovery_timeout}s."
+            )
 
 # Subclass to fix the missing abstract method in moviebox-api
 class FixedStreamFilesDetail(StreamFilesDetail):
@@ -21,6 +65,19 @@ class MovieboxProvider:
             os.environ["MOVIEBOX_API_HOST"] = host
         self.session = Session()
         self._item_cache = {} # Cache for SearchResultsItem by ID
+        self._circuit = CircuitBreaker(threshold=5, recovery_timeout=30)
+
+    async def _call_with_resilience(self, coro_fn, *args, **kwargs):
+        """Wrap an async call with circuit breaker + optional tenacity retry."""
+        if self._circuit.is_open:
+            raise ConnectionError("Moviebox circuit breaker is OPEN — upstream unavailable")
+        try:
+            result = await coro_fn(*args, **kwargs)
+            self._circuit.record_success()
+            return result
+        except Exception:
+            self._circuit.record_failure()
+            raise
 
     async def search(self, query: str, page: int = 1, sub_type: str = "MOVIES") -> Any:
         type_map = {
@@ -32,7 +89,7 @@ class MovieboxProvider:
         
         # Search class in moviebox-api
         search_obj = Search(self.session, query, subject_type=target_type)
-        results = await search_obj.get_content_model()
+        results = await self._call_with_resilience(search_obj.get_content_model)
         # Populate cache
         for item in results.items:
             self._item_cache[str(item.subjectId)] = item
@@ -40,7 +97,7 @@ class MovieboxProvider:
 
     async def get_trending(self) -> Any:
         trending = Trending(self.session)
-        results = await trending.get_content_model()
+        results = await self._call_with_resilience(trending.get_content_model)
         # Populate cache
         for item in results.items:
             self._item_cache[str(item.subjectId)] = item
@@ -48,7 +105,7 @@ class MovieboxProvider:
 
     async def get_hot_content(self) -> Any:
         hot = HotMoviesAndTVSeries(self.session)
-        results = await hot.get_content_model()
+        results = await self._call_with_resilience(hot.get_content_model)
         # Populate cache
         for item in results.movies + results.tv_series:
             self._item_cache[str(item.subjectId)] = item
@@ -56,7 +113,7 @@ class MovieboxProvider:
 
     async def get_homepage(self) -> Any:
         home = Homepage(self.session)
-        results = await home.get_content_model()
+        results = await self._call_with_resilience(home.get_content_model)
         # Populate cache
         for item in results.contents:
             if hasattr(item, 'subjectId') and item.subjectId:
@@ -112,7 +169,7 @@ class MovieboxProvider:
         else:
             details_fetcher = MovieDetails(item, self.session)
             
-        return await details_fetcher.get_content_model()
+        return await self._call_with_resilience(details_fetcher.get_content_model)
 
     async def get_stream_links(self, item_id: str, season: int = 0, episode: int = 1):
         item = await self._get_item(item_id)
@@ -124,13 +181,13 @@ class MovieboxProvider:
             details_fetcher = TVSeriesDetails(item, self.session)
         else:
             details_fetcher = MovieDetails(item, self.session)
-        await details_fetcher.get_content_model()
+        await self._call_with_resilience(details_fetcher.get_content_model)
         
         if item.subjectType != SubjectType.TV_SERIES:
             season, episode = 0, 0
             
         stream_detail = FixedStreamFilesDetail(self.session, item)
-        return await stream_detail.get_content_model(season, episode)
+        return await self._call_with_resilience(stream_detail.get_content_model, season, episode)
 
     async def get_download_links(self, item_id: str, season: int = 0, episode: int = 1):
         item = await self._get_item(item_id)
@@ -142,11 +199,11 @@ class MovieboxProvider:
             details_fetcher = TVSeriesDetails(item, self.session)
         else:
             details_fetcher = MovieDetails(item, self.session)
-        await details_fetcher.get_content_model()
+        await self._call_with_resilience(details_fetcher.get_content_model)
         
         if item.subjectType == SubjectType.TV_SERIES:
             download_detail = DownloadableTVSeriesFilesDetail(self.session, item)
-            return await download_detail.get_content_model(season, episode)
+            return await self._call_with_resilience(download_detail.get_content_model, season, episode)
         else:
             download_detail = DownloadableMovieFilesDetail(self.session, item)
-            return await download_detail.get_content_model()
+            return await self._call_with_resilience(download_detail.get_content_model)

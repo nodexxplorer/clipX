@@ -52,24 +52,26 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # Allow if custom header is present (primary CSRF defense)
             if not xrw and "application/json" in content_type:
                 # Only enforce if auth cookies are present (authenticated session)
-                if request.cookies.get("auth_token") or request.cookies.get("refresh_token"):
-                    # Allow same-origin requests (origin or referer match known frontends)
-                    request_origin = origin or referer
-                    allowed_origins = getattr(settings, "CORS_ORIGINS", [])
-                    is_same_origin = any(
-                        request_origin.startswith(o) for o in allowed_origins if o
-                    ) if request_origin else False
-                    # Also allow localhost / 127.0.0.1 in development
-                    is_local = any(
-                        h in request_origin for h in ("localhost", "127.0.0.1", "192.168.")
-                    ) if request_origin else False
+                # CSRF protection: enforce X-Requested-With for ALL POST /graphql
+                # requests — not just authenticated ones. This prevents cross-site
+                # form submission attacks on login, register, and forgotPassword.
+                # Allow same-origin requests (origin or referer match known frontends)
+                request_origin = origin or referer
+                allowed_origins = getattr(settings, "CORS_ORIGINS", [])
+                is_same_origin = any(
+                    request_origin.startswith(o) for o in allowed_origins if o
+                ) if request_origin else False
+                # Also allow localhost / 127.0.0.1 in development
+                is_local = any(
+                    h in request_origin for h in ("localhost", "127.0.0.1", "192.168.")
+                ) if request_origin else False
 
-                    if not is_same_origin and not is_local:
-                        return Response(
-                            content='{"errors":[{"message":"Missing X-Requested-With header"}]}',
-                            status_code=403,
-                            media_type="application/json",
-                        )
+                if not is_same_origin and not is_local:
+                    return Response(
+                        content='{"errors":[{"message":"Missing X-Requested-With header"}]}',
+                        status_code=403,
+                        media_type="application/json",
+                    )
 
         # /api/auth/refresh — tighter limit (5/min) to protect token-vending endpoint
         if request.method == "POST" and path == "/api/auth/refresh":
@@ -137,14 +139,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     )
 
             if not redis_available:
-                # Redis is required for rate limiting — fail closed
-                logger.error("Redis unavailable — rate limiting cannot proceed, returning 503")
-                return Response(
-                    content='{"errors":[{"message":"Service temporarily unavailable. Please try again."}]}',
-                    status_code=503,
-                    media_type="application/json",
-                    headers={"Retry-After": "30"}
-                )
+                # Redis is down — degrade gracefully, skip rate limiting
+                logger.warning("Redis unavailable — rate limiting disabled for this request")
 
         return await call_next(request)
 
@@ -175,9 +171,27 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+
 # ---------------------------------------------------------------------------
-# GraphQL Performance Timing — log slow queries (>500ms) with Sentry breadcrumb
+# Request body caching — reads body once, shares via request.state
 # ---------------------------------------------------------------------------
+class RequestBodyCacheMiddleware(BaseHTTPMiddleware):
+    """
+    Reads the request body once and stores it in request.state.raw_body.
+    This prevents multiple middlewares from fighting over request._receive
+    and ensures the sanitized body is never silently overwritten.
+    """
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "POST" and "/graphql" in request.url.path:
+            body = await request.body()
+            request.state.raw_body = body
+            # Re-inject so downstream can still call request.body()
+            async def receive():
+                return {"type": "http.request", "body": body}
+            request._receive = receive
+        return await call_next(request)
+
+
 class GraphQLTimingMiddleware(BaseHTTPMiddleware):
     """
     Measures GraphQL request duration and logs slow queries.
@@ -189,17 +203,13 @@ class GraphQLTimingMiddleware(BaseHTTPMiddleware):
         if request.method != "POST" or "/graphql" not in request.url.path:
             return await call_next(request)
 
-        # Extract the operation name for meaningful logging
+        # Read from cached body (set by RequestBodyCacheMiddleware)
         operation_name = "unknown"
         try:
-            body = await request.body()
+            body = getattr(request.state, 'raw_body', None) or await request.body()
             import json as _json
             data = _json.loads(body)
             operation_name = data.get("operationName", "anonymous") or "anonymous"
-            # Re-inject the body so downstream handlers can read it
-            async def receive():
-                return {"type": "http.request", "body": body}
-            request._receive = receive
         except Exception:
             pass
 
@@ -265,12 +275,15 @@ class InputSanitizationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.method == "POST" and "/graphql" in request.url.path:
             try:
-                body = await request.body()
+                # Read from cached body instead of calling request.body() again
+                body = getattr(request.state, 'raw_body', None) or await request.body()
                 data = json.loads(body)
                 if "variables" in data and data["variables"]:
                     data["variables"] = self._sanitize(data["variables"])
                 # Reconstruct the request with sanitized body
                 sanitized_body = json.dumps(data).encode()
+                # Update the cached body too
+                request.state.raw_body = sanitized_body
                 # Replace the request's receive with our sanitized body
                 async def receive():
                     return {"type": "http.request", "body": sanitized_body}
@@ -298,6 +311,22 @@ async def lifespan(app: FastAPI):
         setup_sentry()
     except Exception as e:
         logger.warning(f"Sentry init failed (non-fatal): {e}")
+
+    # Verify database migrations are applied
+    try:
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            # Check for columns added in the latest migration
+            await db.execute(text(
+                "SELECT is_banned FROM users LIMIT 1"
+            ))
+        logger.info("Database migration check passed")
+    except Exception as e:
+        logger.critical(
+            f"DATABASE MIGRATION CHECK FAILED: {e}. "
+            "Run pending migrations before deploying new code."
+        )
 
     await _warmup_moviebox_session()
     yield
@@ -334,10 +363,17 @@ def get_app() -> FastAPI:
     # Input sanitization — strip XSS patterns from GraphQL inputs
     app.add_middleware(InputSanitizationMiddleware)
 
+    # Body caching — MUST be outermost (added last) so it reads body
+    # once before Timing and Sanitization middlewares access it.
+    app.add_middleware(RequestBodyCacheMiddleware)
+
+    # LAN origins (192.168.x.x) only allowed in development for mobile testing
+    _lan_regex = r"http://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:\d+)?" if not _is_prod else None
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
-        allow_origin_regex=r"http://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+)(:\d+)?",
+        allow_origin_regex=_lan_regex,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -382,7 +418,8 @@ def get_app() -> FastAPI:
                 await db.execute(text("SELECT 1"))
             health["services"]["database"] = "up"
         except Exception as e:
-            health["services"]["database"] = f"down: {str(e)[:100]}"
+            logger.error("DB health check failed", exc_info=True)
+            health["services"]["database"] = "down"
             health["status"] = "degraded"
 
         # Check movie service

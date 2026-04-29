@@ -32,7 +32,41 @@ const authFetchLink = createHttpLink({
 
 const client = new ApolloClient({
     link: authFetchLink,
-    cache: new InMemoryCache(),
+    cache: new InMemoryCache({
+        typePolicies: {
+            Query: {
+                fields: {
+                    movies: {
+                        keyArgs: ['filter', 'sort'],
+                        merge(existing: any, incoming: any) {
+                            if (!existing) return incoming;
+                            // For JSON scalar responses with movies array
+                            if (incoming?.movies && existing?.movies) {
+                                return {
+                                    ...incoming,
+                                    movies: [...existing.movies, ...incoming.movies],
+                                };
+                            }
+                            return incoming;
+                        },
+                    },
+                    searchMovies: {
+                        keyArgs: ['query'],
+                        merge(existing: any, incoming: any) {
+                            if (!existing) return incoming;
+                            if (incoming?.items && existing?.items) {
+                                return {
+                                    ...incoming,
+                                    items: [...existing.items, ...incoming.items],
+                                };
+                            }
+                            return incoming;
+                        },
+                    },
+                },
+            },
+        },
+    }),
     defaultOptions: {
         watchQuery: { fetchPolicy: 'cache-and-network' as const },
         query: { fetchPolicy: 'cache-first' as const },

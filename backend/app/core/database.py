@@ -35,8 +35,8 @@ else:
 engine = create_async_engine(
     ASYNC_DATABASE_URL,
     echo=False,
-    pool_size=5,
-    max_overflow=10,
+    pool_size=20,
+    max_overflow=30,
     pool_recycle=1800,
     pool_pre_ping=True,
     connect_args={

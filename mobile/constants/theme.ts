@@ -19,8 +19,8 @@ export const colors = {
   // Text
   text: '#ffffff',
   textSecondary: '#9ca3af',
-  textMuted: '#6b7280',
-  textDim: '#4b5563',
+  textMuted: '#9ca3af',
+  textDim: '#6b7280',
 
   // Status
   success: '#10b981',

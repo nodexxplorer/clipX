@@ -9,16 +9,34 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { ParentalProvider } from '@/contexts/ParentalContext';
 import { colors } from '@/constants/theme';
 import { registerForPushNotificationsAsync } from '@/lib/notifications';
-import { initOfflineDB } from '@/lib/downloads';
+import { REGISTER_PUSH_TOKEN } from '@/lib/graphql';
+import { initOfflineDB, reconcileWithServer } from '@/lib/downloads';
 import { initSubscriptions } from '@/lib/subscriptions';
 import 'react-native-reanimated';
 
 export default function RootLayout() {
   useEffect(() => {
     if (Platform.OS !== 'web') {
-      registerForPushNotificationsAsync().then(token => console.log('Push Token Setup Complete', token));
+      registerForPushNotificationsAsync().then(async (token) => {
+        if (token) {
+          try {
+            await client.mutate({
+              mutation: REGISTER_PUSH_TOKEN,
+              variables: { fcmToken: token, deviceType: Platform.OS },
+            });
+            console.log('Push token registered with backend');
+          } catch (err) {
+            console.warn('Failed to register push token:', err);
+          }
+        }
+      });
       initSubscriptions().catch(e => console.log('RevenueCat Init Error:', e));
-      initOfflineDB().then(() => console.log('Offline DB initialized')).catch(e => console.log('Offline DB Error:', e));
+      initOfflineDB()
+        .then(() => {
+          console.log('Offline DB initialized');
+          return reconcileWithServer();
+        })
+        .catch(e => console.log('Offline DB Error:', e));
     }
   }, []);
   return (

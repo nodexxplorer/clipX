@@ -1,4 +1,5 @@
 import httpx
+import os
 import urllib.parse
 import ipaddress
 from fastapi import APIRouter, Request, HTTPException, Depends
@@ -141,6 +142,7 @@ async def proxy_stream(request: Request, url: str = None, token: str = None):
             r = await moviebox_client.send(req, stream=True)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Upstream fetch failed: {e}")
+        _cleanup_client = None
     else:
         # Fallback: plain httpx client (SSL verification enabled)
         fallback_client = httpx.AsyncClient(
@@ -148,6 +150,7 @@ async def proxy_stream(request: Request, url: str = None, token: str = None):
             follow_redirects=True,
             verify=True,
         )
+        _cleanup_client = fallback_client
         try:
             req = fallback_client.build_request("GET", actual_url, headers=headers)
             r = await fallback_client.send(req, stream=True)
@@ -160,7 +163,8 @@ async def proxy_stream(request: Request, url: str = None, token: str = None):
     response_headers = {
         "Content-Type": r.headers.get("Content-Type", "video/mp4"),
         "Accept-Ranges": "bytes",
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": os.getenv("FRONTEND_URL", "http://localhost:3000"),
+        "Access-Control-Allow-Credentials": "true",
     }
     if "Content-Length" in r.headers:
         response_headers["Content-Length"] = r.headers["Content-Length"]
@@ -168,9 +172,13 @@ async def proxy_stream(request: Request, url: str = None, token: str = None):
         response_headers["Content-Range"] = r.headers["Content-Range"]
 
     async def stream_content():
-        async for chunk in r.aiter_bytes(chunk_size=65536):
-            yield chunk
-        await r.aclose()
+        try:
+            async for chunk in r.aiter_bytes(chunk_size=65536):
+                yield chunk
+        finally:
+            await r.aclose()
+            if _cleanup_client:
+                await _cleanup_client.aclose()
 
     return StreamingResponse(
         stream_content(),

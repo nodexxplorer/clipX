@@ -13,6 +13,15 @@ export function middleware(request) {
     // Pass the nonce to _document.js via a request header
     response.headers.set('x-nonce', nonce);
 
+    // Derive the backend origin so CSP works in both dev and production
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/graphql', '') || '';
+    let backendOrigin = '';
+    try {
+        if (backendUrl) backendOrigin = new URL(backendUrl).origin;
+    } catch {
+        backendOrigin = backendUrl;
+    }
+
     // Build a strict CSP with the nonce replacing 'unsafe-inline' for scripts
     const csp = [
         `default-src 'self'`,
@@ -20,8 +29,8 @@ export function middleware(request) {
         `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
         `font-src 'self' https://fonts.gstatic.com data:`,
         `img-src 'self' data: blob: https://image.tmdb.org https://i.ibb.co https://moviebox.ph https://*.aoneroom.com https://placehold.co https://via.placeholder.com`,
-        `media-src 'self' blob: http://localhost:8000 https://*.aoneroom.com https://vod.aoneroom.com`,
-        `connect-src 'self' http://localhost:8000 https://accounts.google.com https://api.paystack.co https://*.aoneroom.com wss://*`,
+        `media-src 'self' blob: ${backendOrigin} https://*.aoneroom.com https://vod.aoneroom.com`,
+        `connect-src 'self' ${backendOrigin} https://accounts.google.com https://api.paystack.co https://*.aoneroom.com wss://*`,
         `frame-src 'self' https://accounts.google.com https://paystack.com https://checkout.paystack.com`,
         `object-src 'none'`,
         `base-uri 'self'`,

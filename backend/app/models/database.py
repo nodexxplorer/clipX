@@ -25,6 +25,7 @@ class User(Base):
     grace_period_end = Column(DateTime, nullable=True)
     failed_login_attempts = Column(Integer, default=0)
     locked_until = Column(DateTime, nullable=True)
+    is_banned = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     
     watchlist = relationship("Watchlist", back_populates="user", lazy="dynamic")
@@ -48,6 +49,7 @@ class Movie(Base):
     poster_url = Column(String(500))
     backdrop_url = Column(String(500))
     trailer_url = Column(String(500))
+    content_tier = Column(String(20), default="free")  # free, standard, pro
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -63,6 +65,7 @@ class Series(Base):
     poster_url = Column(String(500))
     backdrop_url = Column(String(500))
     number_of_seasons = Column(Integer, default=0)
+    content_tier = Column(String(20), default="free")  # free, standard, pro
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Watchlist(Base):

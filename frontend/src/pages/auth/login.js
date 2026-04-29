@@ -34,6 +34,7 @@ export default function LoginPage() {
 
   // Redirect if already authenticated
   useEffect(() => {
+    if (loading) return;
     if (isAuthenticated) {
       // Role comes from the server-verified user object — not localStorage
       if (user?.role === 'admin') {
@@ -42,7 +43,7 @@ export default function LoginPage() {
       }
       router.push('/dashboard');
     }
-  }, [isAuthenticated, user, router]);
+  }, [isAuthenticated, user, router, loading]);
 
   // Clear errors on mount
   useEffect(() => {

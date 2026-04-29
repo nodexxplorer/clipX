@@ -20,8 +20,8 @@ const { width: SCREEN_W } = Dimensions.get('window');
 function WatchlistItem({ movie }: { movie: Movie }) {
     const router = useRouter();
     return (
-        <Pressable onPress={() => router.push(`/movie/${movie.id}`)} style={styles.item}>
-            <Image source={{ uri: getPosterUri(movie) }} style={styles.poster} contentFit="cover" transition={200} />
+        <Pressable onPress={() => router.push(`/movie/${movie.id}`)} style={styles.item} accessibilityLabel={`View ${movie.title}`} accessibilityRole="button">
+            <Image source={{ uri: getPosterUri(movie) }} style={styles.poster} contentFit="cover" transition={200} accessibilityLabel={`${movie.title} poster`} />
             <View style={styles.itemInfo}>
                 <Text style={styles.itemTitle} numberOfLines={1}>{movie.title}</Text>
                 {movie.year ? <Text style={styles.itemYear}>{movie.year}</Text> : null}
@@ -39,7 +39,7 @@ function WatchlistItem({ movie }: { movie: Movie }) {
                     ) : null}
                 </View>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} accessibilityElementsHidden={true} />
         </Pressable>
     );
 }
@@ -87,6 +87,8 @@ export default function WatchlistScreen() {
                     renderItem={({ item }) => <WatchlistItem movie={item} />}
                     contentContainerStyle={styles.list}
                     showsVerticalScrollIndicator={false}
+                    removeClippedSubviews={true}
+                    getItemLayout={(_, index) => ({ length: 109, offset: 109 * index, index })}
                     refreshControl={<RefreshControl refreshing={false} onRefresh={() => refetch()} tintColor={colors.primary} />}
                 />
             ) : (

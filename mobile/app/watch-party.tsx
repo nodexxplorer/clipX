@@ -8,11 +8,11 @@ import { View, Text, TextInput, FlatList, TouchableOpacity, StyleSheet, Keyboard
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
 import Constants from 'expo-constants';
 
-const API_URL = Constants.expoConfig?.extra?.API_URL || 'ws://192.168.1.100:8000';
+import { API_URL } from '@/constants/theme';
 
 export default function WatchPartyScreen() {
     const { code } = useLocalSearchParams();
@@ -31,7 +31,7 @@ export default function WatchPartyScreen() {
     const flatListRef = useRef<FlatList<any>>(null);
 
     const joinRoom = useCallback(async (roomId: string | string[]) => {
-        const token = await AsyncStorage.getItem('token');
+        const token = await SecureStore.getItemAsync('clipx_token');
         if (!token || !roomId) return;
 
         const wsUrl = `${API_URL.replace('http', 'ws')}/ws/watch-party/${roomId}?token=${token}`;

@@ -174,11 +174,7 @@ export const GOOGLE_AUTH = gql`
   }
 `;
 
-// H7 FIX: TOGGLE_WATCHLIST removed. The backend exposes two distinct mutations
-// (addToWatchlist / removeFromWatchlist). A single toggle caused state desync
-// bugs where the client and server disagreed on the current watchlist state.
-// Callers should check whether the movie is currently in the watchlist and
-// call the appropriate mutation explicitly.
+
 export const ADD_TO_WATCHLIST = gql`
   mutation AddToWatchlist($movieId: ID!) {
     addToWatchlist(movieId: $movieId) {
@@ -240,29 +236,29 @@ export const RESET_PASSWORD = gql`
   }
 `;
 
-export const INITIALIZE_SUBSCRIPTION = gql`
-  mutation InitializeSubscription($plan: String!, $billing: String!) {
-    initializeSubscription(plan: $plan, billing: $billing)
-  }
-`;
+// export const INITIALIZE_SUBSCRIPTION = gql`
+//   mutation InitializeSubscription($plan: String!, $billing: String!) {
+//     initializeSubscription(plan: $plan, billing: $billing)
+//   }
+// `;
 
-export const VERIFY_PAYMENT = gql`
-  mutation VerifyPayment($reference: String!) {
-    verifyPayment(reference: $reference) {
-      success
-      message
-    }
-  }
-`;
+// export const VERIFY_PAYMENT = gql`
+//   mutation VerifyPayment($reference: String!) {
+//     verifyPayment(reference: $reference) {
+//       success
+//       message
+//     }
+//   }
+// `;
 
-export const CANCEL_SUBSCRIPTION = gql`
-  mutation CancelSubscription {
-    cancelSubscription {
-      success
-      message
-    }
-  }
-`;
+// export const CANCEL_SUBSCRIPTION = gql`
+//   mutation CancelSubscription {
+//     cancelSubscription {
+//       success
+//       message
+//     }
+//   }
+// `;
 
 export const SUBMIT_REPORT = gql`
   mutation SubmitReport($reason: String!, $description: String!, $movieId: String) {

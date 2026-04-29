@@ -11,21 +11,7 @@ import { colors, spacing, radius, fontSize, fontWeight, API_URL } from '@/consta
 import { useVideoPlayer, VideoView } from 'expo-video';
 import PlayerSettings from '@/components/PlayerSettings';
 
-// ─── FIX (Bug 1 + 3) ─────────────────────────────────────────────────────────
-// resolveStreamUrl: prepends API_URL to relative proxy paths.
-//
-// The backend streamingUrl resolver returns:
-//   /api/proxy/stream?token=<hmac-signed-token>
-//
-// expo-video needs an absolute URL. API_URL comes from EXPO_PUBLIC_API_URL
-// (set in .env / eas.json) so this works in every environment — dev, staging,
-// and production — as long as the env var is configured.
-//
-// If EXPO_PUBLIC_API_URL is not set, it falls back to the constant in
-// constants/theme.ts — which defaults to the dev machine's LAN IP. Set
-// EXPO_PUBLIC_API_URL in your eas.json "production" profile to fix this in
-// production builds.
-// ─────────────────────────────────────────────────────────────────────────────
+
 function resolveStreamUrl(url: string | null | undefined): string | null {
     if (!url) return null;
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
@@ -33,12 +19,7 @@ function resolveStreamUrl(url: string | null | undefined): string | null {
     return `${base}${url}`;
 }
 
-/**
- * Inner component that owns the VideoPlayer instance.
- * Only mounted when streamUrl is known — prevents the source from
- * transitioning null → string which would release the native player
- * while VideoView still holds a reference.
- */
+
 function PlayerView({
     streamUrl,
     movieId,
@@ -62,11 +43,35 @@ function PlayerView({
     const [playbackRate, setPlaybackRate] = useState(1);
     const [subtitleTrack, setSubtitleTrack] = useState('off');
     const [isLandscape, setIsLandscape] = useState(false);
+    const [availableSubtitles, setAvailableSubtitles] = useState<{id: string; label: string; language: string}[]>([]);
 
     const player = useVideoPlayer(streamUrl, (p) => {
         p.loop = false;
         p.play();
     });
+
+    // Extract subtitle tracks once the player is ready
+    useEffect(() => {
+        if (!player) return;
+        const extractTracks = () => {
+            try {
+                const tracks = (player as any).textTracks || [];
+                if (tracks.length > 0) {
+                    setAvailableSubtitles(
+                        tracks.map((t: any, i: number) => ({
+                            id: String(i),
+                            label: t.label || t.language || `Track ${i + 1}`,
+                            language: t.language || 'unknown',
+                        }))
+                    );
+                }
+            } catch {}
+        };
+        // Try immediately and also after a short delay (tracks may load async)
+        extractTracks();
+        const timer = setTimeout(extractTracks, 2000);
+        return () => clearTimeout(timer);
+    }, [player, streamUrl]);
 
     // Apply volume to player (capped at 1.0 natively; >1 is a UI-level boost cue)
     useEffect(() => {
@@ -375,17 +380,17 @@ function PlayerView({
                 <>
                     {/* Top bar */}
                     <View style={styles.topBar}>
-                        <Pressable style={styles.iconBtn} onPress={onBack}>
+                        <Pressable style={styles.iconBtn} onPress={onBack} accessibilityLabel="Close player" accessibilityRole="button">
                             <Ionicons name="close" size={26} color="#fff" />
                         </Pressable>
                         <View style={{ flex: 1 }} />
-                        <Pressable style={styles.iconBtn} onPress={() => setShowSettings(true)}>
+                        <Pressable style={styles.iconBtn} onPress={() => setShowSettings(true)} accessibilityLabel="Player settings" accessibilityRole="button">
                             <Ionicons name="settings-outline" size={22} color="#fff" />
                         </Pressable>
                     </View>
 
                     {/* Center play/pause button */}
-                    <Pressable style={styles.centerPlayBtn} onPress={togglePlayPause}>
+                    <Pressable style={styles.centerPlayBtn} onPress={togglePlayPause} accessibilityLabel={player?.playing ? 'Pause video' : 'Play video'} accessibilityRole="button">
                         <Ionicons
                             name={player?.playing ? 'pause' : 'play'}
                             size={44}
@@ -426,6 +431,8 @@ function PlayerView({
                             <Pressable
                                 style={[styles.controlBtn, isLandscape && styles.controlBtnActive]}
                                 onPress={toggleRotate}
+                                accessibilityLabel={isLandscape ? 'Switch to portrait' : 'Switch to landscape'}
+                                accessibilityRole="button"
                             >
                                 <Ionicons
                                     name={isLandscape ? 'phone-portrait-outline' : 'phone-landscape-outline'}
@@ -448,6 +455,7 @@ function PlayerView({
                 onSpeedChange={setPlaybackRate}
                 subtitleTrack={subtitleTrack}
                 onSubtitleChange={setSubtitleTrack}
+                availableSubtitles={availableSubtitles}
                 isLandscape={isLandscape}
                 onRotate={toggleRotate}
             />
@@ -456,13 +464,6 @@ function PlayerView({
 }
 
 export default function WatchScreen() {
-    // ─── FIX (Bug 1 + 3): Accept season and episode from route params ─────────
-    // movie/[id].tsx now pushes:
-    //   router.push({ pathname: '/watch/[id]', params: { id, season, episode } })
-    //
-    // For plain movies, season and episode are omitted (both default to 0/1).
-    // For series episodes, the user's selection is forwarded here.
-    // ─────────────────────────────────────────────────────────────────────────
     const { id, localUri, season: seasonParam, episode: episodeParam } =
         useLocalSearchParams<{
             id: string;
@@ -482,13 +483,6 @@ export default function WatchScreen() {
         skip: !!localUri,
     });
 
-    // ─── FIX (Bug 1 + 3): Pass season + episode to streamingUrl ───────────────
-    // Previously the query was called with only { movieId: id }, so:
-    //   - Season defaulted to 0, episode to 1 on the backend — fine for movies,
-    //     wrong for series episodes.
-    //   - Now we forward the params from the route so the backend fetches the
-    //     correct episode stream link.
-    // ─────────────────────────────────────────────────────────────────────────
     const {
         data: streamData,
         loading: streamLoading,
