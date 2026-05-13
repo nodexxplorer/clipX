@@ -2,6 +2,7 @@
 
 import { ApolloClient, InMemoryCache, createHttpLink, from, Observable } from '@apollo/client';
 import { onError } from '@apollo/client/link/error';
+import { refreshAccessToken } from '@/lib/tokenRefresh';
 
 const httpLink = createHttpLink({
   uri: '/api/graphql',  // Routed through our API proxy which forwards Set-Cookie headers
@@ -11,33 +12,9 @@ const httpLink = createHttpLink({
   },
 });
 
-// ---------------------------------------------------------------------------
-// Token refresh state — shared across all concurrent operations
-// ---------------------------------------------------------------------------
-let _isRefreshing = false;
-let _pendingRefreshSubscribers = [];
-
-function subscribeToRefresh(callback) {
-  _pendingRefreshSubscribers.push(callback);
-}
-
-function onRefreshComplete(success) {
-  _pendingRefreshSubscribers.forEach((cb) => cb(success));
-  _pendingRefreshSubscribers = [];
-}
-
-
-async function attemptTokenRefresh() {
-  try {
-    const res = await fetch('/api/auth/refresh', {
-      method: 'POST',
-      credentials: 'include',
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
+// Token refresh is handled by the shared singleton in lib/tokenRefresh.js
+// to prevent concurrent refresh calls from different call sites
+// (Apollo, watch page, AuthContext) that would trigger theft detection.
 
 
 const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) => {
@@ -63,8 +40,8 @@ const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) 
       if (isAuthFailure && typeof window !== 'undefined') {
         // Don't immediately log the user out — try refreshing first
         return new Observable((observer) => {
-          const retryOrReject = (refreshSuccess) => {
-            if (refreshSuccess) {
+          refreshAccessToken().then((success) => {
+            if (success) {
               // Retry the original operation with fresh cookies
               const subscriber = forward(operation).subscribe({
                 next: observer.next.bind(observer),
@@ -77,19 +54,7 @@ const errorLink = onError(({ graphQLErrors, networkError, operation, forward }) 
               window.dispatchEvent(new CustomEvent('clipx:session-expired'));
               observer.error(graphQLErrors[0]);
             }
-          };
-
-          if (!_isRefreshing) {
-            _isRefreshing = true;
-            attemptTokenRefresh().then((success) => {
-              _isRefreshing = false;
-              onRefreshComplete(success);
-              retryOrReject(success);
-            });
-          } else {
-            // Another operation already triggered a refresh — wait for it
-            subscribeToRefresh(retryOrReject);
-          }
+          });
         });
       }
     }

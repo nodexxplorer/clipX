@@ -314,13 +314,12 @@ async def lifespan(app: FastAPI):
 
     # Verify database migrations are applied
     try:
-        from app.core.database import AsyncSessionLocal
+        from app.core.database import engine
         from sqlalchemy import text
-        async with AsyncSessionLocal() as db:
-            # Check for columns added in the latest migration
-            await db.execute(text(
-                "SELECT is_banned FROM users LIMIT 1"
-            ))
+        # Use a disposable connection to avoid pgbouncer prepared-statement
+        # collisions that can occur when reusing pooled connections.
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT is_banned FROM users LIMIT 1"))
         logger.info("Database migration check passed")
     except Exception as e:
         logger.critical(

@@ -7,7 +7,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { useQuery, useMutation } from '@apollo/client/react';
+import { useQuery } from '@apollo/client/react';
+import { useMutation } from '@apollo/client/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FiPlay, FiPause, FiVolume2, FiVolumeX, FiMaximize, FiMinimize,
@@ -17,7 +18,7 @@ import {
 } from 'react-icons/fi';
 
 import { useAuth } from '@/contexts/AuthContext';
-import { GET_MOVIE } from '@/graphql/queries/movieQueries';
+import { GET_MOVIE, GET_STREAM_DATA } from '@/graphql/queries/movieQueries';
 import { RECORD_WATCH_PROGRESS } from '@/graphql/mutations/interactionMutations';
 import { GET_WATCH_HISTORY } from '@/graphql/queries/userQueries';
 import apolloClient from '@/graphql/client';
@@ -107,16 +108,18 @@ export default function WatchPage() {
   const [buffered, setBuffered] = useState(0);
   const [volume, setVolume] = useState(1);
   const [playbackRate, setPlaybackRate] = useState(1);
-  const [selectedQuality, setSelectedQuality] = useState('auto');
+
   const [isLoading, setIsLoading] = useState(true);
   const [brightness, setBrightness] = useState(1);
   const [videoFit, setVideoFit] = useState('contain');
 
   // ─── Stream State ──────────────────────────────────────
-  const [streamData, setStreamData] = useState(null);
   const [streamError, setStreamError] = useState(null);
-  const [streamRetrying, setStreamRetrying] = useState(false);
   const [retryCountdown, setRetryCountdown] = useState(0);
+  const [videoRetrying, setVideoRetrying] = useState(false);
+
+  // ─── Quality State ────────────────────────────────────
+  const [activeQuality, setActiveQuality] = useState(null);
 
   // ─── Subtitle State ────────────────────────────────────
   const [activeSubtitle, setActiveSubtitle] = useState('off');
@@ -208,66 +211,87 @@ export default function WatchPage() {
   useEffect(() => { movieDataRef.current = movieQueryData; }, [movieQueryData]);
 
   // ═══════════════════════════════════════════════════════
-  // REST: Stream data (links + subtitles)
+  // GraphQL: Stream data (URL + subtitles)
   // ═══════════════════════════════════════════════════════
-  const fetchStreamData = useCallback(async () => {
-    if (!actualId) return;
-    setStreamError(null);
-    setStreamRetrying(true);
+  const {
+    data: streamQueryData,
+    loading: streamLoading,
+    error: streamQueryError,
+    refetch: refetchStream,
+  } = useQuery(GET_STREAM_DATA, {
+    variables: { movieId: actualId, season: season || 0, episode: episode || 1, movieboxId: actualId },
+    skip: !actualId,
+    fetchPolicy: 'network-only',
+  });
 
-    const url = `/api/movie/${actualId}/stream?season=${season || 0}&episode=${episode || 1}&bust=${Date.now()}`;
+  // ─── Quality links from streamData ─────────────────────
+  const qualityOptions = useMemo(() => {
+    const links = streamQueryData?.streamData?.links || [];
+    return links.map(l => ({ quality: l.quality, url: l.url, format: l.format, size: l.size }));
+  }, [streamQueryData?.streamData?.links]);
 
-    try {
-      let res = await fetch(url, { credentials: 'include' });
-
-      // If 401 — try silent token refresh then retry once
-      if (res.status === 401) {
-        try {
-          const refreshRes = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
-          if (refreshRes.ok) {
-            res = await fetch(url, { credentials: 'include' });
-          }
-        } catch { /* refresh failed */ }
-      }
-
-      if (res.status === 404) throw Object.assign(new Error('Content not found'), { type: 'not_found' });
-      if (res.status === 401) throw Object.assign(new Error('You must be logged in to stream content.'), { type: 'auth' });
-      if (res.status === 403) throw Object.assign(new Error('Access denied'), { type: 'forbidden' });
-      if (res.status === 410) throw Object.assign(new Error('Stream link has expired'), { type: 'expired' });
-      if (!res.ok) throw Object.assign(new Error(`Server error (${res.status})`), { type: 'server' });
-
-      const data = await res.json();
-      setStreamData(data);
-      setStreamRetrying(false);
-      retryCountRef.current = 0;
-    } catch (err) {
-      setStreamRetrying(false);
-      if (!navigator.onLine) {
-        setStreamError({ type: 'offline', message: "You're offline. Connect to the internet to stream." });
-      } else {
-        setStreamError({ type: err.type || 'network', message: err.message || 'Could not load stream.' });
-      }
+  // Resolve the active stream URL: quality-specific or fallback
+  const streamingUrl = useMemo(() => {
+    if (activeQuality && qualityOptions.length > 0) {
+      const match = qualityOptions.find(q => q.quality === activeQuality);
+      if (match?.url) return match.url;
     }
-  }, [actualId, season, episode]);
+    return streamQueryData?.streamingUrl || null;
+  }, [activeQuality, qualityOptions, streamQueryData?.streamingUrl]);
 
-  useEffect(() => { fetchStreamData(); }, [fetchStreamData]);
+  // Auto-select highest quality on first load
+  useEffect(() => {
+    if (!activeQuality && qualityOptions.length > 0) {
+      // Pick the highest resolution available
+      const sorted = [...qualityOptions].sort((a, b) => {
+        const numA = parseInt(a.quality) || 0;
+        const numB = parseInt(b.quality) || 0;
+        return numB - numA;
+      });
+      setActiveQuality(sorted[0].quality);
+    }
+  }, [activeQuality, qualityOptions]);
 
-  // ═══════════════════════════════════════════════════════
-  // Resolve streaming URL from available links + quality
-  // ═══════════════════════════════════════════════════════
-  const availableLinks = streamData?.links || [];
-  const selectedLink = selectedQuality === 'auto'
-    ? availableLinks[0]
-    : availableLinks.find(l => l.quality?.includes(selectedQuality)) || availableLinks[0];
-  const streamingUrl = selectedLink?.url || null;
+  const streamRetrying = streamLoading || videoRetrying;
+
+  // Sync Apollo error → streamError
+  useEffect(() => {
+    if (streamQueryError) {
+      const gqlErr = streamQueryError.graphQLErrors?.[0];
+      const code = gqlErr?.extensions?.code;
+      const type =
+        code === 'NOT_FOUND' ? 'not_found'
+          : code === 'UNAUTHENTICATED' ? 'auth'
+            : code === 'FORBIDDEN' ? 'forbidden'
+              : 'network';
+      setStreamError({ type, message: streamQueryError.message || 'Could not load stream.' });
+    } else if (streamQueryData) {
+      setStreamError(null);
+      retryCountRef.current = 0;
+    }
+  }, [streamQueryError, streamQueryData]);
 
   // ═══════════════════════════════════════════════════════
   // Subtitles (stable reference)
   // ═══════════════════════════════════════════════════════
   const subtitles = useMemo(
-    () => [...(streamData?.subtitles || []), ...localSubtitles],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [JSON.stringify(streamData?.subtitles), localSubtitles]
+    () => [
+      // Provider subtitles from streamData (scraped from source)
+      ...(streamQueryData?.streamData?.subtitles || []).map(s => ({
+        url: s.url,
+        lang: s.lang,
+        code: s.code,
+      })),
+      // DB-stored subtitles
+      ...(streamQueryData?.subtitlesForContent || []).map(s => ({
+        url: s.fileUrl,
+        lang: s.label,
+        code: s.language,
+      })),
+      // User-uploaded local subtitles
+      ...localSubtitles,
+    ],
+    [streamQueryData?.streamData?.subtitles, streamQueryData?.subtitlesForContent, localSubtitles]
   );
 
   // Auto-enable English subtitle when subtitles load
@@ -359,21 +383,7 @@ export default function WatchPage() {
     } catch { }
   }, []);
 
-  // ═══════════════════════════════════════════════════════
-  // Auto-quality from bandwidth
-  // ═══════════════════════════════════════════════════════
-  useEffect(() => {
-    if (selectedQuality !== 'auto') return;
-    try {
-      const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-      if (!conn) return;
-      const downlink = conn.downlink;
-      if (downlink >= 5) setSelectedQuality('1080');
-      else if (downlink >= 2) setSelectedQuality('720');
-      else if (downlink >= 0.5) setSelectedQuality('480');
-      else setSelectedQuality('360');
-    } catch { }
-  }, []);
+
 
   // ═══════════════════════════════════════════════════════
   // Video event handlers
@@ -397,7 +407,7 @@ export default function WatchPage() {
     // Restore position after quality switch
     if (restoringTimeRef.current !== null) {
       v.currentTime = restoringTimeRef.current;
-      if (wasPlayingRef.current) { v.play().catch(() => {}); setIsPlaying(true); }
+      if (wasPlayingRef.current) { v.play().catch(() => { }); setIsPlaying(true); }
       restoringTimeRef.current = null;
     }
   }, []);
@@ -411,7 +421,7 @@ export default function WatchPage() {
     const RETRYABLE = new Set([2, 4]); // MEDIA_ERR_NETWORK, MEDIA_ERR_SRC_NOT_SUPPORTED
     if (RETRYABLE.has(code) && retryCountRef.current < 3) {
       retryCountRef.current += 1;
-      setStreamRetrying(true);
+      setVideoRetrying(true);
       setStreamError({
         type: code === 4 ? 'expired' : 'network',
         code,
@@ -429,20 +439,20 @@ export default function WatchPage() {
         if (secs <= 0) clearInterval(retryTimerRef.current);
       }, 1000);
 
-      setTimeout(() => fetchStreamData(), 3000);
+      setTimeout(() => { refetchStream().catch(() => { }).finally(() => setVideoRetrying(false)); }, 3000);
     } else {
       clearInterval(retryTimerRef.current);
       const msgs = {
         1: { type: 'aborted', msg: 'Playback was aborted.' },
         2: { type: 'network', msg: !navigator.onLine ? 'You appear to be offline.' : 'Network error — check your connection.' },
-        3: { type: 'decode', msg: 'Video format not supported. Try a different quality.' },
+        3: { type: 'decode', msg: 'Video format not supported.' },
         4: { type: 'expired', msg: 'Stream link is unavailable or has expired.' },
       };
       const mapped = msgs[code] || { type: 'unknown', msg: 'An unknown playback error occurred.' };
       setStreamError({ type: mapped.type, code, message: mapped.msg });
-      setStreamRetrying(false);
+      setVideoRetrying(false);
     }
-  }, [fetchStreamData]);
+  }, [refetchStream]);
 
   // ═══════════════════════════════════════════════════════
   // Playback controls
@@ -450,7 +460,7 @@ export default function WatchPage() {
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) { v.play().catch(() => {}); setIsPlaying(true); }
+    if (v.paused) { v.play().catch(() => { }); setIsPlaying(true); }
     else { v.pause(); setIsPlaying(false); }
   }, []);
 
@@ -525,23 +535,26 @@ export default function WatchPage() {
   }, [ensureAudioAmplification]);
 
   // ═══════════════════════════════════════════════════════
-  // Quality & Speed changes
+  // Speed changes
   // ═══════════════════════════════════════════════════════
-  const handleQualityChange = useCallback((q) => {
-    if (videoRef.current) {
-      restoringTimeRef.current = videoRef.current.currentTime;
-      wasPlayingRef.current = !videoRef.current.paused;
-    }
-    setSelectedQuality(q);
-    setShowSettings(false);
-    retryCountRef.current = 0;
-    setTimeout(() => { videoRef.current?.load(); }, 50);
-  }, []);
 
   const handleSpeedChange = useCallback((speed) => {
     setPlaybackRate(speed);
     if (videoRef.current) videoRef.current.playbackRate = speed;
     setShowSettings(false);
+  }, []);
+
+  // ═══════════════════════════════════════════════════════
+  // Quality change: switch source, preserve position
+  // ═══════════════════════════════════════════════════════
+  const handleQualityChange = useCallback((quality, url) => {
+    const v = videoRef.current;
+    if (v) {
+      restoringTimeRef.current = v.currentTime;
+      wasPlayingRef.current = !v.paused;
+    }
+    setActiveQuality(quality);
+    setIsLoading(true);
   }, []);
 
   // ═══════════════════════════════════════════════════════
@@ -705,7 +718,7 @@ export default function WatchPage() {
       if (currentTime > 0) {
         recordProgress({
           variables: { movieId: actualId, currentTime: Math.floor(currentTime), duration: Math.floor(duration) },
-        }).catch(() => {});
+        }).catch(() => { });
       }
     }, 30000);
     return () => clearInterval(interval);
@@ -920,12 +933,11 @@ export default function WatchPage() {
         <video
           ref={videoRef}
           crossOrigin="anonymous"
-          src={streamingUrl && /^https?:\/\/.+/.test(streamingUrl) ? streamingUrl : undefined}
-          className={`w-full h-full ${
-            videoFit === 'contain' ? 'object-contain' :
-            videoFit === 'cover' ? 'object-cover' :
-            videoFit === 'fill' ? 'object-fill' : 'object-contain'
-          }`}
+          src={streamingUrl || undefined}
+          className={`w-full h-full ${videoFit === 'contain' ? 'object-contain' :
+              videoFit === 'cover' ? 'object-cover' :
+                videoFit === 'fill' ? 'object-fill' : 'object-contain'
+            }`}
           style={{
             filter: `brightness(${brightness})`,
             ...(videoFit === '16:9' ? { aspectRatio: '16/9', objectFit: 'contain' } :
@@ -979,7 +991,7 @@ export default function WatchPage() {
               <div>Resolution: <span className="text-white">{playbackStats.resolution || 'N/A'}</span></div>
               <div>Buffer: <span className="text-white">{playbackStats.bufferHealth}s</span></div>
               <div>Dropped Frames: <span className={playbackStats.droppedFrames > 10 ? 'text-red-400' : 'text-white'}>{playbackStats.droppedFrames}/{playbackStats.totalFrames}</span></div>
-              <div>Quality: <span className="text-white">{selectedQuality === 'auto' ? 'Auto' : selectedQuality + 'p'}</span></div>
+
               <div>Speed: <span className="text-white">{playbackRate}x</span></div>
             </motion.div>
           )}
@@ -1166,29 +1178,28 @@ export default function WatchPage() {
                 <img src={movie.backdropPath} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover opacity-10 blur-xl scale-105 pointer-events-none" />
               )}
               <div className="relative z-10 flex flex-col items-center gap-5 max-w-md">
-                <div className={`w-20 h-20 rounded-full flex items-center justify-center border-2 ${
-                  streamError.type === 'expired' ? 'border-orange-500/50 bg-orange-500/10 text-orange-400' :
-                  streamError.type === 'offline' || streamError.type === 'network' ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-400' :
-                  streamError.type === 'decode' ? 'border-purple-500/50 bg-purple-500/10 text-purple-400' :
-                  streamError.type === 'not_found' ? 'border-gray-500/50 bg-gray-500/10 text-gray-400' :
-                  'border-red-500/50 bg-red-500/10 text-red-400'
-                }`}>
+                <div className={`w-20 h-20 rounded-full flex items-center justify-center border-2 ${streamError.type === 'expired' ? 'border-orange-500/50 bg-orange-500/10 text-orange-400' :
+                    streamError.type === 'offline' || streamError.type === 'network' ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-400' :
+                      streamError.type === 'decode' ? 'border-purple-500/50 bg-purple-500/10 text-purple-400' :
+                        streamError.type === 'not_found' ? 'border-gray-500/50 bg-gray-500/10 text-gray-400' :
+                          'border-red-500/50 bg-red-500/10 text-red-400'
+                  }`}>
                   {streamError.type === 'offline' || streamError.type === 'network'
                     ? <FiWifiOff className="w-9 h-9" />
                     : streamError.type === 'expired'
-                    ? <FiRefreshCw className={`w-9 h-9 ${streamRetrying ? 'animate-spin' : ''}`} />
-                    : <FiAlertTriangle className="w-9 h-9" />
+                      ? <FiRefreshCw className={`w-9 h-9 ${streamRetrying ? 'animate-spin' : ''}`} />
+                      : <FiAlertTriangle className="w-9 h-9" />
                   }
                 </div>
                 <div>
                   <h2 className="text-2xl font-black text-white mb-1">
                     {streamError.type === 'expired' ? 'Stream link expired' :
-                     streamError.type === 'offline' ? 'You\u2019re offline' :
-                     streamError.type === 'network' ? 'Connection issue' :
-                     streamError.type === 'decode' ? 'Format not supported' :
-                     streamError.type === 'not_found' ? 'Content unavailable' :
-                     streamError.type === 'forbidden' ? 'Access denied' :
-                     streamError.type === 'auth' ? 'Login Required' : 'Playback error'}
+                      streamError.type === 'offline' ? 'You\u2019re offline' :
+                        streamError.type === 'network' ? 'Connection issue' :
+                          streamError.type === 'decode' ? 'Format not supported' :
+                            streamError.type === 'not_found' ? 'Content unavailable' :
+                              streamError.type === 'forbidden' ? 'Access denied' :
+                                streamError.type === 'auth' ? 'Login Required' : 'Playback error'}
                   </h2>
                   <p className="text-gray-400 text-sm leading-relaxed">{streamError.message}</p>
                 </div>
@@ -1208,7 +1219,7 @@ export default function WatchPage() {
                   <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
                     {streamError.type !== 'not_found' && streamError.type !== 'forbidden' && streamError.type !== 'auth' && (
                       <button
-                        onClick={() => { retryCountRef.current = 0; fetchStreamData(); }}
+                        onClick={() => { retryCountRef.current = 0; setStreamError(null); refetchStream(); }}
                         className="flex items-center gap-2 px-5 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold rounded-xl transition-all text-sm"
                       ><FiRefreshCw className="w-4 h-4" /> Try again</button>
                     )}
@@ -1255,13 +1266,13 @@ export default function WatchPage() {
         <PlayerSettingsPanel
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
-          quality={selectedQuality}
-          onQualityChange={handleQualityChange}
-          availableQualities={availableLinks.map(l => l.quality)}
           playbackRate={playbackRate}
           onSpeedChange={handleSpeedChange}
           videoFit={videoFit}
           onFitChange={(f) => { setVideoFit(f); setShowSettings(false); }}
+          qualityOptions={qualityOptions}
+          activeQuality={activeQuality}
+          onQualityChange={handleQualityChange}
         />
 
         {/* ── Controls Overlay ────────────────────────────── */}

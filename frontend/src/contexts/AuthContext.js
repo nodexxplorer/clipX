@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { useRouter } from 'next/router';
 import { gql } from '@apollo/client';
 import apolloClient from '@/graphql/client';
+import { refreshAccessToken } from '@/lib/tokenRefresh';
 import {
   LOGIN_MUTATION,
   REGISTER_MUTATION,
@@ -112,20 +113,13 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (!user) return;
     const TWELVE_MINUTES = 12 * 60 * 1000;
-    const refreshToken = async () => {
-      try {
-        const res = await fetch('/api/auth/refresh', {
-          method: 'POST',
-          credentials: 'include',
-        });
-        if (!res.ok) {
-          console.warn('[Auth] Background token refresh returned', res.status);
-        }
-      } catch (err) {
-        console.warn('[Auth] Background token refresh failed:', err.message);
+    const doRefresh = async () => {
+      const ok = await refreshAccessToken();
+      if (!ok) {
+        console.warn('[Auth] Background token refresh failed');
       }
     };
-    const id = setInterval(refreshToken, TWELVE_MINUTES);
+    const id = setInterval(doRefresh, TWELVE_MINUTES);
     return () => clearInterval(id);
   }, [user]);
 

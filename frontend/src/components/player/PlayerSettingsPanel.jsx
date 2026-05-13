@@ -1,20 +1,11 @@
 /**
  * Player Settings Panel
- * Quality selector, playback speed, audio tracks, video fit, subtitles
+ * Playback speed, audio tracks, video fit, subtitles, quality selection
  * Slides in from the right of the player.
  */
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiX, FiCheck, FiLock, FiChevronRight, FiChevronLeft } from 'react-icons/fi';
-
-const QUALITY_OPTIONS = [
-  { value: 'auto', label: 'Auto', description: 'Adapts to your connection' },
-  { value: '4K', label: '4K', description: '2160p · Ultra HD', tier: 'pro' },
-  { value: '1080', label: '1080p', description: 'Full HD', tier: 'standard' },
-  { value: '720', label: '720p', description: 'HD', tier: 'standard' },
-  { value: '480', label: '480p', description: 'SD' },
-  { value: '360', label: '360p', description: 'Low · Data saver' },
-];
+import { FiX, FiCheck, FiChevronRight, FiChevronLeft } from 'react-icons/fi';
 
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
@@ -26,14 +17,36 @@ const FIT_OPTIONS = [
   { value: '4:3', label: '4:3' },
 ];
 
+// Parse quality string like "720p" → 720 for sorting
+function parseQualityNum(q) {
+  if (!q) return 0;
+  const s = q.toLowerCase().replace('p', '').trim();
+  if (s === '4k' || s === '2160') return 2160;
+  return parseInt(s, 10) || 0;
+}
+
+// Quality label with badge
+function qualityLabel(q) {
+  const num = parseQualityNum(q);
+  if (num >= 2160) return '4K Ultra HD';
+  if (num >= 1080) return '1080p Full HD';
+  if (num >= 720) return '720p HD';
+  if (num >= 480) return '480p SD';
+  if (num >= 360) return '360p';
+  return q || 'Auto';
+}
+
+function qualityBadge(q) {
+  const num = parseQualityNum(q);
+  if (num >= 2160) return '4K';
+  if (num >= 1080) return 'HD';
+  if (num >= 720) return 'HD';
+  return null;
+}
+
 export default function PlayerSettingsPanel({
   isOpen,
   onClose,
-  // Quality
-  quality,
-  onQualityChange,
-  availableQualities = [],
-  isQualityAllowed, // from useSubscription
   // Speed
   playbackRate,
   onSpeedChange,
@@ -46,8 +59,12 @@ export default function PlayerSettingsPanel({
   onAudioTrackChange,
   // Aspect ratio info
   aspectRatio,
+  // Quality selection
+  qualityOptions = [],
+  activeQuality,
+  onQualityChange,
 }) {
-  const [activeMenu, setActiveMenu] = useState('main'); // 'main' | 'quality' | 'speed' | 'audio' | 'fit'
+  const [activeMenu, setActiveMenu] = useState('main'); // 'main' | 'speed' | 'audio' | 'fit' | 'quality'
 
   const goBack = () => setActiveMenu('main');
 
@@ -56,11 +73,15 @@ export default function PlayerSettingsPanel({
     setActiveMenu('main');
   }
 
-  const filteredQualities = QUALITY_OPTIONS.filter(q => {
-    if (q.value === 'auto') return true;
-    if (availableQualities.length === 0) return true; // show all if unknown
-    return availableQualities.some(aq => aq.toLowerCase().includes(q.value));
-  });
+  // Sort quality options: highest first
+  const sortedQualities = [...qualityOptions].sort(
+    (a, b) => parseQualityNum(b.quality) - parseQualityNum(a.quality)
+  );
+
+  // Current quality label for the menu row
+  const currentQualityLabel = activeQuality
+    ? qualityOptions.find(q => q.quality === activeQuality)?.quality || 'Auto'
+    : 'Auto';
 
   return (
     <AnimatePresence>
@@ -91,11 +112,15 @@ export default function PlayerSettingsPanel({
           {/* Main Menu */}
           {activeMenu === 'main' && (
             <div className="py-1">
-              <MenuItem
-                label="Quality"
-                value={quality === 'auto' ? 'Auto' : quality}
-                onClick={() => setActiveMenu('quality')}
-              />
+              {/* Quality */}
+              {sortedQualities.length > 0 && (
+                <MenuItem
+                  label="Quality"
+                  value={currentQualityLabel}
+                  badge={qualityBadge(currentQualityLabel)}
+                  onClick={() => setActiveMenu('quality')}
+                />
+              )}
               <MenuItem
                 label="Speed"
                 value={playbackRate === 1 ? 'Normal' : `${playbackRate}x`}
@@ -125,31 +150,35 @@ export default function PlayerSettingsPanel({
           {activeMenu === 'quality' && (
             <div className="py-1">
               <p className="px-4 pt-2 pb-1 text-[10px] font-bold text-gray-500 uppercase tracking-widest">Quality</p>
-              {filteredQualities.map(q => {
-                const locked = q.tier && isQualityAllowed && !isQualityAllowed(q.value);
+              {sortedQualities.map((opt) => {
+                const isActive = activeQuality === opt.quality;
+                const badge = qualityBadge(opt.quality);
+                const sizeStr = opt.size
+                  ? `${(opt.size / (1024 * 1024)).toFixed(0)} MB`
+                  : null;
                 return (
                   <button
-                    key={q.value}
-                    onClick={() => !locked && onQualityChange?.(q.value)}
-                    disabled={locked}
-                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors group
-                      ${quality === q.value ? 'bg-primary-500/10' : 'hover:bg-white/5'}
-                      ${locked ? 'opacity-40 cursor-not-allowed' : ''}`}
+                    key={opt.quality}
+                    onClick={() => { onQualityChange?.(opt.quality, opt.url); setActiveMenu('main'); }}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors
+                      ${isActive ? 'bg-primary-500/10' : 'hover:bg-white/5'}`}
                   >
                     <div className="w-5 flex justify-center">
-                      {quality === q.value && <FiCheck className="w-4 h-4 text-primary-400" />}
+                      {isActive && <FiCheck className="w-4 h-4 text-primary-400" />}
                     </div>
-                    <div className="flex-1">
-                      <span className={`text-sm font-bold ${quality === q.value ? 'text-primary-400' : 'text-white'}`}>
-                        {q.label}
+                    <div className="flex-1 flex items-center gap-2">
+                      <span className={`text-sm font-bold ${isActive ? 'text-primary-400' : 'text-white'}`}>
+                        {qualityLabel(opt.quality)}
                       </span>
-                      {q.description && (
-                        <span className="text-[10px] text-gray-500 ml-2">{q.description}</span>
+                      {badge && (
+                        <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-sm tracking-wider
+                          ${isActive ? 'bg-primary-500/30 text-primary-300' : 'bg-white/10 text-gray-400'}`}>
+                          {badge}
+                        </span>
                       )}
                     </div>
-                    {locked && <FiLock className="w-3.5 h-3.5 text-yellow-500/70" />}
-                    {q.tier === 'pro' && !locked && (
-                      <span className="text-[9px] font-black text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded">PRO</span>
+                    {sizeStr && (
+                      <span className="text-[10px] text-gray-500 font-mono">{sizeStr}</span>
                     )}
                   </button>
                 );
@@ -229,7 +258,7 @@ export default function PlayerSettingsPanel({
 }
 
 // Reusable menu item with arrow
-function MenuItem({ label, value, onClick }) {
+function MenuItem({ label, value, badge, onClick }) {
   return (
     <button
       onClick={onClick}
@@ -237,7 +266,14 @@ function MenuItem({ label, value, onClick }) {
     >
       <span className="text-sm font-bold text-white">{label}</span>
       <div className="flex items-center gap-2">
-        <span className="text-xs font-medium text-gray-400">{value}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-medium text-gray-400">{value}</span>
+          {badge && (
+            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-sm bg-primary-500/20 text-primary-400 tracking-wider">
+              {badge}
+            </span>
+          )}
+        </div>
         <FiChevronRight className="w-3.5 h-3.5 text-gray-600 group-hover:text-gray-400 transition-colors" />
       </div>
     </button>

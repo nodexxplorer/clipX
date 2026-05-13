@@ -249,3 +249,29 @@ export const GET_TRENDING_SERIES = gql`
     }
   }
 `;
+
+// Get stream URL + subtitles for the watch page
+export const GET_STREAM_DATA = gql`
+  query GetStreamData($movieId: ID!, $season: Int, $episode: Int, $movieboxId: String!) {
+    streamingUrl(movieId: $movieId, season: $season, episode: $episode)
+    streamData(movieId: $movieId, season: $season, episode: $episode) {
+      links {
+        quality
+        url
+        format
+        size
+      }
+      subtitles {
+        lang
+        code
+        url
+      }
+    }
+    subtitlesForContent(movieboxId: $movieboxId, season: $season, episode: $episode) {
+      label
+      language
+      fileUrl
+      format
+    }
+  }
+`;
